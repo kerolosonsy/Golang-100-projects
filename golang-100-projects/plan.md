@@ -257,7 +257,7 @@ Do not infer dependencies. README files must state these formal prerequisites ex
 
 | Status | Project | Required Outcome | Core Concepts | Required Verification |
 |---|---|---|---|---|
-| 📘 | `001_hello_cli` | Read a name and age, then print years remaining until age 100 | `package`, `main`, variables, `fmt`, functions | Ordinary name, empty name, age 100, and invalid age |
+| ✅ | `001_hello_cli` | Read a name and age, then print years remaining until age 100 | `package`, `main`, variables, `fmt`, functions | Ordinary name, empty name, age 100, and invalid age |
 | 📘 | `002_calculator` | Four-operation calculator with a text interface | Functions, `switch`, numbers, errors | Every operation, division by zero, and unknown operator |
 | 📘 | `003_unit_converter` | Convert temperature, length, and weight in both directions | Constants, decimal precision, logic separation | Conversion table with tolerance and valid negative inputs |
 | 📘 | `004_number_guessing` | Guessing game with limited attempts and higher/lower hints | Loops, conditions, injectable randomness | Win, exhausted attempts, and nonnumeric input |
