@@ -1,0 +1,7 @@
+read:
+  - AI_POLICY.md
+dry-run: true
+auto-commits: false
+dirty-commits: false
+suggest-shell-commands: false
+

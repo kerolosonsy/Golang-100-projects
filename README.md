@@ -56,6 +56,12 @@ All 100 guides currently use `📘`. Guide readiness is not implementation progr
 - Mark a project complete only when you can explain the design and satisfy its completion criteria.
 - Keep optional extensions separate from the required core project.
 
+## AI Assistance Policy
+
+AI tools are welcome only as read-only mentors and reviewers. They may explain concepts, ask guiding questions, clarify requirements, and evaluate work you have already written. They must not change repository files or provide code, tests, snippets, patches, pseudocode, commands, or other copyable solutions.
+
+Every supported coding agent is directed to the canonical [Mandatory AI Mentor-Only Policy](AI_POLICY.md). Tool-specific instruction files and read-only settings reinforce the same boundary.
+
 ## Repository Structure
 
 ```text
