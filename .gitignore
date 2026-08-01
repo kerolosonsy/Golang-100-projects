@@ -1,0 +1,35 @@
+# Compiled binaries and shared objects
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries (go test -c) and profiling/coverage output
+*.test
+*.out
+*.prof
+
+# Go workspace and dependency vendoring
+go.work
+go.work.sum
+vendor/
+
+# Secrets and local config
+.env
+.env.local
+*.pem
+*.key
+
+# Database files produced by the 05-databases projects
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+.idea/
