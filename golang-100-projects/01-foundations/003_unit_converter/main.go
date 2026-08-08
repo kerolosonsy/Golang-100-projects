@@ -182,7 +182,6 @@ func convertValue(category, source, target string, amount float64) (float64, err
 		Target:   target,
 	}
 
-	// السطر ده هو السر كله
 	calcFunc, exists := conversionRegistry[key]
 	if !exists {
 		return 0, errors.New("unsupported category or unknown units")
