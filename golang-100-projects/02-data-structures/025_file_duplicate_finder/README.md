@@ -2,7 +2,10 @@
 
 ## 1. Project Name and Number
 
-Project **025** — `025_file_duplicate_finder`. The directory name and number must match exactly. This project builds a deterministic duplicate finder that walks an explicitly supplied root, groups regular files by byte size, computes SHA-256 only for size groups with at least two candidates, and emits groups of two or more files that share both size and digest. Symlinks and non-regular files are skipped; the scan never mutates the filesystem; every error is surfaced with its identifying context.
+- Project **025** — `025_file_duplicate_finder`.
+- The directory name and number must match exactly.
+- This project builds a deterministic duplicate finder that walks an explicitly supplied root, groups regular files by byte size, computes SHA-256 only for size groups with at least two candidates, and emits groups of two or more files that share both size and digest.
+- Symlinks and non-regular files are skipped; the scan never mutates the filesystem; every error is surfaced with its identifying context.
 
 ## 2. Project Idea
 
@@ -16,9 +19,13 @@ The output is deterministic. Groups are sorted by ascending size, then ascending
 
 ## 3. Why This Project Now?
 
-Project 024 introduced deterministic lexical walking with rendered tree output. Project 025 brings that walking discipline together with a new one: hash-based identity. The project forces the learner to think about the cost of hashing, the cost of skipping unnecessary hashing, and the difference between "the metadata said size X" and "the bytes actually hashed to digest Y".
+- Project 024 introduced deterministic lexical walking with rendered tree output.
+- Project 025 brings that walking discipline together with a new one: hash-based identity.
+- The project forces the learner to think about the cost of hashing, the cost of skipping unnecessary hashing, and the difference between "the metadata said size X" and "the bytes actually hashed to digest Y".
 
-The project also introduces the discipline of "trusting metadata only as long as it can be verified". A file's size at walk time may differ from the size the hashing step sees, because another process can modify the file between the two reads. The project pins what to do in that case: the finder detects the inconsistency when practical and reports an unstable-file error rather than silently claiming an incomplete scan is complete.
+- The project also introduces the discipline of "trusting metadata only as long as it can be verified".
+- A file's size at walk time may differ from the size the hashing step sees, because another process can modify the file between the two reads.
+- The project pins what to do in that case: the finder detects the inconsistency when practical and reports an unstable-file error rather than silently claiming an incomplete scan is complete.
 
 ## 4. Prerequisites
 
@@ -39,28 +46,30 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Size pre-grouping
+### Concepts
+
+#### Size pre-grouping
 
 Grouping is two-stage:
 
-1. **By size.** The first pass walks the root and records every regular file's path and recorded metadata (the metadata recorded at walk time: size and, where available, modification time). Files are bucketed by size. Size groups with fewer than two files cannot contain duplicates and are dropped at this stage without ever being hashed.
-2. **By SHA-256.** For each size group with at least two files, the second pass opens each file and computes its SHA-256 by streaming while counting the bytes read. Files within the group are then re-bucketed by digest. Each digest bucket within the size group is one duplicate group.
+- **By size.** The first pass walks the root and records every regular file's path and recorded metadata (the metadata recorded at walk time: size and, where available, modification time). Files are bucketed by size. Size groups with fewer than two files cannot contain duplicates and are dropped at this stage without ever being hashed.
+- **By SHA-256.** For each size group with at least two files, the second pass opens each file and computes its SHA-256 by streaming while counting the bytes read. Files within the group are then re-bucketed by digest. Each digest bucket within the size group is one duplicate group.
 
 The pre-grouping by size is the project's main efficiency choice. Hashing every file in the tree is wasted work when most files are unique. Hashing only the size groups that already have candidates is much cheaper on real inputs.
 
-### Streaming SHA-256
+#### Streaming SHA-256
 
 The SHA-256 is computed by streaming the file's contents through the hasher while counting the bytes read. The implementation reads the file in chunks, writes each chunk into the hasher, increments a running byte counter, and finishes with `Sum(nil)`. The file is never read into a single byte slice sized to the file. A test that hashes a multi-megabyte file confirms the streaming design and the byte counter.
 
-### Regular files only
+#### Regular files only
 
 The walker considers only regular files. Symlinks, directories, devices, sockets, named pipes, and any other non-regular entry are skipped without hashing. A symlink that points to a regular file is not a regular file in the sense the project uses; the walker sees a symlink and skips it without resolving the link to its target.
 
-### Empty files
+#### Empty files
 
 Empty files have size `0` and the standard SHA-256 digest of the empty input (`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`). The test asserts this digest directly. Two or more empty files in the same scan form one duplicate group. The standard empty-digest value is a fixed known vector; the test does not depend on whatever the implementation happens to produce.
 
-### Deterministic ordering
+#### Deterministic ordering
 
 The output's groups are sorted by ascending size, with ties broken by ascending digest and then by ascending first path. Within each group, paths are sorted lexicographically. The first path used as a tie-breaker is the lexicographically smallest path in the group.
 
@@ -68,7 +77,7 @@ Two runs against the same root produce byte-identical output. The sort is part o
 
 The output's paths are root-relative (relative to the supplied root). On platforms where the path separator differs, the test normalizes the separator on display before comparing expected and actual output; the underlying values are correct for the platform but the test's expected output uses a portable form.
 
-### Best-effort unstable-file detection
+#### Best-effort unstable-file detection
 
 A file's size recorded in the first pass may differ from the size the hashing pass sees, because another process can modify the file between the two reads. The project pins a best-effort detection rule and is honest about its limits:
 
@@ -82,15 +91,15 @@ The project is honest about the limits of best-effort detection: no portable met
 
 When detection is not practical because the file has been deleted between the two reads, the project surfaces the corresponding read or stat error with the path context.
 
-### Same size, different digest is not an error
+#### Same size, different digest is not an error
 
 Two files of the same size with different content have different SHA-256 digests. That is normal, not an unstable-file error: they simply belong to different digest buckets inside the size group, and they appear as singletons (or as members of other groups) rather than as a duplicate group. The test pins the digest difference directly and asserts that the two files are not emitted as a duplicate group.
 
-### Never modify the filesystem
+#### Never modify the filesystem
 
 The duplicate finder never opens a file for writing, never creates files, never deletes files, never renames files. It only opens files for reading and only writes its report to the injected output writer.
 
-### Errors with identifying context
+#### Errors with identifying context
 
 Every error the duplicate finder can produce carries identifying context. Scan errors (traversal, open, read, unstable) carry the affected path or size group. Writer errors carry the renderer and the underlying writer failure.
 
@@ -135,19 +144,22 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A root directory path. The directory must exist. The directory may contain regular files, directories, symlinks, and special files in any combination.
 - An `io.Writer` to receive the report.
 
-### Outputs
+#### Outputs
 
 - A deterministic report on the injected writer. The report contains one block per duplicate group. Each block names the size, the digest, and the sorted list of file paths. Paths are root-relative.
 - An error returned to the caller for any of the failure modes listed in section 8.
 
-### Example text-only success run
+#### Example text-only success run
 
 Input root:
+
 ```
 photos/
 ├── a.jpg  (size 12345, digest D1)
@@ -157,6 +169,7 @@ photos/
 ```
 
 Output:
+
 ```
 size=12345 digest=D1
   photos/a.jpg
@@ -165,9 +178,10 @@ size=12345 digest=D1
 
 (There is one duplicate group: `a.jpg` and `b.jpg`. `c.jpg` has the same size but a different digest; it is not emitted. `d.txt` is a singleton and is omitted.)
 
-### Example text-only empty-file run
+#### Example text-only empty-file run
 
 Input root:
+
 ```
 empties/
 ├── one.txt  (size 0)
@@ -177,6 +191,7 @@ empties/
 ```
 
 Output:
+
 ```
 size=0 digest=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   empties/nested/three.txt
@@ -184,7 +199,7 @@ size=0 digest=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   empties/two.txt
 ```
 
-### Example text-only error runs
+#### Example text-only error runs
 
 ```
 $ dedup /tmp/missing
@@ -258,9 +273,11 @@ Error: root is not a directory: /tmp/somefile.txt.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests use a per-test temporary directory. Permission and platform-sensitive tests use an injected open boundary or are marked "where practical".
 
-### Equal and different content
+#### Equal and different content
 
 - Two files with identical content (same size, same digest) form one duplicate group with two paths.
 - Three files with identical content form one duplicate group with three paths.
@@ -268,69 +285,69 @@ Each case is described in natural language. Tests use a per-test temporary direc
 - Two files with different content but the same size are not emitted as a duplicate group; they are not errors, just two separate digest buckets that do not reach the two-or-more threshold.
 - One file with unique content is not emitted (singleton).
 
-### Same size but different hash (not an error)
+#### Same size but different hash (not an error)
 
 - Two files of the same size with different content have different SHA-256 digests. The test hashes both files independently and asserts the digests differ. The two files are not emitted as a duplicate group. This case is not an unstable-file error.
 
-### Empty files (standard digest asserted directly)
+#### Empty files (standard digest asserted directly)
 
 - Two empty files form one duplicate group with size `0` and the digest `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. The test asserts the digest directly against this standard value.
 - Three empty files inside a nested directory structure form one duplicate group with three paths. The output lists the paths sorted lexicographically.
 
-### Singleton omission
+#### Singleton omission
 
 - A test creates a temporary root with several files whose sizes are all unique. The output is empty (zero output bytes). No error is returned.
 - A test creates a temporary root with one file and many empty directories. The output is empty. No error is returned.
 
-### Nested directories
+#### Nested directories
 
 - A test creates a temporary root with duplicate files at multiple nesting levels (for example, two copies in `a/`, two copies in `a/b/c/`). The output reports the duplicates with root-relative paths.
 - A test creates a temporary root with one duplicate group whose files are spread across nested directories. The output sorts the paths lexicographically and the first path is the lexicographically smallest.
 
-### Deterministic ordering
+#### Deterministic ordering
 
 - A test creates a temporary root with several duplicate groups of different sizes. The output lists groups in ascending size order. The test pins the exact order.
 - A test creates a temporary root with two groups of the same size (different digests). The output lists the groups by ascending digest, then by ascending first path. The test pins the exact order.
 - A test runs the duplicate finder twice against the same root. The two outputs are byte-identical.
 
-### Symlink skip
+#### Symlink skip
 
 - A test creates a temporary root with a symlink to a regular file inside the root. The symlink is not opened, not hashed, not listed. The output omits the symlink.
 - A test creates a temporary root with a symlink to a directory containing regular files. The symlink is not followed. The output does not contain any file from the symlink's target.
 - A test creates a temporary root with a symlink loop. The walker completes without hanging. The output omits the symlinks.
 
-### Injected open error (where practical)
+#### Injected open error (where practical)
 
 - Where practical, a test injects an open boundary that returns a planned error on a chosen file's hash step. The duplicate finder surfaces the corresponding error with the file's path. The report is not written.
 - Where injection is not practical, the test marks the case "where practical" and pins the error-surfacing contract through code review of the hasher, rather than through a runtime test.
 
-### Large streamed files
+#### Large streamed files
 
 - A test creates a temporary root with a regular file large enough that a single-byte-slice read would be unwise (for example, several megabytes). The duplicate finder hashes the file, counts the bytes read, and reports its digest. The test asserts that the digest matches an independently-computed SHA-256 over the same content and that the bytes-read counter equals the recorded size. The test does not assert that the implementation avoids loading the whole file; the streaming design is established by the implementation's chunked read and the byte counter.
 
-### Best-effort unstable-file detection (where practical)
+#### Best-effort unstable-file detection (where practical)
 
 - Where practical, a test injects a controlled change between walk and hash: the recorded size is X but the file's content is altered before the hash step, so the byte counter or the post-read size differs. The duplicate finder surfaces an unstable-file error naming the path and the compared values. The report is not written.
 - Where practical, a test injects a controlled change to the post-read modification time. The duplicate finder surfaces an unstable-file error naming the path and the two modification times. The report is not written.
 - Where metadata-restoration cases cannot be set up cleanly, the test marks the case "where practical" and pins the behavior the project does guarantee.
 
-### All-or-nothing output
+#### All-or-nothing output
 
 - A successful scan writes the full report to the injected `io.Writer`. No error is returned.
 - A scan that ends with an unstable-file error, a read error, an open error, or a traversal error returns the error and writes no report.
 - A scan that produces no duplicate groups writes an empty report (zero output bytes) and returns no error.
 
-### Writer error
+#### Writer error
 
 - A test injects an `io.Writer` that returns an error on the first write. The duplicate finder returns a renderer error. The scan has already finished; only the report emission is affected.
 - A test injects an `io.Writer` that returns an error after a few successful writes. The duplicate finder returns a renderer error.
 
-### No file mutation
+#### No file mutation
 
 - A test creates a temporary root with a known set of files. The test records each file's modification time, mode, and contents. The duplicate finder runs against the root. After the run, every file's modification time, mode, and contents are unchanged.
 - A test creates a temporary root with files of varying permissions. The duplicate finder runs against the root. After the run, the file permissions are unchanged.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary against a temporary root with a known duplicate group and confirms the exit code is zero, the report is on standard output, and the paths match the expected sorted list.
 - An integration test runs the compiled binary against a missing root and confirms the exit code is non-zero and standard error names the missing path.
@@ -383,26 +400,45 @@ Each case is described in natural language. Tests use a per-test temporary direc
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test. Tests that depend on platform-sensitive behavior use an injected open boundary or are marked "where practical".
-- SHA-256 is computed only for size groups with at least two candidates. Files with unique sizes are never hashed.
-- The hashing pass streams the file's contents through `crypto/sha256` while counting the bytes read, without loading the whole file into memory.
-- Symlinks and non-regular files are skipped. Symlink recognition uses `Type()` (with `Info()` consulted only when `Type()` is inconclusive) and never follows links.
-- Empty files form one duplicate group whenever there are at least two of them. The group's digest is the standard SHA-256 of the empty input, asserted directly.
-- "Same size, different digest" is not an error. The two files are not emitted as a duplicate group; they belong to different digest buckets inside the size group.
-- The output's groups are sorted by ascending size, ascending digest, ascending first path. Paths inside each group are sorted lexicographically. Paths are root-relative.
-- Best-effort unstable-file detection compares recorded size with post-read size and bytes-read count, and recorded modification time with post-read modification time. A difference is reported as an unstable-file error naming the path and the compared values.
-- The duplicate finder never mutates the filesystem. The no-mutation test confirms it.
-- On any scan failure (traversal, open, read, unstable), the duplicate finder returns the error and writes no report. The report is written only after a successful scan.
-- A writer error stops report emission; the scan, which has already finished, is not restarted.
-- Every error carries its identifying context: a path or size-group for traversal, open, read, and unstable-file errors; a renderer and writer failure for writer errors. No error is silently hidden or rendered as success.
-- The package documentation states the size-then-digest grouping rule, the streaming hasher's chunk size, the byte counter, the sort order, the best-effort unstable-file detection rule and its limits, and the no-mutation rule.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test. Tests that depend on platform-sensitive behavior use an injected open boundary or are marked "where practical".
+- [ ] SHA-256 is computed only for size groups with at least two candidates. Files with unique sizes are never hashed.
+- [ ] The hashing pass streams the file's contents through `crypto/sha256` while counting the bytes read, without loading the whole file into memory.
+- [ ] Symlinks and non-regular files are skipped. Symlink recognition uses `Type()` (with `Info()` consulted only when `Type()` is inconclusive) and never follows links.
+- [ ] Empty files form one duplicate group whenever there are at least two of them. The group's digest is the standard SHA-256 of the empty input, asserted directly.
+- [ ] "Same size, different digest" is not an error. The two files are not emitted as a duplicate group; they belong to different digest buckets inside the size group.
+- [ ] The output's groups are sorted by ascending size, ascending digest, ascending first path. Paths inside each group are sorted lexicographically. Paths are root-relative.
+- [ ] Best-effort unstable-file detection compares recorded size with post-read size and bytes-read count, and recorded modification time with post-read modification time. A difference is reported as an unstable-file error naming the path and the compared values.
+- [ ] The duplicate finder never mutates the filesystem. The no-mutation test confirms it.
+- [ ] On any scan failure (traversal, open, read, unstable), the duplicate finder returns the error and writes no report. The report is written only after a successful scan.
+- [ ] A writer error stops report emission; the scan, which has already finished, is not restarted.
+- [ ] Every error carries its identifying context: a path or size-group for traversal, open, read, and unstable-file errors; a renderer and writer failure for writer errors. No error is silently hidden or rendered as success.
+- [ ] The package documentation states the size-then-digest grouping rule, the streaming hasher's chunk size, the byte counter, the sort order, the best-effort unstable-file detection rule and its limits, and the no-mutation rule.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Byte-for-byte verification.** After grouping by SHA-256, perform a byte-for-byte comparison of the files inside each group to confirm they are truly identical (since SHA-256 collisions are not zero). The verification streams one file at a time and stops with a clear error if a mismatch is detected. Do not replace SHA-256 with the byte comparison; the verification is an additional step after SHA-256 has already grouped the candidates.
-- **Minimum size filter flag.** Accept a `--min-size` flag that excludes files smaller than the given size from the scan. The flag is read once at startup and does not change mid-scan. Files below the threshold are skipped without hashing. Do not add `--max-size`, regex-based filters, or per-extension filters.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 024 — Directory Tree Printer](../../02-data-structures/024_directory_tree_printer/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`crypto/sha256`](https://pkg.go.dev/crypto/sha256).
+- **Standards and concept references:** [NIST Secure Hash Standard](https://csrc.nist.gov/pubs/fips/180-4/upd1/final).
+
+### Project-specific learning focus
+
+- **Learn now:** size-then-hash grouping, streaming large files, deterministic reports, symlink policy, TOCTOU limitations, and content-addressed identity.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

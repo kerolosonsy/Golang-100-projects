@@ -1,51 +1,137 @@
 # Project 085 — Packet Sniffer Basics
 
 ## 1. Project Name and Number
-Project 085, packet_sniffer_basics. The directory name is historical; the title and scope of this project are an offline Ethernet frame decoder. This README is a learning guide only. You will create every source and test file yourself in `06-networking/085_packet_sniffer_basics/`. This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
-> **Scope and safety.** This tool is an offline decoder. It must never open a network interface, a raw socket, a BPF device, or any system capture facility. It must never run with elevated privileges. It must never contact a live network. Its input is hex-encoded Ethernet frame fixtures owned by the learner and placed under `testdata/`. There is no packet capture step in this project.
+- Project 085, packet_sniffer_basics.
+- The directory name is historical; the title and scope of this project are an offline Ethernet frame decoder.
+- This README is a learning guide only.
+- You will create every source and test file yourself in `06-networking/085_packet_sniffer_basics/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- > **Scope and safety.** This tool is an offline decoder.
+- It must never open a network interface, a raw socket, a BPF device, or any system capture facility.
+- It must never run with elevated privileges.
+- It must never contact a live network.
+- Its input is hex-encoded Ethernet frame fixtures owned by the learner and placed under `testdata/`.
+- There is no packet capture step in this project.
 
 ## 2. Project Idea
+
 A bounded offline decoder that reads a UTF-8 text file containing hex-encoded Ethernet II frames, one frame per physical line, and emits a deterministic text report. The maximum decoded Ethernet frame size is 1,514 bytes, excluding FCS. The required fixtures contain Ethernet II without VLAN and without FCS. A non-empty input line is at most 3,030 ASCII bytes: it contains an optional two-byte `0x` prefix and, after removing that prefix when present, at most 3,028 hex digits. Any whitespace in a line is malformed. The scanner's maximum token size is exactly 4,096 bytes, providing headroom above the maximum line size. The maximum number of physical input lines is 10,000, including blank lines and malformed lines; line 10,001 is a hard `ResourceLimit` error. The decoder parses Ethernet II fields plus IPv4 fields and either TCP or UDP minimum headers, and the output follows the exact label contract documented in this guide.
 
 ## 3. Why This Project Now?
-This follows Project 084 (tls_ssl_server) as the immediate predecessor. Project 071 (tcp_echo_server) is the other formal prerequisite for framing discipline. This project introduces the discipline of treating the input as learner-owned bytes rather than as live traffic, the discipline of bounds-first parsing with no index without a length check, and the discipline of fuzz testing a pure decoder whose only inputs are byte slices.
+
+- This follows Project 084 (tls_ssl_server) as the immediate predecessor.
+- Project 071 (tcp_echo_server) is the other formal prerequisite for framing discipline.
+- This project introduces the discipline of treating the input as learner-owned bytes rather than as live traffic, the discipline of bounds-first parsing with no index without a length check, and the discipline of fuzz testing a pure decoder whose only inputs are byte slices.
 
 ## 4. Prerequisites
-Project 084 is the immediate predecessor and required prerequisite; Project 071 is also a formal prerequisite. Input is hex-encoded frames in `testdata/` fixtures owned by the learner. The required tests use fixed synthetic bytes whose contents are documented in the test file. No test uses live traffic, raw sockets, BPF, or elevated privileges. The fuzz test uses a pure byte-slice entry point that does not access the filesystem or the network.
+
+- Project 084 is the immediate predecessor and required prerequisite; Project 071 is also a formal prerequisite.
+- Input is hex-encoded frames in `testdata/` fixtures owned by the learner.
+- The required tests use fixed synthetic bytes whose contents are documented in the test file.
+- No test uses live traffic, raw sockets, BPF, or elevated privileges.
+- The fuzz test uses a pure byte-slice entry point that does not access the filesystem or the network.
 
 ## 5. What You Must Know Before Starting
-Know the `encoding/hex` package, network byte order, the IEEE 802.3 Ethernet II frame layout, the IPv4 header layout and field widths, the TCP and UDP header minimum layouts, the difference between a truncated header and an invalid field, the `bufio.Scanner` line model and the meaning of its maximum token size, the difference between a parser error and a reader error, the difference between a parser error and a writer error, fuzz testing in Go with `testing.F`, the race detector, and the principle that a decoder must never index into a byte slice without a length check.
+
+- Know the `encoding/hex` package, network byte order, the IEEE 802.3 Ethernet II frame layout, the IPv4 header layout and field widths, the TCP and UDP header minimum layouts, the difference between a truncated header and an invalid field, the `bufio.Scanner` line model and the meaning of its maximum token size, the difference between a parser error and a reader error, the difference between a parser error and a writer error, fuzz testing in Go with `testing.F`, the race detector, and the principle that a decoder must never index into a byte slice without a length check.
 
 ## 6. Explanation of New Concepts
-The input is a UTF-8 text file whose physical lines are read in order. The frame number is the one-based physical line number; an empty line emits no output but still consumes a frame number. A non-empty input line is at most 3,030 ASCII bytes. Lines may begin with an optional two-byte `0x` prefix; after removing that prefix when present, the line contains at most 3,028 hex digits. Any whitespace anywhere in a line is malformed. The scanner's maximum token size is exactly 4,096 bytes, providing explicit headroom above the maximum line size so that the scanner never truncates a valid line. The maximum number of physical input lines is 10,000; line 10,001 is a hard `ResourceLimit` error.
 
-The maximum decoded Ethernet frame size is 1,514 bytes, excluding FCS. The required fixtures contain Ethernet II without VLAN and without FCS. A decoded frame is the byte slice returned by `encoding/hex` from the line; the decoder does not append or remove bytes beyond the hex decode. The decoder never indexes into a byte slice without first verifying the length against the field width.
+### Concepts
 
-The decoder is built in two stages. The first stage is parsing. The parser reads lines, accumulates a bounded report value, and returns the report only after a clean EOF. A reader error, a scanner error, or a `ResourceLimit` error means no report is returned; the report is not partial and the caller cannot observe a partial result. The second stage is writing. The writer is a separate stage from the parser and consumes the returned report. A writer error is a hard error; the external writer may have been partially affected, but the decode is never reported as successful.
+- The input is a UTF-8 text file whose physical lines are read in order.
+- The frame number is the one-based physical line number; an empty line emits no output but still consumes a frame number.
+- A non-empty input line is at most 3,030 ASCII bytes.
+- Lines may begin with an optional two-byte `0x` prefix; after removing that prefix when present, the line contains at most 3,028 hex digits.
+- Any whitespace anywhere in a line is malformed.
+- The scanner's maximum token size is exactly 4,096 bytes, providing explicit headroom above the maximum line size so that the scanner never truncates a valid line.
+- The maximum number of physical input lines is 10,000; line 10,001 is a hard `ResourceLimit` error.
 
-Ethernet II is parsed first. The destination and source MAC addresses are each six bytes. The source and destination MAC addresses are emitted in lowercase colon-separated form. The EtherType is the next two bytes in network byte order. A frame whose length is less than fourteen bytes is a `TruncatedHeader` diagnostic. An EtherType of `0x8100` or `0x88a8` is a `VlanUnsupported` diagnostic. An EtherType of `0x86dd` is an `IPv6Unsupported` diagnostic. Any other EtherType that is not `0x0800` is an `EtherTypeUnsupported` diagnostic that records the EtherType value.
+- The maximum decoded Ethernet frame size is 1,514 bytes, excluding FCS.
+- The required fixtures contain Ethernet II without VLAN and without FCS.
+- A decoded frame is the byte slice returned by `encoding/hex` from the line; the decoder does not append or remove bytes beyond the hex decode.
+- The decoder never indexes into a byte slice without first verifying the length against the field width.
 
-When the EtherType is `0x0800`, the IPv4 header is parsed next. The IPv4 total length is measured from the start of the IPv4 header and must be greater than or equal to 20 and less than or equal to the number of bytes remaining in the frame after the fourteen-byte Ethernet header. Ethernet padding beyond the IPv4 total length is ignored. The version field occupies the high four bits of the first byte; a version other than `4` is a `VersionInvalid` diagnostic. The IHL field occupies the low four bits of the first byte; an IHL less than `5` is a `IhlInvalid` diagnostic; an IHL greater than `5` is an `OptionsUnsupported` diagnostic. The more-fragments flag and the fragment offset are checked; if the more-fragments flag is set or the fragment offset is non-zero, the frame is an `IPv4FragmentsUnsupported` diagnostic. The decoder does not validate IPv4 checksums, DSCP, or TTL beyond reading the required fields. The decoder never parses beyond the IPv4 total length.
+- The decoder is built in two stages.
+- The first stage is parsing.
+- The parser reads lines, accumulates a bounded report value, and returns the report only after a clean EOF.
+- A reader error, a scanner error, or a `ResourceLimit` error means no report is returned; the report is not partial and the caller cannot observe a partial result.
+- The second stage is writing.
+- The writer is a separate stage from the parser and consumes the returned report.
+- A writer error is a hard error; the external writer may have been partially affected, but the decode is never reported as successful.
 
-The IPv4 protocol field selects the next header. A protocol of `6` is `TCP`; a protocol of `17` is `UDP`; any other protocol is a `ProtocolUnsupported` diagnostic that records the protocol number. The source and destination IPv4 addresses are each four bytes, recorded in dotted-decimal textual form.
+- Ethernet II is parsed first.
+- The destination and source MAC addresses are each six bytes.
+- The source and destination MAC addresses are emitted in lowercase colon-separated form.
+- The EtherType is the next two bytes in network byte order.
+- A frame whose length is less than fourteen bytes is a `TruncatedHeader` diagnostic.
+- An EtherType of `0x8100` or `0x88a8` is a `VlanUnsupported` diagnostic.
+- An EtherType of `0x86dd` is an `IPv6Unsupported` diagnostic.
+- Any other EtherType that is not `0x0800` is an `EtherTypeUnsupported` diagnostic that records the EtherType value.
 
-For TCP, the IP payload length must be greater than or equal to 20. The data offset occupies the high four bits of the TCP byte at IPv4 payload offset 12; a data offset less than `5` is a `DataOffsetInvalid` diagnostic; a data offset greater than `5` is an `OptionsUnsupported` diagnostic; the data-offset header length must fit the IP payload. The TCP header length in bytes is the data offset multiplied by four. The TCP payload length is the IP payload length minus the TCP header length. The source and destination ports are each two bytes in network byte order, in the range 0..65535 inclusive; port zero is representable and is not a minimum. The output includes the source and destination ports and the payload length.
+- When the EtherType is `0x0800`, the IPv4 header is parsed next.
+- The IPv4 total length is measured from the start of the IPv4 header and must be greater than or equal to 20 and less than or equal to the number of bytes remaining in the frame after the fourteen-byte Ethernet header.
+- Ethernet padding beyond the IPv4 total length is ignored.
+- The version field occupies the high four bits of the first byte; a version other than `4` is a `VersionInvalid` diagnostic.
+- The IHL field occupies the low four bits of the first byte; an IHL less than `5` is a `IhlInvalid` diagnostic; an IHL greater than `5` is an `OptionsUnsupported` diagnostic.
+- The more-fragments flag and the fragment offset are checked; if the more-fragments flag is set or the fragment offset is non-zero, the frame is an `IPv4FragmentsUnsupported` diagnostic.
+- The decoder does not validate IPv4 checksums, DSCP, or TTL beyond reading the required fields.
+- The decoder never parses beyond the IPv4 total length.
 
-For UDP, the IP payload length must be greater than or equal to 8. The UDP length is two bytes in network byte order and must be greater than or equal to 8 and exactly equal to the IPv4 payload length for this lab. The UDP payload length is the UDP length minus 8. The source and destination ports are each two bytes in network byte order, in the range 0..65535 inclusive; port zero is representable and is not a minimum. The output includes the source and destination ports, the payload length, and the UDP length.
+- The IPv4 protocol field selects the next header.
+- A protocol of `6` is `TCP`; a protocol of `17` is `UDP`; any other protocol is a `ProtocolUnsupported` diagnostic that records the protocol number.
+- The source and destination IPv4 addresses are each four bytes, recorded in dotted-decimal textual form.
 
-The valid output lines are exactly four lines per frame in the order below. The label formats are exact. The first line is `Frame: <n>` where `<n>` is the one-based physical line number. The second line is `Eth: src=<lowercase colon MAC> dst=<lowercase colon MAC> type=0x0800`. The third line is `IPv4: src=<dotted> dst=<dotted> proto=<6|17> total_len=<n>`. The fourth line is `TCP: src_port=<n> dst_port=<n> payload_len=<n>` for TCP frames, or `UDP: src_port=<n> dst_port=<n> payload_len=<n> udp_len=<n>` for UDP frames. The label is `TCP:` or `UDP:` and never `L4`. A diagnostic is a single line of the form `Frame: <n> Error: <typed-diagnostic>`; only one diagnostic line is emitted per frame.
+- For TCP, the IP payload length must be greater than or equal to 20.
+- The data offset occupies the high four bits of the TCP byte at IPv4 payload offset 12; a data offset less than `5` is a `DataOffsetInvalid` diagnostic; a data offset greater than `5` is an `OptionsUnsupported` diagnostic; the data-offset header length must fit the IP payload.
+- The TCP header length in bytes is the data offset multiplied by four.
+- The TCP payload length is the IP payload length minus the TCP header length.
+- The source and destination ports are each two bytes in network byte order, in the range 0..65535 inclusive; port zero is representable and is not a minimum.
+- The output includes the source and destination ports and the payload length.
 
-The fuzz test exercises the pure frame decoder. The pure decoder accepts a single byte slice representing one frame and returns the typed result with no other inputs. The pure decoder is bounded; the maximum result size is bounded. The fuzz test uses seed fixtures; the seed fixtures include valid frames, truncated frames, and oversize frames. The invariant is no panic, no out-of-bounds access, and either a bounded decoded result or a typed diagnostic for every input. The fuzz test never accesses the filesystem or the network.
+- For UDP, the IP payload length must be greater than or equal to 8.
+- The UDP length is two bytes in network byte order and must be greater than or equal to 8 and exactly equal to the IPv4 payload length for this lab.
+- The UDP payload length is the UDP length minus 8.
+- The source and destination ports are each two bytes in network byte order, in the range 0..65535 inclusive; port zero is representable and is not a minimum.
+- The output includes the source and destination ports, the payload length, and the UDP length.
 
-The optional PCAP extension is read-only offline binary fixture parsing. The extension reads an offline binary fixture file in `testdata/` and parses it as a binary PCAP stream; the extension never opens a network interface, raw socket, or BPF device, and the extension never captures traffic. The extension is not "line by line"; the binary fixture is consumed as a binary stream.
+- The valid output lines are exactly four lines per frame in the order below.
+- The label formats are exact.
+- The first line is `Frame: <n>` where `<n>` is the one-based physical line number.
+- The second line is `Eth: src=<lowercase colon MAC> dst=<lowercase colon MAC> type=0x0800`.
+- The third line is `IPv4: src=<dotted> dst=<dotted> proto=<6|17> total_len=<n>`.
+- The fourth line is `TCP: src_port=<n> dst_port=<n> payload_len=<n>` for TCP frames, or `UDP: src_port=<n> dst_port=<n> payload_len=<n> udp_len=<n>` for UDP frames.
+- The label is `TCP:` or `UDP:` and never `L4`.
+- A diagnostic is a single line of the form `Frame: <n> Error: <typed-diagnostic>`; only one diagnostic line is emitted per frame.
 
-Text-only protocol examples are permitted. As a prose shape: the first input line decodes to a valid Ethernet II plus IPv4 plus TCP frame whose report is exactly four lines in the order `Frame`, `Eth`, `IPv4`, `TCP` with the documented exact labels; the second input line is malformed hex and produces a single `Frame: 2 Error: <typed-diagnostic>` line; the third input line is a valid UDP frame whose report is exactly four lines with the documented `UDP:` label and UDP length; a frame whose IHL is greater than `5` produces a single `OptionsUnsupported` diagnostic line; a frame with the more-fragments flag set produces a single `IPv4FragmentsUnsupported` diagnostic line; a frame whose EtherType is not `0x0800` produces a single `EtherTypeUnsupported` diagnostic line; a line of 10,001 input lines triggers a hard `ResourceLimit` error and no report is returned.
+- The fuzz test exercises the pure frame decoder.
+- The pure decoder accepts a single byte slice representing one frame and returns the typed result with no other inputs.
+- The pure decoder is bounded; the maximum result size is bounded.
+- The fuzz test uses seed fixtures; the seed fixtures include valid frames, truncated frames, and oversize frames.
+- The invariant is no panic, no out-of-bounds access, and either a bounded decoded result or a typed diagnostic for every input.
+- The fuzz test never accesses the filesystem or the network.
+
+- The optional PCAP extension is read-only offline binary fixture parsing.
+- The extension reads an offline binary fixture file in `testdata/` and parses it as a binary PCAP stream; the extension never opens a network interface, raw socket, or BPF device, and the extension never captures traffic.
+- The extension is not "line by line"; the binary fixture is consumed as a binary stream.
+
+- Text-only protocol examples are permitted.
+- As a prose shape: the first input line decodes to a valid Ethernet II plus IPv4 plus TCP frame whose report is exactly four lines in the order `Frame`, `Eth`, `IPv4`, `TCP` with the documented exact labels;
+- The second input line is malformed hex and produces a single `Frame: 2 Error: <typed-diagnostic>` line;
+- The third input line is a valid UDP frame whose report is exactly four lines with the documented `UDP:` label and UDP length;
+- A frame whose IHL is greater than `5` produces a single `OptionsUnsupported` diagnostic line;
+- A frame with the more-fragments flag set produces a single `IPv4FragmentsUnsupported` diagnostic line;
+- A frame whose EtherType is not `0x0800` produces a single `EtherTypeUnsupported` diagnostic line;
+- A line of 10,001 input lines triggers a hard `ResourceLimit` error and no report is returned.
 
 ## 7. Learning Objective
-Implement a bounded offline Ethernet II plus IPv4 plus TCP or UDP decoder that reads hex-encoded frames from a text file under `testdata/`, parses fields in network byte order with explicit length checks at every step, emits the exact four-line label contract for successful frames and a single diagnostic line for failures, honors the 1,514-byte decoded frame limit, the 3,030-byte input line limit, the 4,096-byte scanner maximum token size, the 10,000-line physical input limit, the no-report-on-reader-or-scanner-or-`ResourceLimit` discipline, and the writer-error hard-failure discipline, never indexes without a length check, never parses beyond the IPv4 total length, never opens a network interface or raw socket, and is fuzz-tested with seed fixtures whose invariant is no panic, no out-of-bounds access, and either a bounded decoded result or a typed diagnostic.
+
+- Implement a bounded offline Ethernet II plus IPv4 plus TCP or UDP decoder that reads hex-encoded frames from a text file under `testdata/`, parses fields in network byte order with explicit length checks at every step, emits the exact four-line label contract for successful frames and a single diagnostic line for failures, honors the 1,514-byte decoded frame limit, the 3,030-byte input line limit, the 4,096-byte scanner maximum token size, the 10,000-line physical input limit, the no-report-on-reader-or-scanner-or-`ResourceLimit` discipline, and the writer-error hard-failure discipline, never indexes without a length check, never parses beyond the IPv4 total length, never opens a network interface or raw socket, and is fuzz-tested with seed fixtures whose invariant is no panic, no out-of-bounds access, and either a bounded decoded result or a typed diagnostic.
 
 ## 8. Functional Requirements
+
 1. The input is a UTF-8 text file under `testdata/` whose physical lines are read in order. The frame number is the one-based physical line number; an empty line emits no output but still consumes a frame number.
 2. The maximum decoded Ethernet frame size is 1,514 bytes, excluding FCS. The required fixtures contain Ethernet II without VLAN and without FCS.
 3. A non-empty input line is at most 3,030 ASCII bytes: it contains an optional two-byte `0x` prefix and, after removing that prefix when present, at most 3,028 hex digits. Any whitespace in a line is malformed.
@@ -66,18 +152,79 @@ Implement a bounded offline Ethernet II plus IPv4 plus TCP or UDP decoder that r
 18. The optional PCAP extension is read-only offline binary fixture parsing in `testdata/`; the extension never opens a network interface, raw socket, or BPF device, and the extension never captures traffic; the binary fixture is consumed as a binary stream, never "line by line".
 
 ## 9. Inputs and Outputs
-Input is a UTF-8 text file under `testdata/` whose physical lines are hex-encoded Ethernet frames owned by the learner. The frame number is the one-based physical line number. The parser accumulates a bounded report value and returns it only after a clean EOF. The writer consumes the returned report. Reader errors, scanner errors, and `ResourceLimit` errors return no report. Writer errors are hard errors and the decode is never reported as successful. The valid output is exactly four lines per frame in the order `Frame`, `Eth`, `IPv4`, `TCP:` or `UDP:` with the exact labels above. A diagnostic is a single `Frame: <n> Error: <typed-diagnostic>` line.
+
+### Interface Contract
+
+- Input is a UTF-8 text file under `testdata/` whose physical lines are hex-encoded Ethernet frames owned by the learner.
+- The frame number is the one-based physical line number.
+- The parser accumulates a bounded report value and returns it only after a clean EOF.
+- The writer consumes the returned report.
+- Reader errors, scanner errors, and `ResourceLimit` errors return no report.
+- Writer errors are hard errors and the decode is never reported as successful.
+- The valid output is exactly four lines per frame in the order `Frame`, `Eth`, `IPv4`, `TCP:` or `UDP:` with the exact labels above.
+- A diagnostic is a single `Frame: <n> Error: <typed-diagnostic>` line.
 
 ## 10. Rules and Edge Cases
-An empty input file produces an empty report and no error. An empty input line emits no output but consumes a frame number. A line containing whitespace is malformed. A line whose hex digits are odd is malformed. A non-empty line longer than 3,030 ASCII bytes is malformed. A decoded frame longer than 1,514 bytes is an `Oversize` diagnostic. A frame shorter than fourteen bytes is a `TruncatedHeader` diagnostic. An EtherType of `0x8100` or `0x88a8` is a `VlanUnsupported` diagnostic. An EtherType of `0x86dd` is an `IPv6Unsupported` diagnostic. Any other non-`0x0800` EtherType is `EtherTypeUnsupported`. An IPv4 version other than `4` is `VersionInvalid`. An IHL less than `5` is `IhlInvalid`. An IHL greater than `5` is `OptionsUnsupported`. An IPv4 total length less than 20 or greater than the bytes remaining after the fourteen-byte Ethernet header is `TotalLengthInvalid`. The more-fragments flag set or a non-zero fragment offset is `IPv4FragmentsUnsupported`. An unsupported IPv4 protocol is `ProtocolUnsupported`. A TCP data offset less than `5` is `DataOffsetInvalid`. A TCP data offset greater than `5` is `OptionsUnsupported`. A TCP payload that does not fit the IP payload is `TruncatedHeader`. A UDP length less than `8` is `UdpLengthInvalid`. A UDP length not equal to the IPv4 payload length is `UdpLengthInvalid`. A reader error, a scanner error, or a `ResourceLimit` error returns no report. A writer error is a hard error. The decoder never panics. The fuzz invariant is no panic and no out-of-bounds access; the pure decoder either returns a bounded decoded result or returns a typed diagnostic.
+
+- An empty input file produces an empty report and no error.
+- An empty input line emits no output but consumes a frame number.
+- A line containing whitespace is malformed.
+- A line whose hex digits are odd is malformed.
+- A non-empty line longer than 3,030 ASCII bytes is malformed.
+- A decoded frame longer than 1,514 bytes is an `Oversize` diagnostic.
+- A frame shorter than fourteen bytes is a `TruncatedHeader` diagnostic.
+- An EtherType of `0x8100` or `0x88a8` is a `VlanUnsupported` diagnostic.
+- An EtherType of `0x86dd` is an `IPv6Unsupported` diagnostic.
+- Any other non-`0x0800` EtherType is `EtherTypeUnsupported`.
+- An IPv4 version other than `4` is `VersionInvalid`.
+- An IHL less than `5` is `IhlInvalid`.
+- An IHL greater than `5` is `OptionsUnsupported`.
+- An IPv4 total length less than 20 or greater than the bytes remaining after the fourteen-byte Ethernet header is `TotalLengthInvalid`.
+- The more-fragments flag set or a non-zero fragment offset is `IPv4FragmentsUnsupported`.
+- An unsupported IPv4 protocol is `ProtocolUnsupported`.
+- A TCP data offset less than `5` is `DataOffsetInvalid`.
+- A TCP data offset greater than `5` is `OptionsUnsupported`.
+- A TCP payload that does not fit the IP payload is `TruncatedHeader`.
+- A UDP length less than `8` is `UdpLengthInvalid`.
+- A UDP length not equal to the IPv4 payload length is `UdpLengthInvalid`.
+- A reader error, a scanner error, or a `ResourceLimit` error returns no report.
+- A writer error is a hard error.
+- The decoder never panics.
+- The fuzz invariant is no panic and no out-of-bounds access; the pure decoder either returns a bounded decoded result or returns a typed diagnostic.
 
 ## 11. Project Constraints
-Offline only. No network interface. No raw socket. No BPF. No system capture. No elevated privileges. No live traffic. The fuzz entry point accepts only a byte slice and returns a result and a typed diagnostic; it does not access the filesystem or the network. Test fixtures live under `testdata/`. The scanner token size is exactly 4,096 bytes. The maximum number of physical input lines is 10,000. The maximum input line length is 3,030 ASCII bytes. The maximum decoded frame size is 1,514 bytes. The pure decoder is bounded; the maximum result size is bounded. The decoder does not perform name resolution, DNS lookups, or service identification.
+
+- Offline only.
+- No network interface.
+- No raw socket.
+- No BPF.
+- No system capture.
+- No elevated privileges.
+- No live traffic.
+- The fuzz entry point accepts only a byte slice and returns a result and a typed diagnostic; it does not access the filesystem or the network.
+- Test fixtures live under `testdata/`.
+- The scanner token size is exactly 4,096 bytes.
+- The maximum number of physical input lines is 10,000.
+- The maximum input line length is 3,030 ASCII bytes.
+- The maximum decoded frame size is 1,514 bytes.
+- The pure decoder is bounded; the maximum result size is bounded.
+- The decoder does not perform name resolution, DNS lookups, or service identification.
 
 ## 12. Design Questions Before Coding
-Why is the input owned by the learner and why is the decoder forbidden from opening a network interface, raw socket, or BPF device? Why is the maximum decoded frame size exactly 1,514 bytes excluding FCS and why is the maximum input line length exactly 3,030 ASCII bytes? Why is the scanner maximum token size exactly 4,096 bytes and why is the maximum number of physical input lines exactly 10,000? Why is the parser stage separate from the writer stage, why does the parser return the report only after a clean EOF, and why is a writer error never reported as a successful decode? Why is the frame number the one-based physical line number and why does an empty line emit no output but still consume a frame number? Why is the valid output exactly four lines with the exact labels and why is the label `TCP:` or `UDP:` and never `L4`? Why is the IPv4 total length measured from the start of the IPv4 header and why is Ethernet padding beyond the total length ignored? Why is the IHL required to be exactly `5` and why is an IHL greater than `5` `OptionsUnsupported` rather than parsed? Why is the UDP length required to be exactly equal to the IPv4 payload length for this lab? Why is the fuzz entry point a pure byte-slice function and why does it exclude the filesystem and network?
+
+- Why is the input owned by the learner and why is the decoder forbidden from opening a network interface, raw socket, or BPF device?
+- Why is the maximum decoded frame size exactly 1,514 bytes excluding FCS and why is the maximum input line length exactly 3,030 ASCII bytes?
+- Why is the scanner maximum token size exactly 4,096 bytes and why is the maximum number of physical input lines exactly 10,000?
+- Why is the parser stage separate from the writer stage, why does the parser return the report only after a clean EOF, and why is a writer error never reported as a successful decode?
+- Why is the frame number the one-based physical line number and why does an empty line emit no output but still consume a frame number?
+- Why is the valid output exactly four lines with the exact labels and why is the label `TCP:` or `UDP:` and never `L4`?
+- Why is the IPv4 total length measured from the start of the IPv4 header and why is Ethernet padding beyond the total length ignored?
+- Why is the IHL required to be exactly `5` and why is an IHL greater than `5` `OptionsUnsupported` rather than parsed?
+- Why is the UDP length required to be exactly equal to the IPv4 payload length for this lab?
+- Why is the fuzz entry point a pure byte-slice function and why does it exclude the filesystem and network?
 
 ## 13. Implementation Milestones
+
 1. Define the line reader that accepts UTF-8 text, accepts an optional two-byte `0x` prefix per line, decodes hex digits in upper or lower case, rejects any whitespace in a line, rejects odd-digit lines with a typed diagnostic, caps the decoded byte slice at 1,514 bytes, and caps the input line length at 3,030 ASCII bytes.
 2. Define the scanner configuration with a maximum token size of exactly 4,096 bytes and the physical-line counting that triggers a `ResourceLimit` error at line 10,001.
 3. Define the parser that accumulates a bounded report value and returns it only after a clean EOF; a reader error, a scanner error, or a `ResourceLimit` error returns no report.
@@ -92,6 +239,9 @@ Why is the input owned by the learner and why is the decoder forbidden from open
 12. Define the full matrix of valid TCP, valid UDP, valid 0..65535 ports, payload ignored within length, truncated at each layer, bad IPv4 lengths, bad IPv4 version, unsupported EtherType, unsupported protocol, IPv4 fragment, malformed hex, multiple frames in input order, empty input, over-limit input, reader or scanner errors, `ResourceLimit` at line 10,001, and writer errors.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - A valid Ethernet II plus IPv4 plus TCP frame is decoded into the documented fields with the documented exact labels in the documented order.
 - A valid Ethernet II plus IPv4 plus UDP frame is decoded into the documented fields with the documented exact labels in the documented order.
 - Port zero is decoded as `0`; no minimum-of-one rule is applied.
@@ -131,15 +281,51 @@ Why is the input owned by the learner and why is the decoder forbidden from open
 - No test contacts a live network, opens a raw socket, opens a BPF device, or runs with elevated privileges.
 
 ## 15. Common Mistakes to Watch For
-Indexing into a byte slice without first verifying the length; reading multi-byte integers in host byte order; supporting IPv4 fragments, IPv4 options, VLAN tags, or IPv6 without a typed diagnostic; treating a malformed line as a hard error rather than a diagnostic that continues; treating a reader or scanner error as a recoverable warning; emitting payload bytes or interpreting their contents; using a scanner maximum token size below 4,096 bytes; using a maximum input line length below 3,030 ASCII bytes; using a maximum physical input line count above 10,000; returning a partial report on a reader or scanner error; reporting a successful decode on a writer error; opening a network interface or raw socket in tests; using elevated privileges in tests; using a fuzz entry point that reads from a file or contacts the network; panicking on malformed input; reporting more than one diagnostic line per frame; emitting the label `L4:` instead of `TCP:` or `UDP:`; emitting malformed hex payload bytes; treating port zero as a minimum-of-one error; parsing beyond the IPv4 total length; emitting the writer error as a successful decode.
+
+- Indexing into a byte slice without first verifying the length;
+- Reading multi-byte integers in host byte order;
+- Supporting IPv4 fragments, IPv4 options, VLAN tags, or IPv6 without a typed diagnostic;
+- Treating a malformed line as a hard error rather than a diagnostic that continues;
+- Treating a reader or scanner error as a recoverable warning;
+- Emitting payload bytes or interpreting their contents;
+- Using a scanner maximum token size below 4,096 bytes;
+- Using a maximum input line length below 3,030 ASCII bytes;
+- Using a maximum physical input line count above 10,000;
+- Returning a partial report on a reader or scanner error;
+- Reporting a successful decode on a writer error;
+- Opening a network interface or raw socket in tests;
+- Using elevated privileges in tests;
+- Using a fuzz entry point that reads from a file or contacts the network;
+- Panicking on malformed input;
+- Reporting more than one diagnostic line per frame;
+- Emitting the label `L4:` instead of `TCP:` or `UDP:`;
+- Emitting malformed hex payload bytes;
+- Treating port zero as a minimum-of-one error;
+- Parsing beyond the IPv4 total length;
+- Emitting the writer error as a successful decode.
 
 ## 16. Topics and References for Study
-Study the `encoding/hex` package, network byte order, the IEEE 802.3 Ethernet II frame layout, the IPv4 header layout and field widths, the TCP and UDP header minimum layouts, the difference between a truncated header and an invalid field, the `bufio.Scanner` line model and the meaning of its maximum token size, the difference between a parser error and a reader error, the difference between a parser error and a writer error, fuzz testing in Go with `testing.F`, the race detector, and the principle that a decoder must never index into a byte slice without a length check. Review the Go `encoding/hex`, `bufio`, `errors`, `io`, `testing`, and `bytes` documentation. Read the prior README for Project 084 for the immediate predecessor discipline and Project 071 for the required framing foundation. Note that the optional PCAP extension is read-only offline binary fixture parsing and never capture.
+
+- Study the `encoding/hex` package, network byte order, the IEEE 802.3 Ethernet II frame layout, the IPv4 header layout and field widths, the TCP and UDP header minimum layouts, the difference between a truncated header and an invalid field, the `bufio.Scanner` line model and the meaning of its maximum token size, the difference between a parser error and a reader error, the difference between a parser error and a writer error, fuzz testing in Go with `testing.F`, the race detector, and the principle that a decoder must never index into a byte slice without a length check.
+- Review the Go `encoding/hex`, `bufio`, `errors`, `io`, `testing`, and `bytes` documentation.
+- Read the prior README for Project 084 for the immediate predecessor discipline and Project 071 for the required framing foundation.
+- Note that the optional PCAP extension is read-only offline binary fixture parsing and never capture.
 
 ## 17. Self-Assessment Questions
-Why is the input owned by the learner and why is the decoder forbidden from opening a network interface, raw socket, or BPF device? Why is the maximum decoded frame size exactly 1,514 bytes excluding FCS and why is the maximum input line length exactly 3,030 ASCII bytes? Why is the scanner maximum token size exactly 4,096 bytes and why is the maximum number of physical input lines exactly 10,000? Why is the parser stage separate from the writer stage, why does the parser return the report only after a clean EOF, and why is a writer error never reported as a successful decode? Why is the frame number the one-based physical line number and why does an empty line emit no output but still consume a frame number? Why is the valid output exactly four lines with the exact labels and why is the label `TCP:` or `UDP:` and never `L4`? Why is the IPv4 total length measured from the start of the IPv4 header and why is Ethernet padding beyond the total length ignored? Why is the IHL required to be exactly `5` and why is an IHL greater than `5` `OptionsUnsupported` rather than parsed? Why is the UDP length required to be exactly equal to the IPv4 payload length for this lab? Why is the fuzz entry point a pure byte-slice function and why does it exclude the filesystem and network?
+
+1. Why is the input owned by the learner and why is the decoder forbidden from opening a network interface, raw socket, or BPF device?
+2. Why is the maximum decoded frame size exactly 1,514 bytes excluding FCS and why is the maximum input line length exactly 3,030 ASCII bytes?
+3. Why is the scanner maximum token size exactly 4,096 bytes and why is the maximum number of physical input lines exactly 10,000?
+4. Why is the parser stage separate from the writer stage, why does the parser return the report only after a clean EOF, and why is a writer error never reported as a successful decode?
+5. Why is the frame number the one-based physical line number and why does an empty line emit no output but still consume a frame number?
+6. Why is the valid output exactly four lines with the exact labels and why is the label `TCP:` or `UDP:` and never `L4`?
+7. Why is the IPv4 total length measured from the start of the IPv4 header and why is Ethernet padding beyond the total length ignored?
+8. Why is the IHL required to be exactly `5` and why is an IHL greater than `5` `OptionsUnsupported` rather than parsed?
+9. Why is the UDP length required to be exactly equal to the IPv4 payload length for this lab?
+10. Why is the fuzz entry point a pure byte-slice function and why does it exclude the filesystem and network?
 
 ## 18. Definition of Completion
+
 - [ ] The decoder reads hex-encoded frames from a UTF-8 text file under `testdata/` and emits deterministic output in input order.
 - [ ] The maximum decoded frame size is 1,514 bytes excluding FCS; the maximum input line length is 3,030 ASCII bytes; the scanner maximum token size is exactly 4,096 bytes; the maximum number of physical input lines is 10,000.
 - [ ] The parser accumulates a bounded report value and returns it only after a clean EOF; a reader error, a scanner error, or a `ResourceLimit` error returns no report.
@@ -159,4 +345,27 @@ Why is the input owned by the learner and why is the decoder forbidden from open
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
-Add a read-only offline PCAP file parser for `testdata/` binary fixtures, used only as an additional binary input source that the decoder consumes; the extension is read-only, never reads a network interface, and never captures traffic. Add a typed diagnostic that records the decoded frame length in bytes alongside the typed reason when the frame is rejected for being too short or too long, while preserving the single-line per-frame diagnostic shape.
+
+- Add a read-only offline PCAP file parser for `testdata/` binary fixtures, used only as an additional binary input source that the decoder consumes; the extension is read-only, never reads a network interface, and never captures traffic.
+- Add a typed diagnostic that records the decoded frame length in bytes alongside the typed reason when the frame is rejected for being too short or too long, while preserving the single-line per-frame diagnostic shape.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 084 — TLS/SSL Server](../../06-networking/084_tls_ssl_server/README.md#20-prerequisite-based-documentation-guide), [Project 071 — TCP Echo Server](../../06-networking/071_tcp_echo_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`encoding/hex`](https://pkg.go.dev/encoding/hex), [`encoding/binary`](https://pkg.go.dev/encoding/binary).
+- **Standards and concept references:** [RFC 791: IPv4](https://www.rfc-editor.org/rfc/rfc791.html).
+- **Testing references:** [Go fuzzing tutorial](https://go.dev/doc/tutorial/fuzz).
+
+### Project-specific learning focus
+
+- **Learn now:** network byte order, layered header lengths, truncation versus invalid values, bounds checks before slicing, typed diagnostics, scanner limits, fuzzing, and offline-only fixtures.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

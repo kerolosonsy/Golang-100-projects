@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project **011** — `011_interactive_menu`. The directory name and number must match exactly.
+- Project **011** — `011_interactive_menu`.
+- The directory name and number must match exactly.
 
 ## 2. Project Idea
 
@@ -12,9 +13,13 @@ The product is not a specific calculator, not a specific greeting, and not a spe
 
 ## 3. Why This Project Now?
 
-Up to project 010 the learner has written programs whose control flow is a single straight script: read, compute, print, exit. Project 011 introduces the first piece of reusable structure on top of that: keeping behavior *as data* and dispatching to it by key. Without this idea, later projects — every CLI with subcommands, every plug-in system, every router — become copy-pasted switches. With it, the menu becomes a single dispatch point and each action is an independent unit that can be reached by a single lookup.
+- Up to project 010 the learner has written programs whose control flow is a single straight script: read, compute, print, exit.
+- Project 011 introduces the first piece of reusable structure on top of that: keeping behavior *as data* and dispatching to it by key.
+- Without this idea, later projects — every CLI with subcommands, every plug-in system, every router — become copy-pasted switches.
+- With it, the menu becomes a single dispatch point and each action is an independent unit that can be reached by a single lookup.
 
-This project also separates *what the program does* from *where it reads and writes*. That boundary is the seed of every later testable CLI: the production program uses the real standard streams, and the test code substitutes byte buffers so it can assert exactly what was asked and what was answered.
+- This project also separates *what the program does* from *where it reads and writes*.
+- That boundary is the seed of every later testable CLI: the production program uses the real standard streams, and the test code substitutes byte buffers so it can assert exactly what was asked and what was answered.
 
 ## 4. Prerequisites
 
@@ -37,29 +42,50 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Functions as values
+### Concepts
 
-In Go, a function name without parentheses is a value. You can store it in a variable, pass it as an argument, return it from another function, or put it inside a struct or a map. This makes "behavior" a first-class thing you can move around like an integer. For a menu, this means an action — say, "print the current time" — is itself a value that the menu registry can hold next to its label.
+#### Functions as values
 
-### Maps as registries
+- In Go, a function name without parentheses is a value.
+- You can store it in a variable, pass it as an argument, return it from another function, or put it inside a struct or a map.
+- This makes "behavior" a first-class thing you can move around like an integer.
+- For a menu, this means an action — say, "print the current time" — is itself a value that the menu registry can hold next to its label.
 
-A `map` in Go associates keys with values. Looking up a key that is not present returns the zero value of the value type; for a function type that zero value is `nil`. Calling a `nil` function panics, so a missing key must be handled explicitly before any invocation. This is the natural place to express "unknown choice" as a defined, observable outcome rather than a crash.
+#### Maps as registries
 
-### Dispatch versus switch
+- A `map` in Go associates keys with values.
+- Looking up a key that is not present returns the zero value of the value type; for a function type that zero value is `nil`.
+- Calling a `nil` function panics, so a missing key must be handled explicitly before any invocation.
+- This is the natural place to express "unknown choice" as a defined, observable outcome rather than a crash.
 
-A `switch` over a token works for a tiny, fixed menu. A `map` lookup expresses the same idea as data rather than as control flow: each action lives at one place, the loop does not branch per action, and adding or removing an item is a change to the registry, not a change to the loop's body. The pedagogical point is the *separation* — the loop never names the actions directly. The learner chooses how to represent the registry; this project does not require the registry to grow at runtime, only that the loop not embed a long `switch`.
+#### Dispatch versus switch
 
-### Injected I/O boundaries
+- A `switch` over a token works for a tiny, fixed menu.
+- A `map` lookup expresses the same idea as data rather than as control flow: each action lives at one place, the loop does not branch per action, and adding or removing an item is a change to the registry, not a change to the loop's body.
+- The pedagogical point is the *separation* — the loop never names the actions directly.
+- The learner chooses how to represent the registry; this project does not require the registry to grow at runtime, only that the loop not embed a long `switch`.
 
-Reading from `os.Stdin` and writing to `os.Stdout` couples a program to a terminal. To test what the program asked and what it answered, both endpoints must be replaceable. The standard library uses `io.Reader` and `io.Writer` for this. Anything that satisfies those interfaces — including a `bytes.Buffer` — can stand in for the real streams. The production wiring uses the real streams; the test wiring uses buffers.
+#### Injected I/O boundaries
 
-### Explicit exit versus input exhaustion
+- Reading from `os.Stdin` and writing to `os.Stdout` couples a program to a terminal.
+- To test what the program asked and what it answered, both endpoints must be replaceable.
+- The standard library uses `io.Reader` and `io.Writer` for this.
+- Anything that satisfies those interfaces — including a `bytes.Buffer` — can stand in for the real streams.
+- The production wiring uses the real streams; the test wiring uses buffers.
 
-Two situations end a menu: the user types an exit token, or the input stream runs out. Both are normal outcomes and the loop must handle each as a defined, observable state. A buffer that simply holds `1\n3\n` (two selections, no exit token) still terminates: the third read returns the end-of-input signal and the loop exits with that signal. A test that exercises the menu without supplying an exit token must see a clean end-of-input termination, not a hang and not an infinite string of "unknown choice" lines.
+#### Explicit exit versus input exhaustion
 
-### Action values versus action results
+- Two situations end a menu: the user types an exit token, or the input stream runs out.
+- Both are normal outcomes and the loop must handle each as a defined, observable state.
+- A buffer that simply holds `1\n3\n` (two selections, no exit token) still terminates: the third read returns the end-of-input signal and the loop exits with that signal.
+- A test that exercises the menu without supplying an exit token must see a clean end-of-input termination, not a hang and not an infinite string of "unknown choice" lines.
 
-The action held in the registry runs when its key is selected. The loop's job is to dispatch; the action's job is whatever it does. The loop does not need to interpret the action's result. The learner decides whether the action writes to the injected writer directly, returns a value the loop prints, or both; the contract only says the loop invokes the value held in the registry, not a per-action branch in its own body.
+#### Action values versus action results
+
+- The action held in the registry runs when its key is selected.
+- The loop's job is to dispatch; the action's job is whatever it does.
+- The loop does not need to interpret the action's result.
+- The learner decides whether the action writes to the injected writer directly, returns a value the loop prints, or both; the contract only says the loop invokes the value held in the registry, not a per-action branch in its own body.
 
 ## 7. Learning Objective
 
@@ -89,12 +115,14 @@ The program must satisfy each requirement below. Requirements are numbered so th
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A stream of bytes the program reads selections from. In production this is `os.Stdin`; in tests it is a buffer the learner controls.
 - Each selection is a token — typically a single character or short word matching a key in the registry. Whitespace around the token is tolerated.
 
-### Outputs
+#### Outputs
 
 - A header and a numbered menu printed to the injected writer.
 - A prompt for the next selection.
@@ -102,7 +130,7 @@ The program must satisfy each requirement below. Requirements are numbered so th
 - A clear "unknown choice" line when the selection does not match.
 - A final line indicating how the loop ended: exit token, or end of input.
 
-### Example text-only success run with exit token
+#### Example text-only success run with exit token
 
 ```
 === Menu ===
@@ -115,7 +143,7 @@ Choose: 3
 Exited via menu.
 ```
 
-### Example text-only run that ends because input is exhausted
+#### Example text-only run that ends because input is exhausted
 
 ```
 === Menu ===
@@ -129,7 +157,7 @@ It is some moment in time.
 End of input.
 ```
 
-### Example text-only run with an unknown choice
+#### Example text-only run with an unknown choice
 
 ```
 Choose: 9
@@ -192,6 +220,8 @@ Each milestone is a behavior the learner can demonstrate. Do not move on until t
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Describe each case in natural language first; only then write the test. Every case must be reachable with buffers for input and output — no live terminal.
 
 - Selecting a registered item invokes the corresponding action; the action's output appears in the captured writer.
@@ -239,18 +269,37 @@ Describe each case in natural language first; only then write the test. Every ca
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every numbered functional requirement in section 8 is satisfied by behavior the learner can demonstrate.
-- Every verification case in section 14 has a corresponding test that uses buffers for input and output.
-- No test depends on a real terminal, on real keyboard input, on a real sleep, or on the local clock.
-- The loop has no `switch` over action names; actions are dispatched through a `map` lookup.
-- The menu and prompts are written through an injected `io.Writer`; input is read from an injected `io.Reader`.
-- The "end of input" outcome is exercised by at least one test that does not supply the exit token.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every numbered functional requirement in section 8 is satisfied by behavior the learner can demonstrate.
+- [ ] Every verification case in section 14 has a corresponding test that uses buffers for input and output.
+- [ ] No test depends on a real terminal, on real keyboard input, on a real sleep, or on the local clock.
+- [ ] The loop has no `switch` over action names; actions are dispatched through a `map` lookup.
+- [ ] The menu and prompts are written through an injected `io.Writer`; input is read from an injected `io.Reader`.
+- [ ] The "end of input" outcome is exercised by at least one test that does not supply the exit token.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Action results as data.** Let an action return a small result value that the menu loop logs through the writer, so the loop can react (for example, by printing a confirmation line) without knowing what the action did.
-- **Sub-menus by registration.** Allow an action to register additional items before returning, so the next iteration of the loop sees a longer menu. Keep the extension tiny: no file-based configuration, no nested loops beyond one level.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 010 — Password Generator](../../01-foundations/010_pass_generator/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`bufio`](https://pkg.go.dev/bufio), [`bytes`](https://pkg.go.dev/bytes).
+- **Standards and concept references:** [A Tour of Go: function values](https://go.dev/tour/moretypes/24), [A Tour of Go: maps](https://go.dev/tour/moretypes/19).
+
+### Project-specific learning focus
+
+- **Learn now:** command dispatch, read-evaluate-print loops, injected streams, EOF behavior, and session-level tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

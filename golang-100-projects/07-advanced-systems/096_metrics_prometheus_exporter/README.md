@@ -1,18 +1,32 @@
 # Project 096 — Metrics Prometheus Exporter
 
 ## 1. Project Name and Number
-Project 096, `096_metrics_prometheus_exporter`. Build an HTTP metrics exporter that exposes a health endpoint and a Prometheus scrape endpoint through an injected Prometheus registry rather than the global default registry, and instrument a small deterministic Work service with a fixed set of pinned metric descriptors. This README is a learning guide only. It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands. Text-only input and output examples are permitted.
+
+- Project 096, `096_metrics_prometheus_exporter`.
+- Build an HTTP metrics exporter that exposes a health endpoint and a Prometheus scrape endpoint through an injected Prometheus registry rather than the global default registry, and instrument a small deterministic Work service with a fixed set of pinned metric descriptors.
+- This README is a learning guide only.
+- It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+- Text-only input and output examples are permitted.
 
 ## 2. Project Idea
+
 A caller submits a small Work item whose mode is one of a fixed enumeration. The Work service validates the submission, increments a request counter exactly once, decides an outcome, increments exactly one outcome counter, observes exactly one duration histogram sample, and keeps the in-progress gauge equal to the number of valid submissions currently executing. After all work completes, the gauge is zero. The HTTP layer exposes exactly two endpoints: a health endpoint at `/healthz` and a metrics endpoint at `/metrics`. The metrics endpoint uses the Prometheus text exposition handler bound to the injected registry. The service is constructed against an injected registry; no reference to the global default registerer or gatherer exists. The exporter is a learning surface for counters, gauges, histograms, label cardinality, registry isolation, and scrape content; it is not a production telemetry system.
 
 ## 3. Why This Project Now?
-Projects 046 and 060 are the formal prerequisites: Project 046 contributes HTTP basics, and Project 060 contributes graceful-shutdown discipline. Project 095 is optional immediate-catalog-predecessor context, while Projects 064 and 086 are optional prior review for migration and deterministic-test discipline.
+
+- Projects 046 and 060 are the formal prerequisites: Project 046 contributes HTTP basics, and Project 060 contributes graceful-shutdown discipline.
+- Project 095 is optional immediate-catalog-predecessor context, while Projects 064 and 086 are optional prior review for migration and deterministic-test discipline.
 
 ## 4. Prerequisites
-Projects 046 and 060 are the formal prerequisites. Project 046 provides HTTP basics; Project 060 provides graceful-shutdown discipline. Project 095 is optional immediate-catalog-predecessor context. Optional prior review includes Project 064 for migration discipline and Project 086 for fake-clock and deterministic-test patterns. Be comfortable with `context`, the difference between counters, gauges, and histograms, the difference between an injected registry and the global default registry, the difference between validation rejection and execution rejection, and the boundary between a learning surface and a production monitoring system.
+
+- Projects 046 and 060 are the formal prerequisites.
+- Project 046 provides HTTP basics; Project 060 provides graceful-shutdown discipline.
+- Project 095 is optional immediate-catalog-predecessor context.
+- Optional prior review includes Project 064 for migration discipline and Project 086 for fake-clock and deterministic-test patterns.
+- Be comfortable with `context`, the difference between counters, gauges, and histograms, the difference between an injected registry and the global default registry, the difference between validation rejection and execution rejection, and the boundary between a learning surface and a production monitoring system.
 
 ## 5. What You Must Know Before Starting
+
 - A counter is a monotonically increasing value that resets to zero only on process restart. A counter never decreases during normal operation.
 - A gauge is a value that may go up or down and represents a current observation. In-progress work is a gauge.
 - A histogram observes a distribution of samples with a configured bucket layout; one histogram call observes exactly one sample.
@@ -24,6 +38,9 @@ Projects 046 and 060 are the formal prerequisites. Project 046 provides HTTP bas
 - The deterministic observation seam is the only path through which a duration sample reaches the histogram in tests. Unit tests never depend on wall-clock time and never sleep.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 The exporter is constructed against an injected registry through the Prometheus Go client's registry constructor. The constructor is the only place where the four pinned descriptors are registered. Re-registering any of the pinned descriptors on the same registry returns a clean typed duplicate-registration outcome rather than panicking; two distinct registries may each hold the same descriptors and never leak values between them.
 
 The health endpoint at `/healthz` responds to `GET` with status `200`, content type `application/json`, and the exact compact body `{"status":"ok"}` with no trailing newline. Other methods on `/healthz` return `405`. The metrics endpoint at `/metrics` responds to `GET` with the text exposition format gathered from the injected registry. Other methods on `/metrics` return `405`. Unknown paths return `404`. Neither endpoint creates metrics dynamically.
@@ -49,9 +66,24 @@ Counters never decrease. The request counter and the outcome counter never drop 
 The injected observation seam, the injected clock, and the injected registry are the three seams that make the unit test deterministic. The unit test owns all three. The test constructs the service, drives every outcome path, gathers from the injected registry, and asserts the exact label set and bucket distribution.
 
 ## 7. Learning Objective
-After completing this project you must be able to explain in your own words: why every metric descriptor is pinned in code rather than constructed at runtime; why the `outcome` label set is a fixed enumeration and never a free-form string; why mode is a Work input field and never a metric label; why validation runs before execution and why a validation rejection never increments the in-progress gauge; why a worker panic must be recovered at the service boundary so the gauge returns to zero on every outcome; why a duplicate registration against an injected registry must return a clean typed outcome rather than panic; why an injected registry is used instead of the global default registry; why counters never decrease during operation; how a scrape reflects the registered descriptors and not the contents of the global default registry; why the `/healthz` body is the exact compact form with no trailing newline; why the HTTP method discipline returns `405` on other methods and `404` on unknown paths; why the duration histogram uses an injected observation seam in deterministic tests; why this learning project is not a production monitoring system; and what production monitoring concerns such as retention, alert evaluation, federation, push gateway, service-level objectives, and host-level metric scrapes are deliberately outside scope.
+
+- After completing this project you must be able to explain in your own words: why every metric descriptor is pinned in code rather than constructed at runtime;
+- Why the `outcome` label set is a fixed enumeration and never a free-form string;
+- Why mode is a Work input field and never a metric label;
+- Why validation runs before execution and why a validation rejection never increments the in-progress gauge;
+- Why a worker panic must be recovered at the service boundary so the gauge returns to zero on every outcome;
+- Why a duplicate registration against an injected registry must return a clean typed outcome rather than panic;
+- Why an injected registry is used instead of the global default registry;
+- Why counters never decrease during operation;
+- How a scrape reflects the registered descriptors and not the contents of the global default registry;
+- Why the `/healthz` body is the exact compact form with no trailing newline;
+- Why the HTTP method discipline returns `405` on other methods and `404` on unknown paths;
+- Why the duration histogram uses an injected observation seam in deterministic tests;
+- Why this learning project is not a production monitoring system;
+- And what production monitoring concerns such as retention, alert evaluation, federation, push gateway, service-level objectives, and host-level metric scrapes are deliberately outside scope.
 
 ## 8. Functional Requirements
+
 1. The exporter exposes exactly two endpoints: `GET /healthz` and `GET /metrics`. Other methods on either path return `405`. Unknown paths return `404`. Neither endpoint creates metrics dynamically.
 2. The exporter is constructed against an injected registry through the Prometheus Go client's registry constructor. No reference to the global default registerer or global default gatherer exists in the exporter code paths.
 3. The four metric descriptors are registered with the exact names, exact help text, exact label sets, and exact histogram buckets pinned in this guide. No other descriptors exist.
@@ -70,6 +102,9 @@ After completing this project you must be able to explain in your own words: why
 16. The exporter is a learning surface; no push gateway, alert manager, dashboards, host-level metrics, retention model, retention backend, multi-instance federation, or production availability claim is part of this project.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
+
 - Inputs are Work submissions carrying a mode drawn from the fixed set `success`, `transient_failure`, and `block_until_canceled`, plus a context.
 - Outputs are an outcome chosen from the fixed enumeration, an observed duration, a changed request count, a changed outcome count, and a returned-to-zero in-progress gauge for the valid path. HTTP output from `/healthz` is the exact compact body `{"status":"ok"}` with no trailing newline. HTTP output from `/metrics` is the Prometheus text exposition format gathered from the injected registry.
 - Text-only behaviour example. Submit one valid submission whose mode is `success`. After the call, `tutorial_work_requests_total` has increased by one; `tutorial_work_outcomes_total{outcome="success"}` has increased by one; `tutorial_work_in_progress` is zero; and `tutorial_work_duration_seconds{outcome="success"}` reports one observation through the seam.
@@ -78,6 +113,7 @@ After completing this project you must be able to explain in your own words: why
 - Text-only behaviour example. Drive a worker panic inside the service. The recovered submission recorded one request increment, one `transient_failure` outcome, one duration sample, and the gauge is zero. Panic detail does not appear in the return value or in any log path.
 
 ## 10. Rules and Edge Cases
+
 - A submission whose mode is not in the fixed mode set is rejected as `validation_rejected`. The mode never appears as a label value.
 - A submission that enters the service and runs to completion with `mode="success"` records `outcome="success"`. A submission whose execution returns a transient error records `outcome="transient_failure"`. A submission whose execution is cancelled through `context` records `outcome="canceled"`.
 - A worker panic is recovered and classified as `transient_failure` at the service boundary; the gauge is returned to zero before the service returns an error.
@@ -88,6 +124,7 @@ After completing this project you must be able to explain in your own words: why
 - The deterministic observation seam is the only path through which a duration sample reaches the histogram in tests. Unit tests never sleep and never depend on wall-clock time.
 
 ## 11. Project Constraints
+
 - The exporter is constructed against an injected registry. No global Prometheus registration or global gather paths exist in the project. Two exporter instances in one test may each register the same descriptors on distinct registries without conflict, and no descriptor crosses registries.
 - The Prometheus Go client is the chosen dependency. The learner selects and pins a currently maintained module release in their own implementation. This guide does not invent a version.
 - No push gateway, alert manager, dashboards, host metrics, multi-process aggregation, remote write, federation, or service-level objective evaluation is part of this project.
@@ -95,6 +132,7 @@ After completing this project you must be able to explain in your own words: why
 - The exporter is a learning surface and explicitly is not a production monitoring system. Production monitoring concerns such as retention, alerting, security, capacity, and multi-tenant scraping are outside scope.
 
 ## 12. Design Questions Before Coding
+
 - How are the four descriptors registered against the injected registry exactly once, and what does the constructor return on a duplicate registration?
 - How does the Work service distinguish validation from execution, and where in the code path is each increment, gauge step, and observation placed?
 - How does the service boundary recover a worker panic, classify it as `transient_failure`, observe duration, and return the gauge to zero?
@@ -107,6 +145,7 @@ After completing this project you must be able to explain in your own words: why
 - Why does the project not promise production monitoring, and which production concerns are deliberately out of scope?
 
 ## 13. Implementation Milestones
+
 1. Pin the four descriptors, the exact `outcome` label enumeration, the exact mode set, and the deterministic observation seam interface.
 2. Implement the Work service skeleton with the validation step, the deterministic execution step, and the per-outcome branches.
 3. Wire the request counter, the outcome counter, the duration histogram, and the in-progress gauge so the lifecycle is coherent across every outcome including validation rejection.
@@ -118,6 +157,9 @@ After completing this project you must be able to explain in your own words: why
 9. Verify under the race detector and reproduce the honest non-production statement in the project documentation.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Descriptor content: assert the injected registry gathers exactly four metric families with the exact names, exact help text, exact label sets, and exact histogram buckets pinned in this guide, and no others.
 - Request counter increment: submit one valid submission, one `validation_rejected` submission, one `canceled` submission, one `transient_failure` submission, and one panic-recovered submission; assert `tutorial_work_requests_total` increased by exactly five and never decreased.
 - Outcome counter labels: assert that each of the four label values can appear in a single test sequence and that no other label value appears.
@@ -134,6 +176,7 @@ After completing this project you must be able to explain in your own words: why
 - Determinism: assert that every duration assertion uses the observation seam and that no test relies on wall-clock time.
 
 ## 15. Common Mistakes to Watch For
+
 - Reaching for the global default registerer or global default gatherer in any code path. The exporter must use the injected registry throughout.
 - Treating the request counter or the outcome counter as a gauge. Counters never decrease.
 - Letting a `validation_rejected` submission increment the in-progress gauge. Validation runs before execution.
@@ -152,6 +195,7 @@ After completing this project you must be able to explain in your own words: why
 - Adding a push gateway, alert manager, dashboards, retention model, or host-level scrape that the project explicitly excludes.
 
 ## 16. Topics and References for Study
+
 - The Prometheus Go client documentation covering the registry, the four metric types, label cardinality warnings, the text exposition format, and the HTTP handler integration.
 - The Prometheus naming and label convention documentation covering counter, gauge, and histogram naming and stable label sets.
 - The `net/http` documentation covering method routing and the `405` and `404` responses.
@@ -159,19 +203,56 @@ After completing this project you must be able to explain in your own words: why
 - Projects 046 and 060 are the formal prerequisites: Project 046 for HTTP basics and Project 060 for graceful-shutdown discipline. Project 095 is optional immediate-catalog-predecessor context; Projects 064 and 086 are optional study for migration and deterministic-test patterns.
 
 ## 17. Self-Assessment Questions
-- Which four descriptor names, help texts, label sets, and histogram buckets are pinned?
-- Why is the request counter a counter, why is the in-progress value a gauge, and why must the gauge return to zero on every outcome?
-- Why does validation run before execution, and why does `validation_rejected` never increment the gauge?
-- Why is the duration histogram fed through an injected observation seam instead of wall-clock time in tests?
-- Why is the registry injected instead of using the global default registerer or gatherer?
-- How does service-boundary panic recovery preserve the outcome, duration observation, gauge, and error contract without leaking panic detail?
-- Why are `outcome` values fixed while mode is never a metric label?
-- How do tests prove registry isolation, duplicate-registration handling, exact scrape content, and zero-valued preinitialized series?
-- How do tests prove counter monotonicity and the exact `/healthz` response and HTTP method/path status rules?
-- Which production monitoring concerns are outside scope, and how is the non-production claim documented?
+
+1. Which four descriptor names, help texts, label sets, and histogram buckets are pinned?
+2. Why is the request counter a counter, why is the in-progress value a gauge, and why must the gauge return to zero on every outcome?
+3. Why does validation run before execution, and why does `validation_rejected` never increment the gauge?
+4. Why is the duration histogram fed through an injected observation seam instead of wall-clock time in tests?
+5. Why is the registry injected instead of using the global default registerer or gatherer?
+6. How does service-boundary panic recovery preserve the outcome, duration observation, gauge, and error contract without leaking panic detail?
+7. Why are `outcome` values fixed while mode is never a metric label?
+8. How do tests prove registry isolation, duplicate-registration handling, exact scrape content, and zero-valued preinitialized series?
+9. How do tests prove counter monotonicity and the exact `/healthz` response and HTTP method/path status rules?
+10. Which production monitoring concerns are outside scope, and how is the non-production claim documented?
 
 ## 18. Definition of Completion
-The project is complete when the exporter is constructed against an injected registry and contains no reference to the global default registerer or global default gatherer; when the four descriptors are registered with the exact names, exact help text, exact label sets, and exact histogram buckets pinned in this guide; when the `outcome` label set is exactly `success`, `validation_rejected`, `transient_failure`, and `canceled`; when the Work service accepts only the mode set `success`, `transient_failure`, and `block_until_canceled`, rejects any other mode as `validation_rejected`, and never records mode as a metric label; when validation runs before execution so a `validation_rejected` submission never increments the in-progress gauge; when every submission increments `tutorial_work_requests_total` exactly once, increments exactly one series of `tutorial_work_outcomes_total`, observes exactly one sample on `tutorial_work_duration_seconds`, and on the valid path returns the gauge to zero on every outcome; when a worker panic is recovered at the service boundary so the recovered submission classifies as `transient_failure`, observes one duration sample, decrements the gauge, and returns an error; when the duration histogram observes through an injected observation seam and the test never depends on wall-clock time; when the constructor returns a clean typed duplicate-registration outcome on registry reuse and two distinct registries do not leak values between them; when `GET /healthz` returns status `200`, content type `application/json`, and the exact compact body `{"status":"ok"}` with no trailing newline, when `GET /metrics` returns the text exposition format gathered from the injected registry, when other methods on either path return `405`, and when unknown paths return `404`; when counters never decrease during operation; when the unit tests pass with `httptest`, covering descriptor content, counter increments, label values, histogram observations, gauge zero on every outcome, validation-before-execution, panic recovery, registry isolation, byte-exact health body, scrape content, method discipline, duplicate registration, and counter monotonicity; when the race detector is clean; when the project documentation reproduces the honest statement that the result is a learning surface and not a production monitoring system; and when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+
+- [ ] The project is complete when the exporter is constructed against an injected registry and contains no reference to the global default registerer or global default gatherer;
+- [ ] When the four descriptors are registered with the exact names, exact help text, exact label sets, and exact histogram buckets pinned in this guide;
+- [ ] When the `outcome` label set is exactly `success`, `validation_rejected`, `transient_failure`, and `canceled`;
+- [ ] When the Work service accepts only the mode set `success`, `transient_failure`, and `block_until_canceled`, rejects any other mode as `validation_rejected`, and never records mode as a metric label;
+- [ ] When validation runs before execution so a `validation_rejected` submission never increments the in-progress gauge;
+- [ ] When every submission increments `tutorial_work_requests_total` exactly once, increments exactly one series of `tutorial_work_outcomes_total`, observes exactly one sample on `tutorial_work_duration_seconds`, and on the valid path returns the gauge to zero on every outcome;
+- [ ] When a worker panic is recovered at the service boundary so the recovered submission classifies as `transient_failure`, observes one duration sample, decrements the gauge, and returns an error;
+- [ ] When the duration histogram observes through an injected observation seam and the test never depends on wall-clock time;
+- [ ] When the constructor returns a clean typed duplicate-registration outcome on registry reuse and two distinct registries do not leak values between them;
+- [ ] When `GET /healthz` returns status `200`, content type `application/json`, and the exact compact body `{"status":"ok"}` with no trailing newline, when `GET /metrics` returns the text exposition format gathered from the injected registry, when other methods on either path return `405`, and when unknown paths return `404`;
+- [ ] When counters never decrease during operation;
+- [ ] When the unit tests pass with `httptest`, covering descriptor content, counter increments, label values, histogram observations, gauge zero on every outcome, validation-before-execution, panic recovery, registry isolation, byte-exact health body, scrape content, method discipline, duplicate registration, and counter monotonicity;
+- [ ] When the race detector is clean;
+- [ ] When the project documentation reproduces the honest statement that the result is a learning surface and not a production monitoring system;
+- [ ] And when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
 
 ## 19. Optional Extensions
+
 - A bounded second exporter instance type that distinguishes two operation kinds through a second bounded label set, registered on its own injected registry, demonstrating that label cardinality lives in the metric family and not in the registry identity.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide), [Project 060 — Graceful Shutdown Web](../../04-apis-and-services/060_graceful_shutdown_web/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`github.com/prometheus/client_golang/prometheus`](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus), [`github.com/prometheus/client_golang/prometheus/promhttp`](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp).
+- **Standards and concept references:** [Prometheus metric types](https://prometheus.io/docs/concepts/metric_types/), [Prometheus naming guidelines](https://prometheus.io/docs/practices/naming/).
+
+### Project-specific learning focus
+
+- **Learn now:** custom registries, counters, gauges and histograms, stable label sets, cardinality limits, exposition handlers, route templates, deterministic collection tests, and shutdown.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

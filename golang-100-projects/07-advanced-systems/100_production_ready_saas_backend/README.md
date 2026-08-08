@@ -1,18 +1,35 @@
 # Project 100 — Production-Ready SaaS Backend
 
 ## 1. Project Name and Number
-Project 100, `100_production_ready_saas_backend`. Build a small production-oriented learning backend for team and task management using `net/http`, `database/sql` with the `pgx` standard-library adapter, PostgreSQL as the source of truth, and opaque server-side cookie sessions. The directory name is aspirational curriculum wording: completion of this project is not a claim that the result is production-ready. This README is a learning guide only. It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands. Text-only input and output examples are permitted.
+
+- Project 100, `100_production_ready_saas_backend`.
+- Build a small production-oriented learning backend for team and task management using `net/http`, `database/sql` with the `pgx` standard-library adapter, PostgreSQL as the source of truth, and opaque server-side cookie sessions.
+- The directory name is aspirational curriculum wording: completion of this project is not a claim that the result is production-ready.
+- This README is a learning guide only.
+- It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+- Text-only input and output examples are permitted.
 
 ## 2. Project Idea
+
 A user registers, logs in, and operates inside a team. Each team has explicit member roles and owns projects. Each project owns tasks. Tasks carry status, priority, assignee, timestamps, and an optimistic-update discipline. The HTTP layer exposes a bounded versioned JSON API under `/v1` with consistent compact JSON errors, a request identifier header, pagination with a stable cursor and stable ordering, bounded validation, and idempotent task creation. Authentication uses bcrypt with cost `12` and opaque server-side cookie sessions stored in PostgreSQL. The capstone is bounded and milestone-driven; every layer is independently testable. External dependencies are gated by build tag and environment flag. Completion of this project is not a claim that the result is production-ready.
 
 ## 3. Why This Project Now?
-Project 099 is optional immediate-catalog-predecessor context only. The formal prerequisite is completion of all Level Gates 1 through 6, plus Projects 086, 091, 095, and 096. The six level gates establish readiness across the first six curriculum levels; Project 086 contributes deterministic advanced-system policy and testing discipline, Project 091 contributes an advanced API capstone, Project 095 contributes transactional event-driven delivery, and Project 096 contributes bounded Prometheus observability, injected-registry isolation, and deterministic metrics testing.
+
+- Project 099 is optional immediate-catalog-predecessor context only.
+- The formal prerequisite is completion of all Level Gates 1 through 6, plus Projects 086, 091, 095, and 096.
+- The six level gates establish readiness across the first six curriculum levels;
+- Project 086 contributes deterministic advanced-system policy and testing discipline, Project 091 contributes an advanced API capstone, Project 095 contributes transactional event-driven delivery, and Project 096 contributes bounded Prometheus observability, injected-registry isolation, and deterministic metrics testing.
 
 ## 4. Prerequisites
-The formal prerequisite is completion of all Level Gates 1 through 6, plus Projects 086, 091, 095, and 096. The first six level gates establish readiness across the curriculum's first six levels. Project 086 provides deterministic advanced-system policy and testing discipline; Project 091 provides an advanced API capstone; Project 095 provides transactional event-driven delivery; Project 096 provides bounded Prometheus observability, injected-registry isolation, and deterministic metrics testing. Project 099 is optional immediate-catalog-predecessor context only. Be comfortable with PostgreSQL through its standard library and the `pgx` adapter, versioned migrations, transactional repositories, opaque cookie sessions, bcrypt, validation surfaces, optimistic concurrency, pagination cursors, idempotent create operations, structured logging with redaction, Prometheus metrics with bounded labels, graceful shutdown, and gated integration tests.
+
+- The formal prerequisite is completion of all Level Gates 1 through 6, plus Projects 086, 091, 095, and 096.
+- The first six level gates establish readiness across the curriculum's first six levels.
+- Project 086 provides deterministic advanced-system policy and testing discipline; Project 091 provides an advanced API capstone; Project 095 provides transactional event-driven delivery; Project 096 provides bounded Prometheus observability, injected-registry isolation, and deterministic metrics testing.
+- Project 099 is optional immediate-catalog-predecessor context only.
+- Be comfortable with PostgreSQL through its standard library and the `pgx` adapter, versioned migrations, transactional repositories, opaque cookie sessions, bcrypt, validation surfaces, optimistic concurrency, pagination cursors, idempotent create operations, structured logging with redaction, Prometheus metrics with bounded labels, graceful shutdown, and gated integration tests.
 
 ## 5. What You Must Know Before Starting
+
 - Tenant isolation is enforced at two layers: at the authorization layer, which decides whether a request may operate on a given team or project, and at the data-access layer, which composes team-scoped predicates so a forgotten check at the call site does not leak rows.
 - "Cross-team ID guessing" is when a caller supplies an identifier that lives in another team and hopes the access check lets them in. The defense is that every query is composed with a team-scoped predicate and every mutation requires authorization at the team boundary before the row is touched.
 - "Mass assignment" is when a request body carries fields the server should not let the caller set directly. The defense is a typed input shape the server itself composes.
@@ -29,38 +46,117 @@ The formal prerequisite is completion of all Level Gates 1 through 6, plus Proje
 - Redis is out of core. Background jobs are an optional extension only.
 
 ## 6. Explanation of New Concepts
-The project owns its domain layer, its repository layer, its authorization layer, its HTTP layer, its authentication layer, its observability layer, and its operational layer. Each layer's boundary is narrow so the unit test targets one layer at a time.
 
-The pinned tech core is `net/http` for the HTTP layer, `database/sql` with the `pgx` standard-library adapter for the storage layer, PostgreSQL as the source of truth, and opaque server-side cookie sessions for authentication. The learner selects currently supported library releases and pins them in their own module; this guide does not invent versions.
+### Concepts
 
-The domain layer defines typed shapes for user, team, membership, project, and task. Resource identifiers are server-generated UUID version 4 strings. Registration accepts a unique normalized lowercase ASCII email of 3-254 characters, a display name of 1-120 trimmed UTF-8 characters, and the bounded password. Roles are exactly `owner`, `admin`, and `member`. Task status is exactly `todo`, `in_progress`, or `done`. Task priority is exactly `low`, `medium`, or `high`. Other names and titles are 1-120 trimmed UTF-8 characters. Task description is at most 4,000 characters. Project description is at most 1,000 characters. Team creator is the team's sole owner. There is exactly one active owner per team. An ownership transfer atomically changes the selected active member to owner and the previous owner to admin. Task assignee is either absent or an active membership in the same team. Server timestamps are injected UTC. Task version starts at `1` and increments exactly once per successful update. The domain layer is pure functions and does not touch a database, network, or filesystem.
+- The project owns its domain layer, its repository layer, its authorization layer, its HTTP layer, its authentication layer, its observability layer, and its operational layer.
+- Each layer's boundary is narrow so the unit test targets one layer at a time.
 
-Authentication pins bcrypt with cost `12`. Passwords are 12-72 bytes. Login uses normalized email plus password and returns `401 invalid_credentials` for both wrong password and unknown user. The session token is a 32-byte crypto-random opaque token. Only its SHA-256 digest, user identifier, created time, and expiry are stored in PostgreSQL. The raw token is delivered only in a cookie named `tutorial_session` with `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, and a 24-hour absolute expiry. `POST /v1/logout` revokes the current session. `POST /v1/password/change` verifies the current password, stores the replacement hash, and revokes every session for the user in one transaction. The raw cookie, raw token, password, and password hash never appear in any log path.
+- The pinned tech core is `net/http` for the HTTP layer, `database/sql` with the `pgx` standard-library adapter for the storage layer, PostgreSQL as the source of truth, and opaque server-side cookie sessions for authentication.
+- The learner selects currently supported library releases and pins them in their own module; this guide does not invent versions.
 
-Permissions are pinned exactly. An `owner` can read and write all team resources, manage all memberships and roles, transfer ownership, and delete the team. An `admin` can read all team resources, add or remove only `member` memberships, and create, update, and delete projects and tasks; an admin cannot grant or revoke owner or admin, remove the owner, transfer ownership, or delete the team. A `member` can read team, project, and task resources, create an unassigned task or a task assigned to self, and update only `status` on tasks assigned to self; a member cannot manage memberships or projects, assign another user, reassign, delete tasks, or edit other task fields. Owner and admin may assign only active members of that team. All cross-team access returns the same `404 not_found` response as a nonexistent resource.
+- The domain layer defines typed shapes for user, team, membership, project, and task.
+- Resource identifiers are server-generated UUID version 4 strings.
+- Registration accepts a unique normalized lowercase ASCII email of 3-254 characters, a display name of 1-120 trimmed UTF-8 characters, and the bounded password.
+- Roles are exactly `owner`, `admin`, and `member`.
+- Task status is exactly `todo`, `in_progress`, or `done`.
+- Task priority is exactly `low`, `medium`, or `high`.
+- Other names and titles are 1-120 trimmed UTF-8 characters.
+- Task description is at most 4,000 characters.
+- Project description is at most 1,000 characters.
+- Team creator is the team's sole owner.
+- There is exactly one active owner per team.
+- An ownership transfer atomically changes the selected active member to owner and the previous owner to admin.
+- Task assignee is either absent or an active membership in the same team.
+- Server timestamps are injected UTC.
+- Task version starts at `1` and increments exactly once per successful update.
+- The domain layer is pure functions and does not touch a database, network, or filesystem.
 
-The bounded API is exact: `POST /v1/register`, `POST /v1/login`, `POST /v1/logout`, and `POST /v1/password/change`; `POST /v1/teams`, `GET /v1/teams`, `GET /v1/teams/{team_id}`, `DELETE /v1/teams/{team_id}`, and `POST /v1/teams/{team_id}/ownership-transfer`; `POST /v1/teams/{team_id}/memberships`, `PATCH /v1/teams/{team_id}/memberships/{user_id}`, and `DELETE /v1/teams/{team_id}/memberships/{user_id}`; `POST` and `GET` on `/v1/teams/{team_id}/projects`, plus `PATCH` and `DELETE` on `/v1/teams/{team_id}/projects/{project_id}`; and `POST` and `GET` on that project's `/tasks` collection, plus `GET`, `PATCH`, and `DELETE` on its `/tasks/{task_id}` item. Password reset is absent because email delivery is out of scope.
+- Authentication pins bcrypt with cost `12`.
+- Passwords are 12-72 bytes.
+- Login uses normalized email plus password and returns `401 invalid_credentials` for both wrong password and unknown user.
+- The session token is a 32-byte crypto-random opaque token.
+- Only its SHA-256 digest, user identifier, created time, and expiry are stored in PostgreSQL.
+- The raw token is delivered only in a cookie named `tutorial_session` with `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, and a 24-hour absolute expiry. `POST /v1/logout` revokes the current session. `POST /v1/password/change` verifies the current password, stores the replacement hash, and revokes every session for the user in one transaction.
+- The raw cookie, raw token, password, and password hash never appear in any log path.
 
-Errors are compact `application/json` with exactly `request_id`, `code`, and `message`. The pinned mappings are `400 validation_error` for malformed input, `401 authentication_required` for missing or expired session and `401 invalid_credentials` for login failures, `403 forbidden` only when membership exists but role is insufficient, `404 not_found` for missing or cross-team resources, `409 version_conflict` for stale optimistic updates, `409 idempotency_conflict` for `Idempotency-Key` reuse with a different request, `429 rate_limited` for rate-limit outcomes, `500 internal_error` for unhandled server errors, and `503 not_ready` when readiness fails. Internal details never reach clients. `X-Request-ID` accepts 1-64 ASCII characters drawn from letters, digits, period, underscore, colon, and hyphen; any value outside that set is replaced with a safe value, and the safe value is echoed and logged.
+- Permissions are pinned exactly.
+- An `owner` can read and write all team resources, manage all memberships and roles, transfer ownership, and delete the team.
+- An `admin` can read all team resources, add or remove only `member` memberships, and create, update, and delete projects and tasks; an admin cannot grant or revoke owner or admin, remove the owner, transfer ownership, or delete the team.
+- A `member` can read team, project, and task resources, create an unassigned task or a task assigned to self, and update only `status` on tasks assigned to self; a member cannot manage memberships or projects, assign another user, reassign, delete tasks, or edit other task fields.
+- Owner and admin may assign only active members of that team.
+- All cross-team access returns the same `404 not_found` response as a nonexistent resource.
 
-Idempotent task creation requires an `Idempotency-Key` header of 16-128 printable ASCII non-space characters. The key is scoped to authenticated user, team, and endpoint. PostgreSQL stores the key, the normalized request hash, the response status, and the task identifier in the same transaction as task creation. The same key with the same request replays the original response. The same key with a different request returns `409 idempotency_conflict`. Records live for at least 24 hours.
+- The bounded API is exact: `POST /v1/register`, `POST /v1/login`, `POST /v1/logout`, and `POST /v1/password/change`; `POST /v1/teams`, `GET /v1/teams`, `GET /v1/teams/{team_id}`, `DELETE /v1/teams/{team_id}`, and `POST /v1/teams/{team_id}/ownership-transfer`; `POST /v1/teams/{team_id}/memberships`, `PATCH /v1/teams/{team_id}/memberships/{user_id}`, and `DELETE /v1/teams/{team_id}/memberships/{user_id}`; `POST` and `GET` on `/v1/teams/{team_id}/projects`, plus `PATCH` and `DELETE` on `/v1/teams/{team_id}/projects/{project_id}`; and `POST` and `GET` on that project's `/tasks` collection, plus `GET`, `PATCH`, and `DELETE` on its `/tasks/{task_id}` item.
+- Password reset is absent because email delivery is out of scope.
 
-Task optimistic update requires the caller to supply the current integer version. The conditional update increments the version on match. A stale value returns `409 version_conflict` and changes nothing.
+- Errors are compact `application/json` with exactly `request_id`, `code`, and `message`.
+- The pinned mappings are `400 validation_error` for malformed input, `401 authentication_required` for missing or expired session and `401 invalid_credentials` for login failures, `403 forbidden` only when membership exists but role is insufficient, `404 not_found` for missing or cross-team resources, `409 version_conflict` for stale optimistic updates, `409 idempotency_conflict` for `Idempotency-Key` reuse with a different request, `429 rate_limited` for rate-limit outcomes, `500 internal_error` for unhandled server errors, and `503 not_ready` when readiness fails.
+- Internal details never reach clients. `X-Request-ID` accepts 1-64 ASCII characters drawn from letters, digits, period, underscore, colon, and hyphen; any value outside that set is replaced with a safe value, and the safe value is echoed and logged.
 
-Pagination has a default page size of `20` and an allowed range of `1-100`. Ordering is `created_at` descending then identifier descending, both server-generated. The cursor is opaque and encodes the last tuple and the current filters. Inserts after page one sort before the page-one cursor and therefore do not appear on later pages; no duplicates and no skips are caused by such inserts. A malformed or mismatched cursor returns `400 validation_error`.
+- Idempotent task creation requires an `Idempotency-Key` header of 16-128 printable ASCII non-space characters.
+- The key is scoped to authenticated user, team, and endpoint.
+- PostgreSQL stores the key, the normalized request hash, the response status, and the task identifier in the same transaction as task creation.
+- The same key with the same request replays the original response.
+- The same key with a different request returns `409 idempotency_conflict`.
+- Records live for at least 24 hours.
 
-Migrations are versioned and bring the schema up. Both `up` and `down` migrations are required and are tested only on an isolated integration database. Forward-safety checks are not part of the pinned discipline. Integration tests are gated by the build tag `postgres_integration` plus the environment flag `POSTGRES_INTEGRATION=1`.
+- Task optimistic update requires the caller to supply the current integer version.
+- The conditional update increments the version on match.
+- A stale value returns `409 version_conflict` and changes nothing.
 
-Observability binds to the run. Structured logs include a request identifier, operation name, outcome class, duration, and permitted contextual identifiers, with sensitive fields redacted. An injected registry exposes exactly `saas_http_requests_total`, help text `Total HTTP requests by method, route, and status class.`, and `saas_http_request_duration_seconds`, help text `Duration of HTTP requests in seconds by method, route, and status class.` Both use only labels `method`, `route`, and `status_class`; route is the bounded route template, never the raw path. The histogram buckets are `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5`. `GET /livez` returns status 200, `application/json`, and exact body `{"status":"alive"}` with no trailing newline. `GET /readyz` returns the same content type and exact body `{"status":"ready"}` only after migrations and a current database ping succeed; otherwise it returns the standard `503 not_ready` error. Graceful shutdown drains in-flight requests within 10 seconds. Database and handler work use explicit contexts.
+- Pagination has a default page size of `20` and an allowed range of `1-100`.
+- Ordering is `created_at` descending then identifier descending, both server-generated.
+- The cursor is opaque and encodes the last tuple and the current filters.
+- Inserts after page one sort before the page-one cursor and therefore do not appear on later pages; no duplicates and no skips are caused by such inserts.
+- A malformed or mismatched cursor returns `400 validation_error`.
 
-Rate limits use an injected clock. For each remote IP, the first three registration attempts in an hour are allowed and the fourth is rejected; the first five login attempts in a minute are allowed and the sixth is rejected. For each authenticated user, the first 60 task-create attempts in a minute are allowed and the 61st is rejected. A rejection returns `429 rate_limited` without handler mutation. Remote IP comes from the direct connection only.
+- Migrations are versioned and bring the schema up.
+- Both `up` and `down` migrations are required and are tested only on an isolated integration database.
+- Forward-safety checks are not part of the pinned discipline.
+- Integration tests are gated by the build tag `postgres_integration` plus the environment flag `POSTGRES_INTEGRATION=1`.
 
-Audit events record membership changes, role changes, ownership changes, denied role-escalation attempts, login success and failure, logout, password change, and team deletion in PostgreSQL. Each successful domain change and its audit row share one transaction; standalone authentication outcomes write their audit event transactionally. Audit records are append-only through the public API and redact secrets.
+- Observability binds to the run.
+- Structured logs include a request identifier, operation name, outcome class, duration, and permitted contextual identifiers, with sensitive fields redacted.
+- An injected registry exposes exactly `saas_http_requests_total`, help text `Total HTTP requests by method, route, and status class.`, and `saas_http_request_duration_seconds`, help text `Duration of HTTP requests in seconds by method, route, and status class.` Both use only labels `method`, `route`, and `status_class`; route is the bounded route template, never the raw path.
+- The histogram buckets are `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5`. `GET /livez` returns status 200, `application/json`, and exact body `{"status":"alive"}` with no trailing newline. `GET /readyz` returns the same content type and exact body `{"status":"ready"}` only after migrations and a current database ping succeed; otherwise it returns the standard `503 not_ready` error.
+- Graceful shutdown drains in-flight requests within 10 seconds.
+- Database and handler work use explicit contexts.
+
+- Rate limits use an injected clock.
+- For each remote IP, the first three registration attempts in an hour are allowed and the fourth is rejected; the first five login attempts in a minute are allowed and the sixth is rejected.
+- For each authenticated user, the first 60 task-create attempts in a minute are allowed and the 61st is rejected.
+- A rejection returns `429 rate_limited` without handler mutation.
+- Remote IP comes from the direct connection only.
+
+- Audit events record membership changes, role changes, ownership changes, denied role-escalation attempts, login success and failure, logout, password change, and team deletion in PostgreSQL.
+- Each successful domain change and its audit row share one transaction; standalone authentication outcomes write their audit event transactionally.
+- Audit records are append-only through the public API and redact secrets.
 
 ## 7. Learning Objective
-After completing this project you must be able to explain in your own words: why tenant isolation is enforced at both the authorization and the data-access layer; why mass assignment is blocked by a typed input shape; why role escalation is blocked by an explicit membership record; why the role permissions are pinned exactly and the same-team and cross-team matrix is exercised; why optimistic update requires both a row-side version and a caller-supplied version; why idempotent task creation requires an `Idempotency-Key` header and a server-side record; why pagination uses a stable cursor and a stable ordering; why bcrypt with cost `12` is the chosen password-hashing discipline and why passwords are never plaintext, never reversible, and never logged; why generic login failure messages are the only correct response; why sessions are opaque server-side cookie sessions and why only the token digest is stored; why TLS termination is assumed before the service and why forwarded client-IP headers are not trusted in core scope; why readiness and liveness are separate signals and why readiness includes database reachability; why Prometheus metrics use bounded labels and never unbounded user data; why logs are redacted before emission; why Redis is out of core; why background jobs are an optional extension only; why audit events share a transaction with their domain change; why the capstone is bounded and how each milestone keeps the scope honest; and why completion of this project is not a claim that the result is production-ready.
+
+- After completing this project you must be able to explain in your own words: why tenant isolation is enforced at both the authorization and the data-access layer;
+- Why mass assignment is blocked by a typed input shape;
+- Why role escalation is blocked by an explicit membership record;
+- Why the role permissions are pinned exactly and the same-team and cross-team matrix is exercised;
+- Why optimistic update requires both a row-side version and a caller-supplied version;
+- Why idempotent task creation requires an `Idempotency-Key` header and a server-side record;
+- Why pagination uses a stable cursor and a stable ordering;
+- Why bcrypt with cost `12` is the chosen password-hashing discipline and why passwords are never plaintext, never reversible, and never logged;
+- Why generic login failure messages are the only correct response;
+- Why sessions are opaque server-side cookie sessions and why only the token digest is stored;
+- Why TLS termination is assumed before the service and why forwarded client-IP headers are not trusted in core scope;
+- Why readiness and liveness are separate signals and why readiness includes database reachability;
+- Why Prometheus metrics use bounded labels and never unbounded user data;
+- Why logs are redacted before emission;
+- Why Redis is out of core;
+- Why background jobs are an optional extension only;
+- Why audit events share a transaction with their domain change;
+- Why the capstone is bounded and how each milestone keeps the scope honest;
+- And why completion of this project is not a claim that the result is production-ready.
 
 ## 8. Functional Requirements
+
 1. The pinned tech core is `net/http`, `database/sql` with the `pgx` standard-library adapter, PostgreSQL as the source of truth, and opaque server-side cookie sessions. The learner selects currently supported library releases and pins them in their own module. This guide does not invent versions.
 2. Registration uses a unique normalized lowercase ASCII email of 3-254 characters, a display name of 1-120 trimmed UTF-8 characters, and a 12-72-byte password. Login uses normalized email and password. Bcrypt cost is `12`, and unknown user and wrong password both return `401 invalid_credentials`.
 3. Sessions are 32-byte crypto-random opaque tokens whose SHA-256 digest, user identifier, created time, and expiry are stored in PostgreSQL. The raw token appears only in `tutorial_session` with `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, and 24-hour absolute expiry. Logout revokes the current session. Password change verifies the current password, changes the hash, and revokes all sessions in one transaction. Raw cookie, token, password, and password hash never appear in logs.
@@ -85,6 +181,9 @@ After completing this project you must be able to explain in your own words: why
 22. The integration test suite is gated by `postgres_integration` and `POSTGRES_INTEGRATION=1` and runs against an isolated PostgreSQL database.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
+
 - Inputs are the bounded JSON bodies for the pinned auth, team, membership, project, and task routes, plus `Idempotency-Key` on task creation, the current task version on update, and optional `X-Request-ID` on every request.
 - Outputs are JSON errors with exactly the pinned three fields or bounded resource responses. Pagination includes a page and opaque cursor. Login sets `tutorial_session` with the pinned attributes. Every response echoes the safe `X-Request-ID` value.
 - Text-only behaviour example. A user registers, logs in, creates a team, and becomes owner. The owner adds an existing second user as member, creates a project and task, assigns the task to that member, and updates it with the current version. A nonmember receives `404 not_found` for every guessed team, project, task, or membership identifier.
@@ -93,6 +192,7 @@ After completing this project you must be able to explain in your own words: why
 - Text-only behaviour example. The process starts, the database becomes reachable, the up migration succeeds, and readiness flips from `503 not_ready` to `200`. The process receives a shutdown signal, stops accepting new traffic, drains in-flight requests within the 10-second window, and exits with a documented exit code.
 
 ## 10. Rules and Edge Cases
+
 - A request whose body contains a field the server does not accept is rejected with `400 validation_error`. A field the server does accept is mapped into the typed input shape the server composes.
 - A team-scoped read or mutation that arrives without a valid team membership at the time of the request is rejected with `404 not_found`.
 - A request that references a team identifier the caller does not belong to returns `404 not_found`, even when the resource under the team matches a guessed identifier.
@@ -108,6 +208,7 @@ After completing this project you must be able to explain in your own words: why
 - Audit events are append-only through the public API. Successful domain changes and their audit rows share one transaction.
 
 ## 11. Project Constraints
+
 - The pinned tech core is `net/http`, `database/sql` with the `pgx` standard-library adapter, PostgreSQL as the source of truth, and opaque server-side cookie sessions.
 - The project defines a small team and task management domain. It does not introduce billing, email delivery, social login, file uploads, Kubernetes manifests, multi-region deployment, a custom identity provider, a full frontend, Redis in core, or background jobs in core.
 - The capstone is bounded by the milestones. Each milestone produces its own deliverable before the next milestone starts.
@@ -116,6 +217,7 @@ After completing this project you must be able to explain in your own words: why
 - The project name is aspirational curriculum wording. Completion is not a claim that the result is production-ready. Production deployment requires configuration, transport security at the deployment boundary, secret management, operational monitoring, alerting, capacity planning, and compliance review that are outside this project.
 
 ## 12. Design Questions Before Coding
+
 - How is the typed input shape for each endpoint composed to block mass assignment without rejecting legitimate fields?
 - How is tenant isolation expressed at the repository layer so a forgotten authorization check does not leak rows?
 - How is the bcrypt cost pinned and how is the generic login failure rendered?
@@ -132,6 +234,7 @@ After completing this project you must be able to explain in your own words: why
 - What does the project promise to be, what does it explicitly not promise, and how does that non-claim appear in the documentation?
 
 ## 13. Implementation Milestones
+
 1. Write the API contract as a typed shape that fixes every endpoint, the request shape, the response shape, the consistent compact error shape, the pagination cursor format, the idempotency contract, the optimistic-update contract, the authentication contract, and the role matrix. The contract is the deliverable; implementation follows.
 2. Implement the domain layer with the typed shapes and the policies for tenant isolation, role enforcement, optimistic-update decisions, and idempotency decisions. The unit tests are pure-function tables.
 3. Implement the schema and versioned `up` and `down` migrations. The migrations bring the schema up; the integration suite exercises the `up` and `down` migrations on an isolated integration database.
@@ -145,6 +248,9 @@ After completing this project you must be able to explain in your own words: why
 11. Document the local-development surface, the consistent error shape, the pagination cursor, the rate limits, the timeouts, the versioned `up` and `down` migrations, the pinned authentication approach, the bcrypt cost, the `tutorial_session` cookie attributes, the idempotency contract, and the explicit non-claims.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Pure domain and policy tables: each policy decision is exercised through a pure-function test in the domain layer.
 - Handler tests with `httptest`: each endpoint is exercised through the HTTP layer against an in-process handler stack with fakes for the lower layers.
 - Repository integration tests: each repository is exercised against the isolated PostgreSQL integration database behind the build tag and environment flag.
@@ -167,6 +273,7 @@ After completing this project you must be able to explain in your own words: why
 - End-to-end happy path and end-to-end error path: a full request from registration to authenticated team, project, and task operations succeeds; an error path through tenant isolation produces the consistent compact error shape with `request_id`, `code`, and `message`.
 
 ## 15. Common Mistakes to Watch For
+
 - Composing team-scoped queries at the call site rather than inside the repository layer, where a forgotten check leaks rows.
 - Trusting the body for the team identifier or the role, which permits cross-team ID guessing and role escalation.
 - Letting a request body set fields the server does not accept, which is mass assignment.
@@ -187,6 +294,7 @@ After completing this project you must be able to explain in your own words: why
 - Treating pagination inserts as able to appear on later pages. Inserts after page one sort before the page-one cursor and do not appear on later pages.
 
 ## 16. Topics and References for Study
+
 - The `net/http` documentation for routing, middleware composition, request identifiers, cookie attributes, and shutdown hooks.
 - The `database/sql` documentation for the chosen `pgx` adapter, transactional boundaries, and the pinned migration discipline.
 - The `bcrypt` documentation for parameter selection, including the pinned cost `12`.
@@ -195,20 +303,57 @@ After completing this project you must be able to explain in your own words: why
 - Formal prerequisites: completion of all Level Gates 1 through 6, plus Projects 086, 091, 095, and 096. The level gates establish readiness across the first six curriculum levels; Project 086 contributes deterministic advanced-system policy and testing discipline, Project 091 an advanced API capstone, Project 095 transactional event-driven delivery, and Project 096 bounded Prometheus observability, injected-registry isolation, and deterministic metrics testing. Project 099 is optional immediate-catalog-predecessor context only.
 
 ## 17. Self-Assessment Questions
-- Why must tenant isolation exist in both authorization and data access, and how does the same-team/cross-team matrix prevent leaks?
-- Why does the typed input shape block mass assignment and role escalation?
-- Why are roles pinned exactly, and how does the authorization matrix constrain each role's resource operations?
-- Why does optimistic concurrency require both a row version and caller-supplied version, and what happens on conflict?
-- Why does idempotent task creation require a scoped `Idempotency-Key` record, and how are replay and conflict distinguished?
-- Why do stable pagination cursors and ordering prevent duplicates or skips after inserts?
-- Why are bcrypt cost `12`, generic login failures, opaque digest-backed sessions, and strict cookie attributes security requirements?
-- Why are readiness and liveness separate, and what do migrations, database reachability, graceful shutdown, and explicit contexts contribute?
-- Why must metrics labels be bounded and logs redact cookies, tokens, passwords, hashes, payloads, secrets, and internal details?
-- Why are integration tests gated, Redis and background jobs optional, and completion explicitly not a production-readiness claim?
+
+1. Why must tenant isolation exist in both authorization and data access, and how does the same-team/cross-team matrix prevent leaks?
+2. Why does the typed input shape block mass assignment and role escalation?
+3. Why are roles pinned exactly, and how does the authorization matrix constrain each role's resource operations?
+4. Why does optimistic concurrency require both a row version and caller-supplied version, and what happens on conflict?
+5. Why does idempotent task creation require a scoped `Idempotency-Key` record, and how are replay and conflict distinguished?
+6. Why do stable pagination cursors and ordering prevent duplicates or skips after inserts?
+7. Why are bcrypt cost `12`, generic login failures, opaque digest-backed sessions, and strict cookie attributes security requirements?
+8. Why are readiness and liveness separate, and what do migrations, database reachability, graceful shutdown, and explicit contexts contribute?
+9. Why must metrics labels be bounded and logs redact cookies, tokens, passwords, hashes, payloads, secrets, and internal details?
+10. Why are integration tests gated, Redis and background jobs optional, and completion explicitly not a production-readiness claim?
 
 ## 18. Definition of Completion
-The project is complete when the API contract is written as a typed shape that fixes every endpoint, the request shape, the response shape, the consistent compact error shape, the pagination cursor format, the idempotency contract, the optimistic-update contract, the authentication contract, and the role matrix; when the domain layer is implemented as pure functions with policies for tenant isolation, role enforcement, optimistic-update decisions, and idempotency decisions; when the schema is brought up by a versioned `up` migration and a `down` migration, and both migrations are tested on the isolated integration database; when the repository layer composes team-scoped predicates and runs every multi-row mutation inside a transaction; when authentication uses bcrypt with cost `12`, generates 32-byte crypto-random opaque session tokens, stores only the SHA-256 digest in PostgreSQL, delivers the raw token only through the `tutorial_session` cookie with `Secure`, `HttpOnly`, and `SameSite=Strict`, exposes the generic `401 invalid_credentials` response for wrong password and unknown user, expires sessions after 24 hours, revokes the current session on logout, revokes all sessions on password change, and never logs the raw cookie, raw token, password, or password hash; when team membership exposes the pinned `owner`, `admin`, and `member` roles and the authorization layer consults the membership record for every team-scoped read and mutation; when projects and tasks support the optimistic-update discipline on tasks and the assignee membership rule; when the HTTP layer enforces the consistent compact `application/json` error response, validation, pagination with a stable cursor, idempotent task creation through `Idempotency-Key`, rate limits at sensitive endpoints, and explicit contexts for database and handler work; when observability emits bounded Prometheus metrics through the injected registry and structured logs with redaction; when `GET /livez` reports process liveness with the exact compact JSON body and `GET /readyz` reports `200` only after the `up` migration and a database ping succeed; when graceful shutdown drains in-flight requests within the 10-second window; when audit events record membership changes, role changes, ownership changes, login success and failure, logout, and team deletion, share a transaction with their domain change, and are append-only through the public API; when the pure-function policy tables, the handler tests with `httptest`, the integration tests against the isolated PostgreSQL integration database behind the build tag and environment flag, the migration `up` and `down`, the same-team and cross-team matrix, the role matrix, the authentication and session cases, the pagination stability test, the idempotent create replay and conflict test, the transaction rollback test, the concurrent update conflict test, the rate-limit test with the injected clock, the graceful shutdown test, the redaction test, the liveness and readiness test, the registry isolation test, and the end-to-end happy and error path tests all pass; when the race detector is clean; when the project documentation reproduces the consistent compact error shape, the pagination cursor, the rate limits, the timeouts, the versioned `up` and `down` migrations, the pinned authentication approach, the bcrypt cost, the `tutorial_session` cookie attributes, the idempotency contract, the explicit non-claims about production readiness, and the explicit scope of the capstone; and when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+
+- [ ] The project is complete when the API contract is written as a typed shape that fixes every endpoint, the request shape, the response shape, the consistent compact error shape, the pagination cursor format, the idempotency contract, the optimistic-update contract, the authentication contract, and the role matrix;
+- [ ] When the domain layer is implemented as pure functions with policies for tenant isolation, role enforcement, optimistic-update decisions, and idempotency decisions;
+- [ ] When the schema is brought up by a versioned `up` migration and a `down` migration, and both migrations are tested on the isolated integration database;
+- [ ] When the repository layer composes team-scoped predicates and runs every multi-row mutation inside a transaction;
+- [ ] When authentication uses bcrypt with cost `12`, generates 32-byte crypto-random opaque session tokens, stores only the SHA-256 digest in PostgreSQL, delivers the raw token only through the `tutorial_session` cookie with `Secure`, `HttpOnly`, and `SameSite=Strict`, exposes the generic `401 invalid_credentials` response for wrong password and unknown user, expires sessions after 24 hours, revokes the current session on logout, revokes all sessions on password change, and never logs the raw cookie, raw token, password, or password hash;
+- [ ] When team membership exposes the pinned `owner`, `admin`, and `member` roles and the authorization layer consults the membership record for every team-scoped read and mutation;
+- [ ] When projects and tasks support the optimistic-update discipline on tasks and the assignee membership rule;
+- [ ] When the HTTP layer enforces the consistent compact `application/json` error response, validation, pagination with a stable cursor, idempotent task creation through `Idempotency-Key`, rate limits at sensitive endpoints, and explicit contexts for database and handler work;
+- [ ] When observability emits bounded Prometheus metrics through the injected registry and structured logs with redaction;
+- [ ] When `GET /livez` reports process liveness with the exact compact JSON body and `GET /readyz` reports `200` only after the `up` migration and a database ping succeed;
+- [ ] When graceful shutdown drains in-flight requests within the 10-second window;
+- [ ] When audit events record membership changes, role changes, ownership changes, login success and failure, logout, and team deletion, share a transaction with their domain change, and are append-only through the public API;
+- [ ] When the pure-function policy tables, the handler tests with `httptest`, the integration tests against the isolated PostgreSQL integration database behind the build tag and environment flag, the migration `up` and `down`, the same-team and cross-team matrix, the role matrix, the authentication and session cases, the pagination stability test, the idempotent create replay and conflict test, the transaction rollback test, the concurrent update conflict test, the rate-limit test with the injected clock, the graceful shutdown test, the redaction test, the liveness and readiness test, the registry isolation test, and the end-to-end happy and error path tests all pass;
+- [ ] When the race detector is clean;
+- [ ] When the project documentation reproduces the consistent compact error shape, the pagination cursor, the rate limits, the timeouts, the versioned `up` and `down` migrations, the pinned authentication approach, the bcrypt cost, the `tutorial_session` cookie attributes, the idempotency contract, the explicit non-claims about production readiness, and the explicit scope of the capstone;
+- [ ] And when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
 
 ## 19. Optional Extensions
+
 - A bounded optional read-through cache that may cache project metadata only, never caches authorization, membership, audit, session, or task list results, falls back to PostgreSQL on miss or error, and may be stale under a documented TTL, demonstrating the discipline that a cache is not the source of truth and never caches authorization.
-- A bounded optional background-job worker that sends one documented notification placeholder when a task is assigned, using a job identifier and payload version that together make the retry behavior deterministic and observable without sending any real email or external notification, demonstrating that background work is an extension and not a core requirement.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Level Gate 1](../../plan.md#level-1-gate), [Level Gate 2](../../plan.md#level-2-gate), [Level Gate 3](../../plan.md#level-3-gate), [Level Gate 4](../../plan.md#level-4-gate), [Level Gate 5](../../plan.md#level-5-gate), [Level Gate 6](../../plan.md#level-6-gate), [Project 086 — Distributed Task Queue](../../07-advanced-systems/086_distributed_task_queue/README.md#20-prerequisite-based-documentation-guide), [Project 091 — API Gateway Service](../../07-advanced-systems/091_api_gateway_service/README.md#20-prerequisite-based-documentation-guide), [Project 095 — Microservice with Event-Driven Outbox](../../07-advanced-systems/095_microservice_event_driven/README.md#20-prerequisite-based-documentation-guide), [Project 096 — Metrics Prometheus Exporter](../../07-advanced-systems/096_metrics_prometheus_exporter/README.md#20-prerequisite-based-documentation-guide).
+
+Everything introduced by Projects 001–085 and by the linked advanced prerequisites is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [OWASP Application Security Verification Standard](https://owasp.org/www-project-application-security-verification-standard/).
+- **Testing references:** [Go vulnerability scanning](https://go.dev/doc/tutorial/govulncheck).
+
+### Project-specific learning focus
+
+- **Learn now:** layered architecture, configuration and secrets, authentication and tenancy, transactional boundaries, migrations, background work, bounded observability, graceful shutdown, and production-focused tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

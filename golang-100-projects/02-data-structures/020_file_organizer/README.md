@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project **020** — `020_file_organizer`. The directory name and number must match exactly. This project builds a deterministic plan that groups regular files under a chosen root by lowercase extension, prints the plan, and only then performs moves under explicit confirmation.
+- Project **020** — `020_file_organizer`.
+- The directory name and number must match exactly.
+- This project builds a deterministic plan that groups regular files under a chosen root by lowercase extension, prints the plan, and only then performs moves under explicit confirmation.
 
 ## 2. Project Idea
 
@@ -12,11 +14,17 @@ The program's safe mode is "no execution flag means dry-run". The absence of `--
 
 ## 3. Why This Project Now?
 
-Projects 016 through 019 introduced collections, persistence, CSV parsing, and text streaming. Project 020 introduces walking a real filesystem, building a deterministic plan, and executing it safely. The discipline of "validate the whole plan before moving anything" is the project's core lesson: a partial execution that leaves the directory half-organized is worse than refusing to start.
+- Projects 016 through 019 introduced collections, persistence, CSV parsing, and text streaming.
+- Project 020 introduces walking a real filesystem, building a deterministic plan, and executing it safely.
+- The discipline of "validate the whole plan before moving anything" is the project's core lesson: a partial execution that leaves the directory half-organized is worse than refusing to start.
 
-The project also introduces the dry-run-as-default discipline. A file organizer that mutates the filesystem on every run is dangerous; a file organizer that prints the plan first lets the user read what will happen before committing. The README pins the policy: absence of `--execute` is dry-run, presence of `--execute` is the only way to mutate the filesystem.
+- The project also introduces the dry-run-as-default discipline.
+- A file organizer that mutates the filesystem on every run is dangerous; a file organizer that prints the plan first lets the user read what will happen before committing.
+- The README pins the policy: absence of `--execute` is dry-run, presence of `--execute` is the only way to mutate the filesystem.
 
-Finally, the project establishes the discipline of excluding its own destination directories. A second run on a root that already contains `_txt`, `_md`, and `_no_extension` directories must not move files into `_txt/_txt/`, and must not move files whose extension matches a category directory back into the root. The exclusion list makes re-runs idempotent.
+- Finally, the project establishes the discipline of excluding its own destination directories.
+- A second run on a root that already contains `_txt`, `_md`, and `_no_extension` directories must not move files into `_txt/_txt/`, and must not move files whose extension matches a category directory back into the root.
+- The exclusion list makes re-runs idempotent.
 
 ## 4. Prerequisites
 
@@ -38,7 +46,9 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### A deterministic organization plan
+### Concepts
+
+#### A deterministic organization plan
 
 The plan is a slice of moves. Each move has a source path, a destination path, and a category name. Two runs against the same root produce identical plans, with the moves listed in deterministic lexical order. The plan is the program's single source of truth for execution: nothing is moved until the plan is fully validated.
 
@@ -53,38 +63,38 @@ The category for a file is derived from its lowercase extension. The whitelist i
 
 Every other non-empty extension maps to `_other`. A file with no extension maps to `_no_extension`. The exact category name for a file with a whitelisted extension is the lowercase extension without the leading dot, prefixed with an underscore (for example, `_txt`).
 
-### Safe mode is the default
+#### Safe mode is the default
 
 The program's safe mode is "absence of `--execute` means dry-run". With dry-run, the program runs the full preflight validation but performs zero filesystem mutations. No destination directory is created. No file is moved. The program prints the plan and exits with code zero when the plan is valid.
 
 With `--execute`, the program runs the full preflight validation. If validation succeeds, the program prints the validated plan, then creates the destination directories that are needed, then performs the moves in plan order. If a move fails after earlier moves have completed, the program stops and reports exactly which moves completed and which did not. The program does not roll back earlier moves; it does not copy across filesystems when `os.Rename` returns an error; it does not delete anything.
 
-### Two-phase execution: validate, then move
+#### Two-phase execution: validate, then move
 
 When `--execute` is supplied, execution is in two phases:
 
-1. **Validate.** Walk the root, build the plan, check for collisions (two sources mapping to the same destination), destination-already-exists errors (where the source is not the same file), and any path that escapes the root. If any validation check fails, the program reports the error and exits with a non-zero code. No directory is created, no file is moved.
-2. **Move.** Print the validated plan. Create the destination directories that are needed. Then perform the moves in the plan's order. If any move fails, the program stops and reports exactly which moves completed and which did not.
+- **Validate.** Walk the root, build the plan, check for collisions (two sources mapping to the same destination), destination-already-exists errors (where the source is not the same file), and any path that escapes the root. If any validation check fails, the program reports the error and exits with a non-zero code. No directory is created, no file is moved.
+- **Move.** Print the validated plan. Create the destination directories that are needed. Then perform the moves in the plan's order. If any move fails, the program stops and reports exactly which moves completed and which did not.
 
 Dry-run is validation without mutation. The dry-run path runs the same validation but does not create directories and does not move files.
 
-### Excluding destination category directories
+#### Excluding destination category directories
 
 The walk skips only the exact top-level destination directories directly under the supplied root whose names are in the pinned category set. A root-level `_txt` is not re-walked into `_txt/_txt/`, but an unrelated nested source directory that happens to be named `_txt` is not silently ignored. Exclusion is based on the full cleaned destination path, not on a matching base name anywhere in the tree.
 
 This makes a second run idempotent: running the organizer against an already-organized root produces a plan with zero moves and exits with code zero.
 
-### Symlinks and special files
+#### Symlinks and special files
 
 Symlinks, device files, sockets, named pipes, and any other non-regular entry are skipped and reported in a separate section of the plan. Symlinked directories are not followed. The walk uses `WalkDir` and the entry's `Type()` method to distinguish regular files from everything else.
 
-### Path containment
+#### Path containment
 
 The plan only includes moves whose destination is contained within the supplied root. Containment is a path-aware concept: a destination is contained in the root when its cleaned relative form (relative to the cleaned root) is not absolute and does not begin with `..`. A naïve string-prefix check is wrong: the prefix `root` matches both `root/notes.txt` and `root2/notes.txt`. The test in section 14 includes a sibling-prefix trap test to pin the correct behavior.
 
 The program never touches any path outside the supplied root. A symlink that points outside the root is not followed.
 
-### `os.Rename` and cross-filesystem behavior
+#### `os.Rename` and cross-filesystem behavior
 
 All planned destinations are under the supplied root, so a well-formed plan stays within one filesystem in most cases. Nested mount points inside the root can still cause `os.Rename` to return a cross-device error, and the program must report that error. There is no cross-device copy fallback in the required scope; the program reports the failure, lists the moves that completed, and exits non-zero.
 
@@ -124,18 +134,20 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A root directory path. The directory must exist and be readable. The directory may be empty or contain a mix of regular files, subdirectories, symlinks, and special files.
 - An optional `--execute` flag.
 
-### Outputs
+#### Outputs
 
 - A list of planned moves on standard output. The format includes one line per move, naming the source and destination paths. The format also includes a section listing skipped symlinks and special files.
 - Errors on standard error for any preflight validation failure or any execution failure.
 - Exit code zero on success (including a successful dry run with an empty plan); non-zero on any failure.
 
-### Example text-only dry-run output
+#### Example text-only dry-run output
 
 ```
 $ organize /tmp/testroot
@@ -149,7 +161,7 @@ Skipped (not regular files):
 No changes performed (dry run).
 ```
 
-### Example text-only `--execute` output
+#### Example text-only `--execute` output
 
 ```
 $ organize --execute /tmp/testroot
@@ -161,7 +173,7 @@ Validated plan for /tmp/testroot:
 Executed 4 moves.
 ```
 
-### Example text-only failure runs
+#### Example text-only failure runs
 
 ```
 $ organize /tmp/testroot
@@ -232,14 +244,16 @@ Executed 1 move; move 2 of 3 failed: <error>. Earlier moves remain in place.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Every test uses a per-test temporary directory; no test touches the repository, the user's home, or any other real directory. No test depends on permission tricks or running as a particular user.
 
-### Dry run
+#### Dry run
 
 - A test creates a temporary root with three regular files of different extensions and runs the organizer without `--execute`. Standard output contains exactly the expected three moves, in lexical order. No destination directory is created. No file is moved. The exit code is zero.
 - A test creates a temporary root with no entries and runs the organizer without `--execute`. Standard output contains the empty-plan message. No directory is created. The exit code is zero.
 
-### Classification
+#### Classification
 
 - A file named `notes.txt` is planned for `_txt/notes.txt`.
 - A file named `Makefile` (no extension) is planned for `_no_extension/Makefile`.
@@ -250,40 +264,40 @@ Each case is described in natural language. Every test uses a per-test temporary
 - A file named `image.png` is planned for `_png/image.png`.
 - A file named `report.csv` is planned for `_csv/report.csv`.
 
-### Validation
+#### Validation
 
 - A root with two files in different subdirectories whose destinations collide — for example, `one/notes.txt` and `two/notes.txt` both mapping to `_txt/notes.txt` — produces a preflight error that names both sources and the destination. No move is performed.
 - A root with one regular file and one existing destination file whose name is the same as the planned destination (and which is not the source itself) produces a preflight error that names the existing destination and the source. No move is performed.
 - A sibling-prefix trap test creates two sibling temporary roots, for example `root` and `root2`, places a file `notes.txt` in each, and asserts that the plan for the `root` directory contains only moves under `root` and nothing under `root2`. The test pins the path-aware containment rule.
 
-### Execution
+#### Execution
 
 - A test creates a temporary root with three regular files and runs the organizer with `--execute`. After the run, each file is in its planned destination, the original locations are empty, and the file contents and modes are preserved.
 - A test creates a temporary root with three regular files, runs the organizer with `--execute`, then runs it again without `--execute`. The second run produces an empty plan because the destination directories already exist and are excluded. The exit code is zero.
 - A test creates a temporary root with mixed entries: regular files in two subdirectories and one symlink. The plan contains the regular files. The symlink is reported as skipped. No destination is inside the symlink's target.
 
-### Symlinks
+#### Symlinks
 
 - A root containing a symlink to a regular file skips that symlink and reports the skip.
 - A root containing a symlink to a directory does not traverse the symlinked directory and reports the skip.
 - A root containing a symlink loop is handled without hanging. The walk completes and the plan contains no entries from the loop.
 
-### Already-organized
+#### Already-organized
 
 - A root that already contains `_txt`, `_md`, `_go`, `_json`, `_csv`, `_png`, `_no_extension`, and `_other` directories at its top level: the walk excludes those directories. The plan contains only entries in the root itself, not in the category directories.
 - A nested source directory whose base name is `_txt`, but whose full path is not the root-level `_txt` destination, is still traversed. Its eligible files appear in the plan normally.
 
-### Determinism
+#### Determinism
 
 - A test runs the planner twice against the same temporary root and confirms the two plans are byte-identical (modulo any absolute-path differences, which the test normalizes).
 - A test runs the planner against a root whose entries are created in random order across many runs. The plan's moves are always in the same lexical order.
 
-### Partial failure (where practical)
+#### Partial failure (where practical)
 
 - Where practical, a test injects a move boundary the executor calls, so the test can simulate a single move failure deterministically without changing directory permissions. The test asserts that the program reports the failing move's index, lists the moves that completed, and exits with a non-zero code. Earlier completed moves remain in place.
 - Where injecting a move boundary is not practical, the test marks the case as "where practical" and pins the partial-failure reporting shape through code review and inspection rather than a flaky runtime test.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary without `--execute` against a temporary root and confirms the exit code is zero and standard output contains the plan.
 - An integration test runs the compiled binary with `--execute` against a temporary root with a valid plan and confirms the exit code is zero, the validated plan is printed before any mutation, and the moves completed.
@@ -332,21 +346,40 @@ Each case is described in natural language. Every test uses a per-test temporary
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and every test uses a per-test temporary directory.
-- Absence of `--execute` performs zero filesystem mutations, including no destination-directory creation, while still running full preflight validation.
-- `--execute` prints the validated plan before any mutation, then performs the moves in plan order.
-- A preflight collision or destination-already-exists is reported before any move.
-- Symlinked directories are not followed; symlinks and special files are skipped and reported.
-- Every destination path in the plan is contained within the supplied root under the path-aware containment rule, including the sibling-prefix case.
-- File contents and modes are preserved after the move on a single filesystem.
-- The package documentation states the whitelist, the category-name format, the reserved names, the dry-run policy, and the rename-failure policy.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and every test uses a per-test temporary directory.
+- [ ] Absence of `--execute` performs zero filesystem mutations, including no destination-directory creation, while still running full preflight validation.
+- [ ] `--execute` prints the validated plan before any mutation, then performs the moves in plan order.
+- [ ] A preflight collision or destination-already-exists is reported before any move.
+- [ ] Symlinked directories are not followed; symlinks and special files are skipped and reported.
+- [ ] Every destination path in the plan is contained within the supplied root under the path-aware containment rule, including the sibling-prefix case.
+- [ ] File contents and modes are preserved after the move on a single filesystem.
+- [ ] The package documentation states the whitelist, the category-name format, the reserved names, the dry-run policy, and the rename-failure policy.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Category whitelist via flag.** Accept a comma-separated flag that overrides the pinned whitelist. Extensions not in the override list still go to `_other`. The override is read-only at startup and does not change mid-execution. Do not add per-file rules or regex filters.
-- **Verbose move log.** Accept a `--verbose` flag that prints a one-line confirmation for each completed move during execution. Dry-run mode is unchanged. Do not add progress bars, file counts, or timing.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 019 — Word Frequency Counter](../../02-data-structures/019_word_frequency_counter/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`path/filepath`](https://pkg.go.dev/path/filepath), [`io/fs`](https://pkg.go.dev/io/fs).
+- **Standards and concept references:** [Go blog: traversal-resistant file APIs](https://go.dev/blog/osroot).
+
+### Project-specific learning focus
+
+- **Learn now:** safe traversal, symlinks, path containment, dry-run planning, rename failure modes, idempotence, and partial-failure reporting.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

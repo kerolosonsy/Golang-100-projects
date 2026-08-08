@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project **017** — `017_json_todo_persister`. The directory name and number must match exactly. This project extends the in-memory todo session from project 016 with a JSON file store.
+- Project **017** — `017_json_todo_persister`.
+- The directory name and number must match exactly.
+- This project extends the in-memory todo session from project 016 with a JSON file store.
 
 ## 2. Project Idea
 
@@ -14,9 +16,13 @@ The on-disk JSON document explicitly carries the next-ID value as its own field.
 
 ## 3. Why This Project Now?
 
-Project 016 built a stable in-memory domain with stable IDs and a deterministic order. That stability is exactly what makes a round trip on disk meaningful: the JSON file must preserve IDs, titles, completion flags, and order so that two consecutive sessions behave like one longer session. If 016's ID policy were to reuse IDs after deletion, a round trip on disk would silently change the meaning of an old ID and the project would lose its determinism.
+- Project 016 built a stable in-memory domain with stable IDs and a deterministic order.
+- That stability is exactly what makes a round trip on disk meaningful: the JSON file must preserve IDs, titles, completion flags, and order so that two consecutive sessions behave like one longer session.
+- If 016's ID policy were to reuse IDs after deletion, a round trip on disk would silently change the meaning of an old ID and the project would lose its determinism.
 
-This project also introduces the discipline of "atomic file replace". A program that opens the destination for writing and crashes midway leaves a half-written file on disk; the next run loads a malformed JSON and either fails to start or silently overwrites valid data with an empty collection. The pattern this project introduces — write to a temporary file in the same directory as the destination, close it, then rename — is the simplest practical defense against partial writes, and is the foundation that later projects build on (CSV parser I/O, file organizer moves, contact book storage).
+- This project also introduces the discipline of "atomic file replace".
+- A program that opens the destination for writing and crashes midway leaves a half-written file on disk; the next run loads a malformed JSON and either fails to start or silently overwrites valid data with an empty collection.
+- The pattern this project introduces — write to a temporary file in the same directory as the destination, close it, then rename — is the simplest practical defense against partial writes, and is the foundation that later projects build on (CSV parser I/O, file organizer moves, contact book storage).
 
 ## 4. Prerequisites
 
@@ -38,7 +44,9 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### A small storage interface
+### Concepts
+
+#### A small storage interface
 
 The project pins a single seam between the domain from 016 and the file: a storage interface with two methods, `Load` and `Save`. The domain layer does not know whether the implementation is JSON, an in-memory map, a database, or a network service. Tests substitute a fake that holds the collection in memory; the program wires a JSON file implementation.
 
@@ -47,35 +55,35 @@ The shape of that interface is the learner's choice. The contract is:
 - `Load` returns the stored collection plus its next-ID value, an empty collection with a nil error if there is no file, or an error if the file exists but cannot be parsed.
 - `Save` writes the collection plus its next-ID value to the destination. If the write, the close, or the rename step fails, the previous valid destination file is left untouched and the temporary file is removed.
 
-### JSON encoding choices
+#### JSON encoding choices
 
 The on-disk representation is a single JSON object with two top-level fields: an array of task objects, and a numeric field that holds the next-ID value. Each task object carries the four required fields. The exact field names are the learner's choice and must be documented in the package documentation; the README recommends short, unambiguous names.
 
 The next-ID field is mandatory. The program does not derive the next ID from the loaded tasks. Derivation looks attractive but is unsafe: if a task with the largest issued ID is deleted before the next save, the saved file contains no task with that ID, and a fresh load followed by an `add` would derive a next-ID that equals the deleted ID. That collision violates the project 016 rule. The on-disk JSON carries the next-ID explicitly so the rule survives the round trip.
 
-### Save: write, close, then rename
+#### Save: write, close, then rename
 
 The save path is a sequence of five steps:
 
-1. Choose a temporary file name in the destination's directory. The name must be unique to the current save attempt.
-2. Encode the collection plus its next-ID value to that temporary file.
-3. Close the temporary file explicitly. Closing releases the file handle and pushes any buffered bytes to the kernel. A later step assumes the bytes are visible to the rename.
-4. Rename the temporary file over the destination path with `os.Rename`.
-5. If any step before step 4 fails, do not rename; remove the temporary file if it exists, and return the error to the caller. If step 4 fails, return the error; the previous destination file is left unchanged.
+- Choose a temporary file name in the destination's directory. The name must be unique to the current save attempt.
+- Encode the collection plus its next-ID value to that temporary file.
+- Close the temporary file explicitly. Closing releases the file handle and pushes any buffered bytes to the kernel. A later step assumes the bytes are visible to the rename.
+- Rename the temporary file over the destination path with `os.Rename`.
+- If any step before step 4 fails, do not rename; remove the temporary file if it exists, and return the error to the caller. If step 4 fails, return the error; the previous destination file is left unchanged.
 
 The temporary file lives in the destination's directory so the rename stays on a single filesystem. A temporary file in a different directory crosses a filesystem boundary and `os.Rename` returns an error rather than performing the rename.
 
-### What "atomic" means and what it does not mean
+#### What "atomic" means and what it does not mean
 
 The save path's atomicity guarantee is narrow and honest. It is: on a single filesystem, `os.Rename` replaces the destination's directory entry without touching the file's contents. If the program is killed after step 4, the destination is the new file in full. If the program is killed before step 4, the destination is the old file in full. There is no moment at which the destination holds a partially written file.
 
 This is not the same as crash durability. Before the rename, the save path has not intentionally modified the old destination. After the rename, a sudden power loss can still lose the new directory entry or newly written data unless the relevant file and directory are synchronized according to the platform's rules. The README therefore does not promise that the new bytes have reached stable storage; it promises only the atomic-visibility behavior supplied by a successful supported rename during normal operation. An optional extension in section 19 discusses durability without claiming to solve it universally.
 
-### Why a remove-then-rename fallback is not used
+#### Why a remove-then-rename fallback is not used
 
 On platforms where `os.Rename` cannot replace an existing destination, an obvious alternative is "remove the destination, then rename the temp into place". That approach opens a window in which the destination does not exist on disk. A crash or concurrent read in that window sees a missing file instead of the last valid JSON, which is worse than the previous-valid-file outcome that `os.Rename`'s error path preserves. The README pins the policy: report the rename error and leave the previous destination file unchanged.
 
-### Missing file vs malformed file
+#### Missing file vs malformed file
 
 The two failure modes are very different and must be handled very differently:
 
@@ -114,7 +122,9 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A JSON file at the configured path. Four cases:
   - **Missing.** The file does not exist on disk.
@@ -122,13 +132,13 @@ After completing this project the learner can:
   - **Valid.** The file exists and contains a JSON object with the documented fields, including the next-ID value.
   - **Malformed.** The file exists and contains bytes that the JSON decoder rejects, or contains JSON that does not match the expected schema.
 
-### Outputs
+#### Outputs
 
 - For `Load`: an in-memory collection of tasks plus a next-ID value plus a nil error in the missing case; the same plus a nil error in the valid case; an error in the empty, malformed, and schema-mismatch cases.
 - For `Save`: nil on success; an error on any failure, with the destination file unchanged and the temporary file cleaned up.
 - For each subcommand, the same line on standard output that 016 produced.
 
-### Example text-only success session (two sessions)
+#### Example text-only success session (two sessions)
 
 First session:
 
@@ -166,7 +176,7 @@ Added task 2: write report
 
 The new task is ID `2`, not ID `1`, because the loaded next-ID value from the file is honored.
 
-### Example text-only failure cases
+#### Example text-only failure cases
 
 ```
 add buy milk
@@ -231,22 +241,24 @@ The destination file is unchanged after this error: the next session loads the p
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. All tests use the testing framework's per-test temporary directory; no test touches the user's real files.
 
-### Domain with fake storage
+#### Domain with fake storage
 
 - `Save` then `Load` returns the same collection plus the same next-ID value: same length, same IDs in the same order, same titles, same completion flags.
 - After `Save` then `Load`, an `add` issues an ID strictly greater than every ID that was loaded. The next-ID returned by `Load` matches the value the program wrote.
 - A `Save` that fails inside the fake (for example, a writer that returns an error on `Close`) does not change the next `Load`'s output. The fake records that no temporary file was left behind.
 - A session command whose candidate state cannot be saved reports the save error, does not print a success confirmation, and leaves the current in-memory collection and next-ID value unchanged.
 
-### File storage — happy paths
+#### File storage — happy paths
 
 - A fresh temporary directory with no JSON file: `Load` returns an empty collection, a next-ID of `1`, and a nil error.
 - After `add` against a fresh directory, the JSON file exists, is non-empty, is parseable, and contains one task object plus a next-ID value strictly greater than the largest issued ID.
 - After `add`, `add`, `complete <id1>`, `delete <id2>`, the JSON file contains one task plus a next-ID value strictly greater than the largest ID the session ever issued (including the deleted ID).
 
-### File storage — error paths
+#### File storage — error paths
 
 - An empty existing file: `Load` returns an error, the program does not start with an empty collection, and the file's bytes are unchanged after the failed load.
 - A file containing the literal text "not json": `Load` returns an error, and the file's bytes are unchanged.
@@ -256,18 +268,18 @@ Each case is described in natural language. All tests use the testing framework'
 - A task array with duplicate or non-positive IDs is rejected. A non-positive next-ID, or a next-ID not greater than every stored task ID, is rejected.
 - A save that fails before the rename: `Load` on the destination path returns the previous valid collection, the destination file's bytes are unchanged, and no leftover temporary file remains in the directory.
 
-### Atomic save
+#### Atomic save
 
 - A test asserts that the destination file's bytes are equal to the previous valid bytes after a failed save. This is the central invariant for the pre-rename failure path.
 - A test asserts that no file matching the temporary file's name pattern remains in the destination directory after a failed save.
 - Where practical, a test injects a rename failure through a controllable seam (for example, a destination path that the test forces to fail the rename) and asserts that the previous valid bytes are unchanged, the rename error is reported, and the temporary file is removed. Tests that cannot reliably force a rename failure without permission tricks mark this case as "where practical" and pin the bytes invariant through a pre-rename failure instead.
 
-### Idempotence
+#### Idempotence
 
 - A test calls `Save` twice with the same collection. The destination file's contents are identical after both calls, and no leftover temporary file appears.
 - A test calls `Load` twice without any intervening save. Both calls return the same collection plus the same next-ID value.
 
-### Next-ID round trip
+#### Next-ID round trip
 
 - A test runs `add`, saves, then loads and confirms that the exact persisted next-ID value is preserved and is greater than the issued ID.
 - A test runs `add a`, `add b`, `delete 2`, saves, then loads and runs `add c`. The new task's ID is strictly greater than `2`, even though `2` no longer exists in the loaded tasks.
@@ -310,19 +322,38 @@ Each case is described in natural language. All tests use the testing framework'
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and every test uses a per-test temporary directory.
-- The domain layer from project 016 is reused without modification; only the storage layer is new.
-- A pre-rename failure leaves the destination file's bytes equal to the previous valid bytes, and no leftover temporary file appears in the destination directory.
-- A rename failure leaves the destination file's bytes unchanged and is reported; the program does not remove the destination or copy the temporary file into place.
-- The on-disk JSON document explicitly carries the next-ID value, and a round trip preserves it.
-- The package documentation states the storage seam, the on-disk JSON field names including the next-ID field, the pre-rename failure policy, the rename-failure policy, and the distinction between atomic visibility and crash durability.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and every test uses a per-test temporary directory.
+- [ ] The domain layer from project 016 is reused without modification; only the storage layer is new.
+- [ ] A pre-rename failure leaves the destination file's bytes equal to the previous valid bytes, and no leftover temporary file appears in the destination directory.
+- [ ] A rename failure leaves the destination file's bytes unchanged and is reported; the program does not remove the destination or copy the temporary file into place.
+- [ ] The on-disk JSON document explicitly carries the next-ID value, and a round trip preserves it.
+- [ ] The package documentation states the storage seam, the on-disk JSON field names including the next-ID field, the pre-rename failure policy, the rename-failure policy, and the distinction between atomic visibility and crash durability.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Backup before save.** Before renaming the temporary file over the destination, copy the previous destination file to a sibling file with a `.bak` suffix. The backup is overwritten on every save. Do not add rotation, retention, or restore commands.
-- **Atomic save with explicit `fsync`.** After closing the temporary file, call `Sync` to flush the bytes to disk before renaming. This narrows the window in which a power loss can lose the new contents, but it does not change the program's interface and it does not turn the rename into a fully durable operation on its own. Do not add journaling, write-ahead logs, or crash-recovery logic.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 016 — Todo CLI](../../02-data-structures/016_todo_cli/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`encoding/json`](https://pkg.go.dev/encoding/json).
+- **Standards and concept references:** [Go blog: JSON and Go](https://go.dev/blog/json).
+
+### Project-specific learning focus
+
+- **Learn now:** JSON schema choices, round trips, atomic temp-file replacement, file permissions, idempotence, and recovery from malformed data.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

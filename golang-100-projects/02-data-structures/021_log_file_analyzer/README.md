@@ -2,7 +2,10 @@
 
 ## 1. Project Name and Number
 
-Project **021** — `021_log_file_analyzer`. The directory name and number must match exactly. This project builds a deterministic streaming analyzer for a defined text-log format. It counts valid records per level, reports valid and malformed totals, and lists malformed-line diagnostics in input order.
+- Project **021** — `021_log_file_analyzer`.
+- The directory name and number must match exactly.
+- This project builds a deterministic streaming analyzer for a defined text-log format.
+- It counts valid records per level, reports valid and malformed totals, and lists malformed-line diagnostics in input order.
 
 ## 2. Project Idea
 
@@ -47,7 +50,9 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### The line format
+### Concepts
+
+#### The line format
 
 Each record is exactly one line of text. A line is structured as three fields separated by exactly one ASCII space character (the byte `0x20`):
 
@@ -59,7 +64,7 @@ The first space separates the timestamp from the level. The second space separat
 
 A line is considered to have ended when the scanner encounters the line terminator (`\n`, or `\r\n` which is normalized to `\n` by `ScanLines`). A final line that has no terminator is treated as a regular line and is processed normally.
 
-### The strict whitespace policy
+#### The strict whitespace policy
 
 The contract is strict: every separator is exactly one ASCII space, and every field is exactly what the contract describes.
 
@@ -70,11 +75,11 @@ The contract is strict: every separator is exactly one ASCII space, and every fi
 
 The diagnostics block records the offending line with its reason. The contract makes the format unambiguous: any deviation from the strict shape is malformed, never silently coerced.
 
-### Supported level set and fixed reporting order
+#### Supported level set and fixed reporting order
 
 The supported levels are exactly `DEBUG`, `INFO`, `WARN`, `ERROR`. The reporting order is pinned: the level block always lists `DEBUG`, `INFO`, `WARN`, `ERROR` in this order, with each level shown even when its count is zero. A count of zero is written as `0`, not omitted. The order is not the alphabetical order of the levels and is not derived from the input; it is a fixed contract.
 
-### Valid records, malformed lines, and structural failures
+#### Valid records, malformed lines, and structural failures
 
 The analyzer treats every line as exactly one of three things:
 
@@ -82,7 +87,7 @@ The analyzer treats every line as exactly one of three things:
 - **A malformed line.** The line is well within the accepted line length and the scanner buffer, but its content does not match the format. Examples: blank lines, lines with leading whitespace, lines whose timestamp fails to parse, lines whose level is lowercase or unknown, lines whose message is empty or whitespace-only, lines whose trailing whitespace violates the strict policy. Malformed lines are skipped from the counts but are reported in the diagnostics block with a 1-based line number and a short reason. The analyzer continues scanning after a malformed line.
 - **A structural failure.** Either the line's content exceeds the accepted line length (see "Content-length limit and scanner-buffer headroom" below) or the underlying reader returned an error. The analyzer stops and returns the failure as an error to the caller. Structural failure is not a malformed line and does not appear in the diagnostics block.
 
-### Content-length limit and scanner-buffer headroom
+#### Content-length limit and scanner-buffer headroom
 
 Two values matter and they are different things:
 
@@ -95,21 +100,21 @@ This separation has three observable consequences:
 - A line whose content exceeds `64 KiB` but still fits within the configured scanner maximum is rejected by the analyzer's explicit over-limit check; it does not surface as `Scanner.Err`.
 - Only input beyond the configured scanner maximum surfaces as `Scanner.Err`. The over-limit structural error and the `Scanner.Err` overflow error are both structural failures, but they are different errors with different messages.
 
-### All-or-nothing output
+#### All-or-nothing output
 
 The report is built in memory during the scan and is written to the injected `io.Writer` only after the analyzer has reached clean end-of-input with no structural failure. On any structural failure (over-limit line, reader error), the analyzer returns the error to the caller and writes nothing to the output writer. A partial report is never written. A caller that wants a guaranteed-correct report either receives the full report or receives the error and an empty writer; there is no in-between.
 
-### Streaming without slurping the input
+#### Streaming without slurping the input
 
 The analyzer reads through an `io.Reader`. The analyzer does not call any "read the whole file" helper, does not allocate a slice sized to the input, and does not depend on the input fitting in memory. A test that drives the analyzer with a custom `io.Reader` returning the input across many small `Read` calls confirms the streaming design.
 
-### Reader data-and-error semantics
+#### Reader data-and-error semantics
 
 An `io.Reader` may return some data together with a non-`io.EOF` error on the same `Read` call. The analyzer's scan then processes the lines that the scanner has already emitted from that delivered data, treating them per the normal rules. When the scanner subsequently stops because of the underlying reader error, the analyzer surfaces that non-`EOF` error as a structural failure. The level counts, totals, and diagnostics reflect only the lines that were actually delivered and emitted. The analyzer never writes a partial report; the structural failure produces no writer output.
 
 When the scanner emits a line whose content exceeds the accepted `64 KiB` limit but still fits within the `96 KiB` scanner maximum, the analyzer knows its 1-based line number and includes that number in the explicit over-limit error. If the scanner itself stops because a token exceeds its larger maximum, that token was never emitted, so the analyzer reports the scanner failure with context such as the number of complete lines already processed without inventing an exact line number for the unseen token.
 
-### Stable report ordering
+#### Stable report ordering
 
 The level block is in the pinned fixed order (`DEBUG`, `INFO`, `WARN`, `ERROR`). The totals line appears once, immediately after the level block. The diagnostics block lists malformed lines in input order; that is, ascending 1-based line number. Two runs against the same input produce byte-identical output.
 
@@ -149,15 +154,17 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A stream of bytes through an `io.Reader`. The bytes form UTF-8 text whose lines conform to the line format above, or a mix of valid and malformed lines, or are empty. The stream may end with or without a final newline.
 
-### Outputs
+#### Outputs
 
 - The report written to an injected `io.Writer`. The report contains the level block, the totals line, and the diagnostics block, in that order. The exact wording of the report (header wording, separator characters, diagnostic format) is the learner's choice, but the test pins the learner's chosen format.
 
-### Example text-only success run
+#### Example text-only success run
 
 ```
 $ analyze app.log
@@ -169,9 +176,10 @@ ERROR    1
 valid=9 malformed=0
 ```
 
-### Example text-only mixed-input run
+#### Example text-only mixed-input run
 
 Input:
+
 ```
 2026-07-29T10:00:00Z INFO request received
 2026-07-29T10:00:01Z DEBUG cache hit
@@ -182,6 +190,7 @@ not-a-timestamp ERROR boom
 ```
 
 Report:
+
 ```
 LEVEL    COUNT
 DEBUG    1
@@ -194,11 +203,11 @@ line 4: unsupported level (warn)
 line 5: empty message
 ```
 
-### Example text-only over-limit run
+#### Example text-only over-limit run
 
 When the analyzer is given a line whose content exceeds `64 KiB` (and that still fits within the configured scanner maximum), the analyzer returns an over-limit structural error and writes nothing to the output writer. The error identifies the condition (for example, "line content exceeds 65536 bytes") and may include context such as "after processing N complete lines" when the analyzer can determine it.
 
-### Example text-only scanner-overflow run
+#### Example text-only scanner-overflow run
 
 When input exceeds the configured scanner maximum, the analyzer returns a structural error that identifies the scanner-buffer overflow (for example, wrapped `bufio.ErrTooLong`). The analyzer writes no report. The line whose length pushed the input past the scanner maximum was not emitted as a parsed line, so its ordinal position is not promised.
 
@@ -263,65 +272,67 @@ When input exceeds the configured scanner maximum, the analyzer returns a struct
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests drive the analyzer through an `io.Reader` and assert on the `io.Writer` output. No test depends on real files, real home directories, or wall-clock pacing.
 
-### Format and counting
+#### Format and counting
 
 - Input with one `DEBUG`, two `INFO`, one `WARN`, and one `ERROR` line: the level block shows `DEBUG=1`, `INFO=2`, `WARN=1`, `ERROR=1`, the totals line shows `valid=5 malformed=0`, and the diagnostics block is empty.
 - Input with no errors at all (every line is well-formed): the totals line shows `valid=N malformed=0` and the diagnostics block is empty, where `N` is the number of lines.
 - Input with mixed valid and malformed lines: the totals line shows the correct `valid=` and `malformed=` values, and the diagnostics block lists only the malformed lines with the correct 1-based line numbers in input order.
 
-### Empty input
+#### Empty input
 
 - Input of zero bytes produces the full level block with every level at `0`, the totals line `valid=0 malformed=0`, and an empty diagnostics block. No error is returned. The output writer receives the report.
 
-### Final line without newline
+#### Final line without newline
 
 - Input where the last well-formed line has no trailing newline is processed normally and counted as one valid record. The totals line shows the correct counts.
 
-### Strict whitespace policy
+#### Strict whitespace policy
 
 - A blank line is malformed. The diagnostic carries the correct line number and a "blank line" reason (or the learner's pinned wording).
 - A line with leading whitespace before the timestamp is malformed. The diagnostic reason mentions the leading whitespace.
 - A line whose message is followed by whitespace before the line terminator is malformed. The diagnostic reason mentions the trailing whitespace. The analyzer does not trim and does not silently accept.
 - A line whose message contains only whitespace is malformed. The diagnostic reason mentions the empty message.
 
-### Other malformed lines
+#### Other malformed lines
 
 - A line with a non-RFC3339 timestamp (for example `2026/07/29 10:00:00`) is malformed. The diagnostic reason mentions the malformed timestamp.
 - A line with an unsupported level (`TRACE`, `FATAL`, `info`, `warn`, empty level, etc.) is malformed. The diagnostic reason mentions the unsupported level and includes the offending token.
 - A line whose message is empty (the level is followed immediately by the line terminator) is malformed. The diagnostic reason mentions the empty message.
 - A line that lacks one or both field separators is malformed. The diagnostic reason mentions the missing field separator or the wrong field count.
 
-### Long supported line
+#### Long supported line
 
 - A line whose content totals exactly `64 KiB` (65,536 bytes) is accepted, counted, and not surfaced as an error.
 - A line whose content is exactly one byte longer than `64 KiB` is rejected as a structural failure with an explicit over-limit error. The error identifies the over-limit condition. The over-limit line does not appear in the diagnostics block. The output writer receives nothing.
 - The over-limit error is reported by the analyzer, not by `Scanner.Err`, when the over-limit line still fits inside the configured scanner maximum.
 
-### Scanner-buffer overflow
+#### Scanner-buffer overflow
 
 - An input whose line content exceeds the configured scanner maximum is rejected as a structural failure that wraps or identifies the scanner-buffer overflow. The output writer receives nothing. The error is distinguishable from the explicit over-limit error.
 
-### Stable ordering
+#### Stable ordering
 
 - A test runs the analyzer twice against the same input. The two outputs are byte-identical.
 - A test runs the analyzer against an input whose malformed lines appear in non-monotonic order in the input; the diagnostics block lists them in ascending 1-based line number (which is monotonic with input order).
 - A test runs the analyzer against an input with all four levels present at varying counts; the level block is in the fixed order `DEBUG`, `INFO`, `WARN`, `ERROR`.
 
-### All-or-nothing output
+#### All-or-nothing output
 
 - A test runs the analyzer against an input that ends with an over-limit line. The output writer is empty; the analyzer returns the over-limit error.
 - A test runs the analyzer against an input that ends with an injected reader error. The output writer is empty; the analyzer returns the wrapped reader error.
 - A test runs the analyzer against a well-formed input. The output writer receives the full report; the analyzer returns no error.
 
-### Injected reader failure
+#### Injected reader failure
 
 - A test injects a custom `io.Reader` that returns a planned non-`io.EOF` error mid-stream. The analyzer returns an error that wraps or identifies the reader failure. The reader failure does not appear in the diagnostics block. The output writer is empty.
 - A test injects a custom `io.Reader` that returns some bytes together with a non-`io.EOF` error on the same `Read` call. The lines the scanner emits from the delivered bytes are processed per the normal rules; the analyzer then returns the reader error. The output writer is empty.
 - A test injects a custom `io.Reader` that returns `io.EOF` after delivering some well-formed lines. The analyzer produces a normal report on those lines and returns no error.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary against a temporary file containing a known mix of valid and malformed lines and confirms the exit code is zero, the report is on standard output, and any structural-failure case exits non-zero with an error on standard error and no report on standard output.
 - An integration test runs the compiled binary against an empty file and confirms the level block is full of zeros, the totals line shows `valid=0 malformed=0`, and the exit code is zero.
@@ -372,23 +383,41 @@ Each case is described in natural language. Tests drive the analyzer through an 
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and every test drives the analyzer through an `io.Reader` and asserts on an `io.Writer`.
-- The strict whitespace policy is enforced: leading whitespace before the timestamp is malformed, trailing whitespace after the message is malformed, an empty or whitespace-only message is malformed, and a blank line is malformed.
-- The scanner buffer is configured to exactly `96 KiB` (98,304 bytes) before the first `Scan` call, giving headroom beyond the accepted `64 KiB` line-content length, and the accepted line-content length is set independently at `64 KiB` exclusive of the terminator.
-- A line whose content exceeds `64 KiB` returns an explicit over-limit structural error and writes no report, even when the line still fits the scanner's larger buffer.
-- A line whose content exceeds the scanner's larger maximum returns a wrapped `Scanner.Err` and writes no report.
-- A reader error mid-stream returns a wrapped reader error and writes no report. The data delivered in the same `Read` call is processed per the normal rules before the stop.
-- The level block is in the fixed order `DEBUG`, `INFO`, `WARN`, `ERROR`, with zero counts shown as `0`.
-- The diagnostics block lists malformed lines in input order with 1-based line numbers and short reasons.
-- The output is byte-identical across two runs against the same input.
-- The package documentation states the supported level set, the level block's fixed order, the `64 KiB` accepted line-content length, the `96 KiB` scanner-buffer maximum, the strict whitespace policy, and the three-way outcome policy (normal EOF, malformed, structural failure).
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and every test drives the analyzer through an `io.Reader` and asserts on an `io.Writer`.
+- [ ] The strict whitespace policy is enforced: leading whitespace before the timestamp is malformed, trailing whitespace after the message is malformed, an empty or whitespace-only message is malformed, and a blank line is malformed.
+- [ ] The scanner buffer is configured to exactly `96 KiB` (98,304 bytes) before the first `Scan` call, giving headroom beyond the accepted `64 KiB` line-content length, and the accepted line-content length is set independently at `64 KiB` exclusive of the terminator.
+- [ ] A line whose content exceeds `64 KiB` returns an explicit over-limit structural error and writes no report, even when the line still fits the scanner's larger buffer.
+- [ ] A line whose content exceeds the scanner's larger maximum returns a wrapped `Scanner.Err` and writes no report.
+- [ ] A reader error mid-stream returns a wrapped reader error and writes no report. The data delivered in the same `Read` call is processed per the normal rules before the stop.
+- [ ] The level block is in the fixed order `DEBUG`, `INFO`, `WARN`, `ERROR`, with zero counts shown as `0`.
+- [ ] The diagnostics block lists malformed lines in input order with 1-based line numbers and short reasons.
+- [ ] The output is byte-identical across two runs against the same input.
+- [ ] The package documentation states the supported level set, the level block's fixed order, the `64 KiB` accepted line-content length, the `96 KiB` scanner-buffer maximum, the strict whitespace policy, and the three-way outcome policy (normal EOF, malformed, structural failure).
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Per-level filter flag.** Accept a flag that lists the levels to include in the report. Levels not listed are still counted in the valid total but are not printed in the level block. The diagnostics block is unchanged. Do not add filtering by message content or by timestamp range.
-- **ISO-date summary line.** Add one summary line at the bottom of the report listing the earliest and latest timestamps among the valid records, in RFC3339 form. The line is omitted when there are no valid records. Do not add timezone conversion or date-format changes.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 020 — File Organizer](../../02-data-structures/020_file_organizer/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [Go io.Reader conventions](https://pkg.go.dev/io#Reader).
+
+### Project-specific learning focus
+
+- **Learn now:** streaming line parsers, scanner limits, data-plus-error reads, typed errors, all-or-nothing output, and deterministic summaries.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

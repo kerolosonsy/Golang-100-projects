@@ -1,47 +1,117 @@
 # Project 083 — Custom HTTP Client
 
 ## 1. Project Name and Number
-Project 083, custom_http_client. This README is a learning guide only. You will create every source and test file yourself in `06-networking/083_custom_http_client/`. This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- Project 083, custom_http_client.
+- This README is a learning guide only.
+- You will create every source and test file yourself in `06-networking/083_custom_http_client/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 2. Project Idea
+
 A reusable API client around an injected `http.Client` and a configured origin-only base URL. The base URL is an absolute http or https URL whose scheme and host are required, whose userinfo, query, fragment, and non-root path are rejected at construction, and whose root path is normalized. The client supports exactly two operations: `GET /items/{id}` and `POST /items`. The item ID is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen only, so slash, dot segments, percent, colon, query, and fragment characters are rejected before any request. The JSON data is fixed: an `Item` has exactly the string fields `id` and `name`; `GET` returns one `Item`; `POST` accepts exactly `name` as a trimmed UTF-8 string of one to 128 bytes and returns one `Item`. Both success statuses are exactly 200. The retry predicate is pinned exactly. The injected sleeper, jitter, clock, and random source ensure no test sleeps.
 
 ## 3. Why This Project Now?
-This follows Project 082 (simple_port_scanner) as the immediate predecessor. Project 071 (tcp_echo_server) and Project 060 (graceful_shutdown_web) are also formal prerequisites. Project 046 (basic_http_server) is recommended review for `net/http` handler basics, and Project 041 (context_timeout_example) is recommended review for context cancellation and deadlines, but neither is a formal prerequisite. This project introduces the discipline of pinning the retry predicate exactly so that 4xx is never retried and arbitrary "temporary" strings never trigger a retry, the discipline of treating the request body as immutable bounded bytes for safe retries, and the discipline of normalizing the base URL to an origin.
+
+- This follows Project 082 (simple_port_scanner) as the immediate predecessor.
+- Project 071 (tcp_echo_server) and Project 060 (graceful_shutdown_web) are also formal prerequisites.
+- Project 046 (basic_http_server) is recommended review for `net/http` handler basics, and Project 041 (context_timeout_example) is recommended review for context cancellation and deadlines, but neither is a formal prerequisite.
+- This project introduces the discipline of pinning the retry predicate exactly so that 4xx is never retried and arbitrary "temporary" strings never trigger a retry, the discipline of treating the request body as immutable bounded bytes for safe retries, and the discipline of normalizing the base URL to an origin.
 
 ## 4. Prerequisites
-Project 082 is the immediate predecessor and required prerequisite; Project 071 and Project 060 are also formal prerequisites. Project 046 and Project 041 are recommended review for handler basics and context cancellation, but neither is a formal prerequisite. Tests use `httptest` servers or an injected fake `RoundTripper`. No test contacts the public internet. `InsecureSkipVerify` is not used as a solution. Sleep is not used as a synchronization mechanism.
+
+- Project 082 is the immediate predecessor and required prerequisite; Project 071 and Project 060 are also formal prerequisites.
+- Project 046 and Project 041 are recommended review for handler basics and context cancellation, but neither is a formal prerequisite.
+- Tests use `httptest` servers or an injected fake `RoundTripper`.
+- No test contacts the public internet. `InsecureSkipVerify` is not used as a solution.
+- Sleep is not used as a synchronization mechanism.
 
 ## 5. What You Must Know Before Starting
-Know the `net/http` package and the `http.Client`, `http.Transport`, and `http.RoundTripper` interfaces, the production total timeout configuration on `http.Client`, per-call context precedence, `errors.Is` and `errors.As` precedence, the distinction between a transient transport failure before any response and a real response status, the `Retry-After` header semantics for integer delta-seconds and HTTP-date, the classification of common wrapped transport errors such as `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, and `io.ErrUnexpectedEOF`, JSON strict decoding with `DisallowUnknownFields` and trailing-value rejection, the idempotency-key convention, redirect semantics in `http.Client`, the race detector, and the principle that a request body used for retries must be re-readable identically on each attempt.
+
+- Know the `net/http` package and the `http.Client`, `http.Transport`, and `http.RoundTripper` interfaces, the production total timeout configuration on `http.Client`, per-call context precedence, `errors.Is` and `errors.As` precedence, the distinction between a transient transport failure before any response and a real response status, the `Retry-After` header semantics for integer delta-seconds and HTTP-date, the classification of common wrapped transport errors such as `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, and `io.ErrUnexpectedEOF`, JSON strict decoding with `DisallowUnknownFields` and trailing-value rejection, the idempotency-key convention, redirect semantics in `http.Client`, the race detector, and the principle that a request body used for retries must be re-readable identically on each attempt.
 
 ## 6. Explanation of New Concepts
-The base URL is an origin-only absolute http or https URL. The scheme and host are required; userinfo, query, fragment, and any non-root path are rejected at construction; the root path is normalized to a single slash. The item ID is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen only. Slash, dot segments, percent, colon, query, and fragment characters are rejected before any request. The constructed URLs are exactly the origin slash `items` slash the validated item ID for `GET`, and the origin slash `items` for `POST`. The client never lets the item ID change the host or path.
 
-The JSON data is fixed. An `Item` has exactly the string fields `id` and `name`. A successful `GET` returns one `Item`. A `POST` input has exactly the trimmed UTF-8 string `name` whose byte length is one to 128 inclusive; an empty or over-length name is rejected before the request. A successful `POST` returns one `Item`. Both success statuses are exactly 200. A response status that is not exactly 200 is never a success, including other 2xx. The JSON request body for `POST` has media type `application/json`. The response media type is `application/json` with no parameter or with only `charset=utf-8`; any other parameter or any other charset is rejected.
+### Concepts
 
-The production `http.Client` has a total timeout of 10 seconds; a per-call context with an earlier deadline wins. The success body is bounded by a maximum of 1 MiB inclusive; the client reads one byte beyond the cap to detect oversize; the strict JSON decoder rejects unknown fields and trailing values; an unexpected truncation is detected by comparing the decoded length to the bounded body length; the body is closed on every code path.
+- The base URL is an origin-only absolute http or https URL.
+- The scheme and host are required; userinfo, query, fragment, and any non-root path are rejected at construction; the root path is normalized to a single slash.
+- The item ID is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen only.
+- Slash, dot segments, percent, colon, query, and fragment characters are rejected before any request.
+- The constructed URLs are exactly the origin slash `items` slash the validated item ID for `GET`, and the origin slash `items` for `POST`.
+- The client never lets the item ID change the host or path.
 
-Errors are typed. A 404 response is a typed not-found with no snippet. Any other response status except 200 is a typed status error with a sanitized snippet, including an otherwise unexpected 2xx status. The error body snippet is bounded to a maximum of 4 KiB; the client reads one byte beyond the cap, retains the first 4 KiB, replaces invalid UTF-8 and ASCII control or newline bytes with single spaces, trims edge whitespace, and uses a single hyphen when the sanitized snippet is empty. The upstream body is closed before the typed error is returned.
+- The JSON data is fixed.
+- An `Item` has exactly the string fields `id` and `name`.
+- A successful `GET` returns one `Item`.
+- A `POST` input has exactly the trimmed UTF-8 string `name` whose byte length is one to 128 inclusive; an empty or over-length name is rejected before the request.
+- A successful `POST` returns one `Item`.
+- Both success statuses are exactly 200.
+- A response status that is not exactly 200 is never a success, including other 2xx.
+- The JSON request body for `POST` has media type `application/json`.
+- The response media type is `application/json` with no parameter or with only `charset=utf-8`; any other parameter or any other charset is rejected.
 
-The redirect policy is pinned. The maximum is exactly 5 same-origin hops. Same origin means the normalized scheme, hostname, and effective port of the redirect target match the configured base URL. A cross-origin redirect, a redirect with userinfo, or a sixth redirect is a typed redirect error. Sensitive headers are not forwarded across a rejected redirect.
+- The production `http.Client` has a total timeout of 10 seconds; a per-call context with an earlier deadline wins.
+- The success body is bounded by a maximum of 1 MiB inclusive; the client reads one byte beyond the cap to detect oversize; the strict JSON decoder rejects unknown fields and trailing values; an unexpected truncation is detected by comparing the decoded length to the bounded body length; the body is closed on every code path.
 
-The retry predicate is pinned exactly. The total number of attempts is at most 3. A `GET` is retried only when the response status is exactly 502, 503, or 504, or when a pre-response transport error matches one of the pinned categories: a timeout that is not caused by the caller context, a wrapped `ECONNRESET`, a wrapped `ECONNREFUSED`, a wrapped `EPIPE`, or `io.ErrUnexpectedEOF`. The client does not retry TLS verification failures, URL or protocol errors, arbitrary "temporary" strings, 4xx responses, caller `Canceled` or `DeadlineExceeded`, or any other transport error. A response status is not a transport error.
+- Errors are typed.
+- A 404 response is a typed not-found with no snippet.
+- Any other response status except 200 is a typed status error with a sanitized snippet, including an otherwise unexpected 2xx status.
+- The error body snippet is bounded to a maximum of 4 KiB; the client reads one byte beyond the cap, retains the first 4 KiB, replaces invalid UTF-8 and ASCII control or newline bytes with single spaces, trims edge whitespace, and uses a single hyphen when the sanitized snippet is empty.
+- The upstream body is closed before the typed error is returned.
 
-Before a status-based retry, the client discards at most 4 KiB of the response body and closes the body; body reuse is not promised. The client closes every attempt body before the sleeper or the next attempt. When an error path yields a response, the client closes that response before classification. The request body for `POST` is serialized once to an immutable bounded byte buffer and a fresh body is created per attempt so retries are identical.
+- The redirect policy is pinned.
+- The maximum is exactly 5 same-origin hops.
+- Same origin means the normalized scheme, hostname, and effective port of the redirect target match the configured base URL.
+- A cross-origin redirect, a redirect with userinfo, or a sixth redirect is a typed redirect error.
+- Sensitive headers are not forwarded across a rejected redirect.
 
-Backoff is pinned. Before attempt 2 the wait is 100 milliseconds plus injected jitter in the inclusive range 0..50 milliseconds. Before attempt 3 the wait is 200 milliseconds plus injected jitter in the inclusive range 0..50 milliseconds. A valid `Retry-After` response replaces the calculated backoff; the wait is the minimum of the parsed value, the configured 2-second cap, and the remaining caller deadline. The `Retry-After` parser accepts an integer delta-seconds value and an HTTP-date value using the injected clock. An invalid or past `Retry-After` value falls back to the calculated backoff. The sleeper and the random source are injected so tests never sleep.
+- The retry predicate is pinned exactly.
+- The total number of attempts is at most 3.
+- A `GET` is retried only when the response status is exactly 502, 503, or 504, or when a pre-response transport error matches one of the pinned categories: a timeout that is not caused by the caller context, a wrapped `ECONNRESET`, a wrapped `ECONNREFUSED`, a wrapped `EPIPE`, or `io.ErrUnexpectedEOF`.
+- The client does not retry TLS verification failures, URL or protocol errors, arbitrary "temporary" strings, 4xx responses, caller `Canceled` or `DeadlineExceeded`, or any other transport error.
+- A response status is not a transport error.
 
-The `POST` policy is pinned. A `POST` without an idempotency key is exactly one attempt. A `POST` with a non-empty idempotency key may use the same retry predicate as `GET`. The idempotency key is one to 64 ASCII visible non-space characters and is sent as the `Idempotency-Key` header. An invalid key is rejected before the call. The request body is serialized once to immutable bounded bytes and a fresh body is created per attempt so retries are identical.
+- Before a status-based retry, the client discards at most 4 KiB of the response body and closes the body; body reuse is not promised.
+- The client closes every attempt body before the sleeper or the next attempt.
+- When an error path yields a response, the client closes that response before classification.
+- The request body for `POST` is serialized once to an immutable bounded byte buffer and a fresh body is created per attempt so retries are identical.
 
-The headers are pinned. `Accept` is `application/json`. `Content-Type` is set for `POST` and is `application/json`. `User-Agent` is the literal `go-tutorial-client/1.0`. `X-Request-ID` is taken from an injected source and is validated as one to 64 ASCII visible non-space characters. The injected source is called once per logical API call, and the same identifier and the same idempotency key are used across that logical call's retry attempts. The client does not require globally unique values; a source failure or an invalid value is a pre-call typed error. Shared state is immutable and thread-safe.
+- Backoff is pinned.
+- Before attempt 2 the wait is 100 milliseconds plus injected jitter in the inclusive range 0..50 milliseconds.
+- Before attempt 3 the wait is 200 milliseconds plus injected jitter in the inclusive range 0..50 milliseconds.
+- A valid `Retry-After` response replaces the calculated backoff; the wait is the minimum of the parsed value, the configured 2-second cap, and the remaining caller deadline.
+- The `Retry-After` parser accepts an integer delta-seconds value and an HTTP-date value using the injected clock.
+- An invalid or past `Retry-After` value falls back to the calculated backoff.
+- The sleeper and the random source are injected so tests never sleep.
 
-Text-only protocol examples are permitted. As a prose shape: a successful `GET /items/abc` returns 200 with content type `application/json` and a strict-JSON body that decodes into one `Item` whose fields are exactly `id` and `name`; a 404 returns a typed not-found with no snippet; a 500 returns a typed status error whose snippet is the sanitized first 4 KiB of the body; a `GET` whose first attempt returns 502 is retried with a 100-millisecond plus jitter backoff before attempt 2; a `GET` whose first attempt returns 400 is not retried; a `POST` without an idempotency key is sent exactly once even when the fake transport reports a transient failure; a `POST` with a non-empty idempotency key that begins with a transient failure is retried with the same backoff schedule and the same request bytes.
+- The `POST` policy is pinned.
+- A `POST` without an idempotency key is exactly one attempt.
+- A `POST` with a non-empty idempotency key may use the same retry predicate as `GET`.
+- The idempotency key is one to 64 ASCII visible non-space characters and is sent as the `Idempotency-Key` header.
+- An invalid key is rejected before the call.
+- The request body is serialized once to immutable bounded bytes and a fresh body is created per attempt so retries are identical.
+
+- The headers are pinned. `Accept` is `application/json`. `Content-Type` is set for `POST` and is `application/json`. `User-Agent` is the literal `go-tutorial-client/1.0`. `X-Request-ID` is taken from an injected source and is validated as one to 64 ASCII visible non-space characters.
+- The injected source is called once per logical API call, and the same identifier and the same idempotency key are used across that logical call's retry attempts.
+- The client does not require globally unique values; a source failure or an invalid value is a pre-call typed error.
+- Shared state is immutable and thread-safe.
+
+- Text-only protocol examples are permitted.
+- As a prose shape: a successful `GET /items/abc` returns 200 with content type `application/json` and a strict-JSON body that decodes into one `Item` whose fields are exactly `id` and `name`;
+- A 404 returns a typed not-found with no snippet;
+- A 500 returns a typed status error whose snippet is the sanitized first 4 KiB of the body;
+- A `GET` whose first attempt returns 502 is retried with a 100-millisecond plus jitter backoff before attempt 2;
+- A `GET` whose first attempt returns 400 is not retried;
+- A `POST` without an idempotency key is sent exactly once even when the fake transport reports a transient failure;
+- A `POST` with a non-empty idempotency key that begins with a transient failure is retried with the same backoff schedule and the same request bytes.
 
 ## 7. Learning Objective
-Implement a reusable API client around an injected `http.Client` and an origin-only base URL with exact base URL normalization, an exact item ID charset, `GET /items/{id}` and `POST /items` as the only operations, exact JSON data shapes for both operations, exact 200-pinned success paths with a 1 MiB body cap and strict JSON decoding, exact 4 KiB error snippet sanitization, a 5 same-origin redirect maximum, an exact retry predicate with a maximum of 3 attempts, exact backoff of 100 plus jitter before attempt 2 and 200 plus jitter before attempt 3, exact `Retry-After` parsing with a 2-second cap and remaining deadline, an exact `POST` policy of one attempt without an idempotency key and the same retry predicate with a non-empty valid key, exact headers including `Accept`, `Content-Type` for `POST`, `User-Agent`, `X-Request-ID`, and `Idempotency-Key`, and tests through `httptest` or a fake `RoundTripper` with no public network and no sleep synchronization.
+
+- Implement a reusable API client around an injected `http.Client` and an origin-only base URL with exact base URL normalization, an exact item ID charset, `GET /items/{id}` and `POST /items` as the only operations, exact JSON data shapes for both operations, exact 200-pinned success paths with a 1 MiB body cap and strict JSON decoding, exact 4 KiB error snippet sanitization, a 5 same-origin redirect maximum, an exact retry predicate with a maximum of 3 attempts, exact backoff of 100 plus jitter before attempt 2 and 200 plus jitter before attempt 3, exact `Retry-After` parsing with a 2-second cap and remaining deadline, an exact `POST` policy of one attempt without an idempotency key and the same retry predicate with a non-empty valid key, exact headers including `Accept`, `Content-Type` for `POST`, `User-Agent`, `X-Request-ID`, and `Idempotency-Key`, and tests through `httptest` or a fake `RoundTripper` with no public network and no sleep synchronization.
 
 ## 8. Functional Requirements
+
 1. The base URL is an origin-only absolute http or https URL whose scheme and host are required; userinfo, query, fragment, and any non-root path are rejected at construction; the root path is normalized to a single slash.
 2. The item ID is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen only; slash, dot segments, percent, colon, query, and fragment characters are rejected before any request.
 3. The constructed URLs are exactly the origin slash `items` slash the validated item ID for `GET` and the origin slash `items` for `POST`.
@@ -61,18 +131,64 @@ Implement a reusable API client around an injected `http.Client` and an origin-o
 17. Tests use `httptest` or an injected fake `RoundTripper`. No test contacts the public internet. `InsecureSkipVerify` is not used as a solution. Sleep is not used as a synchronization mechanism.
 
 ## 9. Inputs and Outputs
-Inputs are the injected `http.Client`, the origin-only base URL, the operation arguments including the item ID for `GET` and the trimmed UTF-8 name for `POST`, an idempotency-key argument for `POST` that defaults to empty, and a context with optional deadline. Outputs are typed results that contain the decoded `Item` for success, a typed not-found for 404 with no snippet, a typed status error for every other non-200 response with the sanitized snippet, a typed body-too-large error for over-cap reads, a typed strict-JSON error for decoding failures, a typed redirect error for cross-origin or over-cap same-origin redirects, a typed transient-error category for transport failures before any response, a typed context category for cancellation and deadline-exceeded, and a typed header-source error for source failure or invalid value.
+
+### Interface Contract
+
+- Inputs are the injected `http.Client`, the origin-only base URL, the operation arguments including the item ID for `GET` and the trimmed UTF-8 name for `POST`, an idempotency-key argument for `POST` that defaults to empty, and a context with optional deadline.
+- Outputs are typed results that contain the decoded `Item` for success, a typed not-found for 404 with no snippet, a typed status error for every other non-200 response with the sanitized snippet, a typed body-too-large error for over-cap reads, a typed strict-JSON error for decoding failures, a typed redirect error for cross-origin or over-cap same-origin redirects, a typed transient-error category for transport failures before any response, a typed context category for cancellation and deadline-exceeded, and a typed header-source error for source failure or invalid value.
 
 ## 10. Rules and Edge Cases
-An invalid base URL is rejected at construction. An invalid item ID is rejected before any request. The item ID never changes the host or path. A response status that is not exactly 200 is not a success. A 200 response with a non-`application/json` media type is a typed content-type error. A 200 response with a wrong parameter or a wrong charset is a typed content-type error. A 200 response whose body exceeds 1 MiB is a typed body-too-large error. A 200 response whose body contains unknown fields is a typed strict-JSON error. A 200 response whose body contains trailing values is a typed strict-JSON error. A 200 response whose body is unexpectedly truncated is a typed truncation error. A 404 is a typed not-found with no snippet. Every other non-200 response is a typed status error with the sanitized 4 KiB snippet, including an otherwise unexpected 2xx status. A cross-origin or userinfo redirect is rejected. A sixth same-origin redirect is rejected. `GET` retry is allowed only for response statuses 502, 503, and 504 or for the pinned pre-response transport errors; the total attempt count is at most 3. The body is closed before every retry. A 4xx response is never retried. A canceled context is never retried. A `POST` without an idempotency key is never retried. A `POST` with a valid idempotency key uses the same retry predicate as `GET`. An invalid idempotency key is rejected before the call. The same `X-Request-ID` and the same idempotency key are used across the retry attempts of a single logical API call. The shared state is immutable and thread-safe.
+
+- An invalid base URL is rejected at construction.
+- An invalid item ID is rejected before any request.
+- The item ID never changes the host or path.
+- A response status that is not exactly 200 is not a success.
+- A 200 response with a non-`application/json` media type is a typed content-type error.
+- A 200 response with a wrong parameter or a wrong charset is a typed content-type error.
+- A 200 response whose body exceeds 1 MiB is a typed body-too-large error.
+- A 200 response whose body contains unknown fields is a typed strict-JSON error.
+- A 200 response whose body contains trailing values is a typed strict-JSON error.
+- A 200 response whose body is unexpectedly truncated is a typed truncation error.
+- A 404 is a typed not-found with no snippet.
+- Every other non-200 response is a typed status error with the sanitized 4 KiB snippet, including an otherwise unexpected 2xx status.
+- A cross-origin or userinfo redirect is rejected.
+- A sixth same-origin redirect is rejected. `GET` retry is allowed only for response statuses 502, 503, and 504 or for the pinned pre-response transport errors; the total attempt count is at most 3.
+- The body is closed before every retry.
+- A 4xx response is never retried.
+- A canceled context is never retried.
+- A `POST` without an idempotency key is never retried.
+- A `POST` with a valid idempotency key uses the same retry predicate as `GET`.
+- An invalid idempotency key is rejected before the call.
+- The same `X-Request-ID` and the same idempotency key are used across the retry attempts of a single logical API call.
+- The shared state is immutable and thread-safe.
 
 ## 11. Project Constraints
-No public internet in any test. No `InsecureSkipVerify` as a solution. Sleep is not used as a synchronization mechanism in tests. The `http.Client` and base URL are injected so tests run offline. The sleeper, jitter, clock, and random source are injected. The client does not run an HTTP server. The client does not perform caching beyond the strict response-body lifetime. The client does not expose arbitrary HTTP verbs.
+
+- No public internet in any test.
+- No `InsecureSkipVerify` as a solution.
+- Sleep is not used as a synchronization mechanism in tests.
+- The `http.Client` and base URL are injected so tests run offline.
+- The sleeper, jitter, clock, and random source are injected.
+- The client does not run an HTTP server.
+- The client does not perform caching beyond the strict response-body lifetime.
+- The client does not expose arbitrary HTTP verbs.
 
 ## 12. Design Questions Before Coding
-Why is the base URL an origin-only absolute URL and why is the root path normalized at construction? Why is the item ID restricted to a fixed charset and why are slash, dot segments, percent, colon, query, and fragment characters rejected before any request? Why is success pinned to exactly 200 and to `application/json` with no parameter or only `charset=utf-8`, and why are unknown fields, trailing values, and unexpected truncation rejected by the strict JSON contract? Why is the error body snippet bounded to 4 KiB and why is the sanitization rule exact? Why is the redirect maximum exactly 5 and why is same origin the normalized scheme, hostname, and effective port? Why is the retry predicate pinned exactly and why is a response status not a transport error? Why is the body closed before every retry and why is body reuse not promised? Why is the `POST` request body serialized once to immutable bounded bytes and why is a fresh body created per attempt? Why is the backoff exact and why is the `Retry-After` value capped at 2 seconds and the remaining caller deadline? Why is a `POST` without an idempotency key exactly one attempt and why is an invalid key rejected before the call? Why is the injected `X-Request-ID` source called once per logical API call and why is the same identifier reused across retry attempts?
+
+- Why is the base URL an origin-only absolute URL and why is the root path normalized at construction?
+- Why is the item ID restricted to a fixed charset and why are slash, dot segments, percent, colon, query, and fragment characters rejected before any request?
+- Why is success pinned to exactly 200 and to `application/json` with no parameter or only `charset=utf-8`, and why are unknown fields, trailing values, and unexpected truncation rejected by the strict JSON contract?
+- Why is the error body snippet bounded to 4 KiB and why is the sanitization rule exact?
+- Why is the redirect maximum exactly 5 and why is same origin the normalized scheme, hostname, and effective port?
+- Why is the retry predicate pinned exactly and why is a response status not a transport error?
+- Why is the body closed before every retry and why is body reuse not promised?
+- Why is the `POST` request body serialized once to immutable bounded bytes and why is a fresh body created per attempt?
+- Why is the backoff exact and why is the `Retry-After` value capped at 2 seconds and the remaining caller deadline?
+- Why is a `POST` without an idempotency key exactly one attempt and why is an invalid key rejected before the call?
+- Why is the injected `X-Request-ID` source called once per logical API call and why is the same identifier reused across retry attempts?
 
 ## 13. Implementation Milestones
+
 1. Define the base URL validator that accepts an origin-only absolute http or https URL whose scheme and host are required, rejects userinfo, query, fragment, and any non-root path at construction, and normalizes the root path to a single slash.
 2. Define the item ID validator that accepts one to 64 ASCII letters, digits, underscore, and hyphen only; reject slash, dot segments, percent, colon, query, and fragment characters before any request.
 3. Define the URL constructor that produces exactly the origin slash `items` slash the validated item ID for `GET` and the origin slash `items` for `POST`.
@@ -87,6 +203,9 @@ Why is the base URL an origin-only absolute URL and why is the root path normali
 12. Define the `httptest` and fake `RoundTripper` test boundary with no public network and no sleep; and the full matrix of validation, success, 404, every other non-200 status including an unexpected 2xx, body-too-large, truncation, strict-JSON, content-type, cross-origin redirect, userinfo redirect, sixth redirect, `GET` retry attempts, `GET` no-retry on 4xx, `GET` no-retry on cancellation, `POST` without key one attempt, `POST` with key retry policy, `Retry-After`, body close on every path, headers, request identifier freshness, idempotency key reuse, concurrent calls, and the race detector.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - An invalid base URL is rejected at construction.
 - An invalid item ID is rejected before any request.
 - A slash-prefixed item ID does not change the host or path through slash traversal, observed through the constructed request URL.
@@ -130,15 +249,52 @@ Why is the base URL an origin-only absolute URL and why is the root path normali
 - `InsecureSkipVerify` is not used as a solution.
 
 ## 15. Common Mistakes to Watch For
-Accepting any 2xx as success; accepting non-`application/json` content types or wrong parameters or wrong charsets; unbounded body reads; permissive JSON decoding; not closing the body on error paths; mutating shared headers or the shared `http.Client` between calls; using a package-global counter for the request identifier; retrying 4xx; retrying when the context is canceled; retrying `POST` without an idempotency key; sleeping to assert backoff; using `InsecureSkipVerify` to bypass HTTPS verification in tests; contacting the public internet to make tests pass; allowing cross-origin redirects; allowing userinfo redirects; allowing unlimited same-origin redirects; leaking the request body across retries; treating 502, 503, and 504 as terminal failures without `Retry-After` honoring; truncating the snippet without a configured bound; emitting the full server payload through the typed status error; using a global counter for the request identifier; treating a response status as a transport error; mutating the `POST` request body between attempts.
+
+- Accepting any 2xx as success;
+- Accepting non-`application/json` content types or wrong parameters or wrong charsets;
+- Unbounded body reads;
+- Permissive JSON decoding;
+- Not closing the body on error paths;
+- Mutating shared headers or the shared `http.Client` between calls;
+- Using a package-global counter for the request identifier;
+- Retrying 4xx;
+- Retrying when the context is canceled;
+- Retrying `POST` without an idempotency key;
+- Sleeping to assert backoff;
+- Using `InsecureSkipVerify` to bypass HTTPS verification in tests;
+- Contacting the public internet to make tests pass;
+- Allowing cross-origin redirects;
+- Allowing userinfo redirects;
+- Allowing unlimited same-origin redirects;
+- Leaking the request body across retries;
+- Treating 502, 503, and 504 as terminal failures without `Retry-After` honoring;
+- Truncating the snippet without a configured bound;
+- Emitting the full server payload through the typed status error;
+- Using a global counter for the request identifier;
+- Treating a response status as a transport error;
+- Mutating the `POST` request body between attempts.
 
 ## 16. Topics and References for Study
-Study the `net/http` package and the `http.Client`, `http.Transport`, and `http.RoundTripper` interfaces, the production total timeout configuration on `http.Client`, per-call context precedence, `errors.Is` and `errors.As` precedence, the distinction between a transient transport failure before any response and a real response status, the `Retry-After` header semantics for integer delta-seconds and HTTP-date, common wrapped transport errors such as `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, and `io.ErrUnexpectedEOF`, JSON strict decoding with `DisallowUnknownFields` and trailing-value rejection, the idempotency-key convention, redirect semantics in `http.Client`, injected sleeper, jitter, clock, and random source for deterministic retry tests, `httptest.Server` lifecycle, and the race detector. Review the Go `net/http`, `context`, `encoding/json`, `errors`, and `io` documentation. Read the prior README for Project 082 for the immediate predecessor discipline, Project 071 and Project 060 for the required foundations, Project 046 for `net/http` basics as optional recommended review, and Project 041 for cancellation propagation as optional recommended review.
+
+- Study the `net/http` package and the `http.Client`, `http.Transport`, and `http.RoundTripper` interfaces, the production total timeout configuration on `http.Client`, per-call context precedence, `errors.Is` and `errors.As` precedence, the distinction between a transient transport failure before any response and a real response status, the `Retry-After` header semantics for integer delta-seconds and HTTP-date, common wrapped transport errors such as `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, and `io.ErrUnexpectedEOF`, JSON strict decoding with `DisallowUnknownFields` and trailing-value rejection, the idempotency-key convention, redirect semantics in `http.Client`, injected sleeper, jitter, clock, and random source for deterministic retry tests, `httptest.Server` lifecycle, and the race detector.
+- Review the Go `net/http`, `context`, `encoding/json`, `errors`, and `io` documentation.
+- Read the prior README for Project 082 for the immediate predecessor discipline, Project 071 and Project 060 for the required foundations, Project 046 for `net/http` basics as optional recommended review, and Project 041 for cancellation propagation as optional recommended review.
 
 ## 17. Self-Assessment Questions
-Why is the base URL an origin-only absolute URL and why is the root path normalized at construction? Why is the item ID restricted to a fixed charset and why are slash, dot segments, percent, colon, query, and fragment characters rejected before any request? Why is success pinned to exactly 200 and to `application/json` with no parameter or only `charset=utf-8`, and why are unknown fields, trailing values, and unexpected truncation rejected by the strict JSON contract? Why is the error body snippet bounded to 4 KiB and why is the sanitization rule exact? Why is the redirect maximum exactly 5 and why is same origin the normalized scheme, hostname, and effective port? Why is the retry predicate pinned exactly and why is a response status not a transport error? Why is the body closed before every retry, why is body reuse not promised, why is the `POST` request body serialized once to immutable bounded bytes, and why is a fresh body created per attempt? Why is the backoff exact and why is the `Retry-After` value capped at 2 seconds and the remaining caller deadline? Why is a `POST` without an idempotency key exactly one attempt and why is an invalid key rejected before the call? Why is the injected `X-Request-ID` source called once per logical API call and why is the same identifier reused across retry attempts?
+
+1. Why is the base URL an origin-only absolute URL and why is the root path normalized at construction?
+2. Why is the item ID restricted to a fixed charset and why are slash, dot segments, percent, colon, query, and fragment characters rejected before any request?
+3. Why is success pinned to exactly 200 and to `application/json` with no parameter or only `charset=utf-8`, and why are unknown fields, trailing values, and unexpected truncation rejected by the strict JSON contract?
+4. Why is the error body snippet bounded to 4 KiB and why is the sanitization rule exact?
+5. Why is the redirect maximum exactly 5 and why is same origin the normalized scheme, hostname, and effective port?
+6. Why is the retry predicate pinned exactly and why is a response status not a transport error?
+7. Why is the body closed before every retry, why is body reuse not promised, why is the `POST` request body serialized once to immutable bounded bytes, and why is a fresh body created per attempt?
+8. Why is the backoff exact and why is the `Retry-After` value capped at 2 seconds and the remaining caller deadline?
+9. Why is a `POST` without an idempotency key exactly one attempt and why is an invalid key rejected before the call?
+10. Why is the injected `X-Request-ID` source called once per logical API call and why is the same identifier reused across retry attempts?
 
 ## 18. Definition of Completion
+
 - [ ] The base URL is an origin-only absolute http or https URL whose scheme and host are required; userinfo, query, fragment, and any non-root path are rejected at construction; the root path is normalized.
 - [ ] The item ID is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen only; the constructed URLs are exactly `origin/items/{id}` and `origin/items`.
 - [ ] The JSON data is fixed: an `Item` has exactly the string fields `id` and `name`; both success statuses are exactly 200; the response media type is `application/json` with no parameter or only `charset=utf-8`.
@@ -157,4 +313,25 @@ Why is the base URL an origin-only absolute URL and why is the root path normali
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
-Add a small structured audit log that records the operation, the status code or typed error category, and the attempt count, but never request or response body bytes, never idempotency keys, and never the raw `X-Request-ID`. Add a configurable per-call header allowlist whose values are validated before being attached to the request.
+
+- Add a small structured audit log that records the operation, the status code or typed error category, and the attempt count, but never request or response body bytes, never idempotency keys, and never the raw `X-Request-ID`.
+- Add a configurable per-call header allowlist whose values are validated before being attached to the request.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 082 — Simple Port Scanner](../../06-networking/082_simple_port_scanner/README.md#20-prerequisite-based-documentation-guide), [Project 071 — TCP Echo Server](../../06-networking/071_tcp_echo_server/README.md#20-prerequisite-based-documentation-guide), [Project 060 — Graceful Shutdown Web](../../04-apis-and-services/060_graceful_shutdown_web/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** client and transport timeout layers, per-call context, strict JSON, redirect policy, transient error classification, bounded retry, backoff and jitter, and injected time.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

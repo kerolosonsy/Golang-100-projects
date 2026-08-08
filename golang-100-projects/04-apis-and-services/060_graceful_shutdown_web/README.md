@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project 060 — `graceful_shutdown_web`. Folder: `04-apis-and-services/060_graceful_shutdown_web/`. README only; the learner writes all source and tests.
+- Project 060 — `graceful_shutdown_web`.
+- Folder: `04-apis-and-services/060_graceful_shutdown_web/`.
+- README only; the learner writes all source and tests.
 
 ## 2. Project Idea
 
@@ -10,11 +12,16 @@ Compose an HTTP server with explicit timeouts and one or more dependencies that 
 
 ## 3. Why This Project Now?
 
-Projects 046 through 059 produced an HTTP service with growing cross-cutting concerns: routing, middleware, JSON envelopes, auth, rate limiting, sessions, CSRF. None of those projects dealt with what happens when the process must stop. Project 060 introduces the discipline of treating the server lifecycle as a state machine with explicit transitions, of composing shutdown with dependency cleanup, and of writing tests that exercise the orchestration deterministically. By the end of Project 060 the learner can ship a service whose stop behaviour is provably correct.
+- Projects 046 through 059 produced an HTTP service with growing cross-cutting concerns: routing, middleware, JSON envelopes, auth, rate limiting, sessions, CSRF.
+- None of those projects dealt with what happens when the process must stop.
+- Project 060 introduces the discipline of treating the server lifecycle as a state machine with explicit transitions, of composing shutdown with dependency cleanup, and of writing tests that exercise the orchestration deterministically.
+- By the end of Project 060 the learner can ship a service whose stop behaviour is provably correct.
 
 ## 4. Prerequisites
 
-Required earlier projects: Project 059, Project 046, and Project 041. Earlier HTTP, middleware, and concurrency projects are useful review but are not formally required. The learner must already understand `net/http` server timeouts (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`), `Server.ListenAndServe`, `Server.Shutdown`, `Server.Close`, `Server.Serve`, the meaning of `http.ErrServerClosed`, `context.Context` cancellation and deadlines, and how to use `httptest` with a custom listener.
+- Required earlier projects: Project 059, Project 046, and Project 041.
+- Earlier HTTP, middleware, and concurrency projects are useful review but are not formally required.
+- The learner must already understand `net/http` server timeouts (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`), `Server.ListenAndServe`, `Server.Shutdown`, `Server.Close`, `Server.Serve`, the meaning of `http.ErrServerClosed`, `context.Context` cancellation and deadlines, and how to use `httptest` with a custom listener.
 
 ## 5. What You Must Know Before Starting
 
@@ -29,39 +36,78 @@ Required earlier projects: Project 059, Project 046, and Project 041. Earlier HT
 
 ## 6. Explanation of New Concepts
 
-**Server timeouts.** `ReadHeaderTimeout` caps how long the server waits for request headers. `ReadTimeout` caps the total request read time. `WriteTimeout` caps the response write time. `IdleTimeout` caps keep-alive idle time. Without these, a slow or hostile client can hold a connection open indefinitely and exhaust resources. The configuration pins each one to a finite value.
+### Concepts
 
-**Shutdown context.** `Server.Shutdown` takes a `context.Context`. The orchestration creates a fresh context at the moment shutdown begins, derived from `context.Background()`, with a finite deadline equal to the configured graceful shutdown budget of 5 seconds. The orchestration does not derive the shutdown context from the parent `ctx`, because the parent may already be cancelled; nor does it derive it from any request context.
+- **Server timeouts.** `ReadHeaderTimeout` caps how long the server waits for request headers. `ReadTimeout` caps the total request read time. `WriteTimeout` caps the response write time. `IdleTimeout` caps keep-alive idle time.
+- Without these, a slow or hostile client can hold a connection open indefinitely and exhaust resources.
+- The configuration pins each one to a finite value.
 
-**Force-close.** When the graceful context expires, in-flight handlers may still be running. The orchestration calls `Server.Close` immediately. There is no separate configurable "force-close deadline". The contract is "after the graceful context ends, call `Server.Close` immediately".
+- **Shutdown context.** `Server.Shutdown` takes a `context.Context`.
+- The orchestration creates a fresh context at the moment shutdown begins, derived from `context.Background()`, with a finite deadline equal to the configured graceful shutdown budget of 5 seconds.
+- The orchestration does not derive the shutdown context from the parent `ctx`, because the parent may already be cancelled; nor does it derive it from any request context.
 
-**Trigger abstraction.** The orchestration exposes a single trigger abstraction. The first call activates one shutdown notification. Later calls are idempotently coalesced: they return without blocking, and they do not start a second shutdown. Production signals activate this abstraction; parent-context cancellation is the other documented event that can begin the same shutdown sequence.
+- **Force-close.** When the graceful context expires, in-flight handlers may still be running.
+- The orchestration calls `Server.Close` immediately.
+- There is no separate configurable "force-close deadline".
+- The contract is "after the graceful context ends, call `Server.Close` immediately".
 
-**First-to-fire orchestration.** `Run` reacts to whichever happens first: an unexpected `Serve` failure, the parent context cancellation, or the first trigger. The parent context cancellation is treated as a trigger only; the shutdown context is still freshly derived from `context.Background()` at that moment.
+- **Trigger abstraction.** The orchestration exposes a single trigger abstraction.
+- The first call activates one shutdown notification.
+- Later calls are idempotently coalesced: they return without blocking, and they do not start a second shutdown.
+- Production signals activate this abstraction; parent-context cancellation is the other documented event that can begin the same shutdown sequence.
 
-**Dependency close order.** Each dependency that holds a resource (a database connection pool, a queue, an in-memory session store from Project 059) must be closed exactly once. Dependencies are closed only after HTTP serving has quiesced or force-close has completed. Closing a dependency before serving stops is a bug: in-flight handlers may still need it. Closing a dependency twice is a bug: many resources refuse double-close. The orchestration closes dependencies in declared order and continues closing remaining dependencies after an error, recording the error in the aggregate.
+- **First-to-fire orchestration.** `Run` reacts to whichever happens first: an unexpected `Serve` failure, the parent context cancellation, or the first trigger.
+- The parent context cancellation is treated as a trigger only; the shutdown context is still freshly derived from `context.Background()` at that moment.
 
-**`http.ErrServerClosed`.** When the server is shut down through `Server.Shutdown`, the `Serve` call returns `http.ErrServerClosed`. The orchestration treats this as the normal shutdown path and does not log it as an error. Any other error from `Serve` is logged and surfaced through the aggregate.
+- **Dependency close order.** Each dependency that holds a resource (a database connection pool, a queue, an in-memory session store from Project 059) must be closed exactly once.
+- Dependencies are closed only after HTTP serving has quiesced or force-close has completed.
+- Closing a dependency before serving stops is a bug: in-flight handlers may still need it.
+- Closing a dependency twice is a bug: many resources refuse double-close.
+- The orchestration closes dependencies in declared order and continues closing remaining dependencies after an error, recording the error in the aggregate.
 
-**Forced path return value.** When the graceful context ends before all in-flight handlers return, the orchestration calls `Server.Close`. The graceful context's error is `context.DeadlineExceeded`. The orchestration must surface that error through the aggregate; it must not silently return `nil`.
+- **`http.ErrServerClosed`.** When the server is shut down through `Server.Shutdown`, the `Serve` call returns `http.ErrServerClosed`.
+- The orchestration treats this as the normal shutdown path and does not log it as an error.
+- Any other error from `Serve` is logged and surfaced through the aggregate.
 
-**Unexpected `Serve` failure before any trigger.** If `Serve` returns a non-`http.ErrServerClosed` error before any trigger fires, the orchestration does not wait forever for a trigger. It stops or closes the server as needed, closes dependencies exactly once, and returns the `Serve` error through the aggregate.
+- **Forced path return value.** When the graceful context ends before all in-flight handlers return, the orchestration calls `Server.Close`.
+- The graceful context's error is `context.DeadlineExceeded`.
+- The orchestration must surface that error through the aggregate; it must not silently return `nil`.
 
-**Process exit discipline.** The process must wait for both the serve goroutine and the shutdown coordination to finish before exiting. A premature `os.Exit` skips the dependency cleanup and is forbidden inside the orchestration. `main` may exit after `Run` returns, but `Run` itself never exits the process.
+- **Unexpected `Serve` failure before any trigger.** If `Serve` returns a non-`http.ErrServerClosed` error before any trigger fires, the orchestration does not wait forever for a trigger.
+- It stops or closes the server as needed, closes dependencies exactly once, and returns the `Serve` error through the aggregate.
 
-**Test orchestration.** Tests do not use `signal.Notify`. They use the injected trigger and an injected listener so the test can drive every transition without races, without sleeps, and without fixed ports. Where a real `Listener` is required to exercise `Server.Shutdown` semantics, the test uses an ephemeral port on loopback and wraps the listener with a test observer whose `Close` event releases a barrier.
+- **Process exit discipline.** The process must wait for both the serve goroutine and the shutdown coordination to finish before exiting.
+- A premature `os.Exit` skips the dependency cleanup and is forbidden inside the orchestration. `main` may exit after `Run` returns, but `Run` itself never exits the process.
 
-**Shutdown-context factory.** The orchestration accepts an injected shutdown-context factory. The production factory returns a fresh context derived from `context.Background()` with a 5-second timeout. The test factory returns a controllable context that the test can end after `Server.Shutdown` has started. The factory is the only place the shutdown context is created. The factory never weakens the production freshness rule.
+- **Test orchestration.** Tests do not use `signal.Notify`.
+- They use the injected trigger and an injected listener so the test can drive every transition without races, without sleeps, and without fixed ports.
+- Where a real `Listener` is required to exercise `Server.Shutdown` semantics, the test uses an ephemeral port on loopback and wraps the listener with a test observer whose `Close` event releases a barrier.
 
-**Barrier channels in handlers.** Handlers used by shutdown tests coordinate with the test through barrier channels. The handler signals when it has started and waits on a release channel before returning. The test signals start, calls the shutdown trigger, and then signals release. This proves that the in-flight handler completes before shutdown reports done. Force-path handlers observe context cancellation or have a release path so tests do not leak.
+- **Shutdown-context factory.** The orchestration accepts an injected shutdown-context factory.
+- The production factory returns a fresh context derived from `context.Background()` with a 5-second timeout.
+- The test factory returns a controllable context that the test can end after `Server.Shutdown` has started.
+- The factory is the only place the shutdown context is created.
+- The factory never weakens the production freshness rule.
 
-**Listener-close observer.** For new-request rejection tests, the test wraps the ephemeral listener with a small observer whose `Close` method signals a barrier. After the trigger, the test waits for the listener-closed barrier before attempting the new request. The test does not rely on timing.
+- **Barrier channels in handlers.** Handlers used by shutdown tests coordinate with the test through barrier channels.
+- The handler signals when it has started and waits on a release channel before returning.
+- The test signals start, calls the shutdown trigger, and then signals release.
+- This proves that the in-flight handler completes before shutdown reports done.
+- Force-path handlers observe context cancellation or have a release path so tests do not leak.
 
-**Goroutine discipline.** One serve goroutine is allowed and must be joined. No other background goroutine, ticker, or `time.AfterFunc` is owned by the orchestration. The lifecycle-owned goroutine and the lifecycle-owned completion channels are joined before `Run` returns. The tests assert this directly. `runtime.NumGoroutine` is not used as the primary leak assertion because it is noisy; lifecycle completion is the assertion.
+- **Listener-close observer.** For new-request rejection tests, the test wraps the ephemeral listener with a small observer whose `Close` method signals a barrier.
+- After the trigger, the test waits for the listener-closed barrier before attempting the new request.
+- The test does not rely on timing.
+
+- **Goroutine discipline.** One serve goroutine is allowed and must be joined.
+- No other background goroutine, ticker, or `time.AfterFunc` is owned by the orchestration.
+- The lifecycle-owned goroutine and the lifecycle-owned completion channels are joined before `Run` returns.
+- The tests assert this directly. `runtime.NumGoroutine` is not used as the primary leak assertion because it is noisy; lifecycle completion is the assertion.
 
 ## 7. Learning Objective
 
-After finishing this project, the learner can explain why each `http.Server` timeout is set to the pinned value, why the shutdown context must be fresh from `context.Background()`, why dependencies are closed only after serving has quiesced, why each dependency is closed exactly once, why `http.ErrServerClosed` is not an error, why repeated shutdown triggers must be coalesced, and why `Run` never calls `os.Exit`. The learner can also write a test suite that proves every transition deterministically using ephemeral listeners and barrier channels.
+- After finishing this project, the learner can explain why each `http.Server` timeout is set to the pinned value, why the shutdown context must be fresh from `context.Background()`, why dependencies are closed only after serving has quiesced, why each dependency is closed exactly once, why `http.ErrServerClosed` is not an error, why repeated shutdown triggers must be coalesced, and why `Run` never calls `os.Exit`.
+- The learner can also write a test suite that proves every transition deterministically using ephemeral listeners and barrier channels.
 
 ## 8. Functional Requirements
 
@@ -83,6 +129,8 @@ After finishing this project, the learner can explain why each `http.Server` tim
 16. Tests use the injected trigger and an ephemeral loopback listener. Real signals are never sent. Fixed ports are never used. `time.Sleep` is never used.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
 
 Inputs: the parent `ctx`, the `net.Listener`, the trigger abstraction, the injected shutdown-context factory, the configured timeouts, and the dependency list. Outputs: a returned error from `Run` (or nil on a clean shutdown), and the documented side effects on the listener, the server, and the dependencies. Example textual inputs and expected textual outputs:
 
@@ -144,6 +192,8 @@ Inputs: the parent `ctx`, the `net.Listener`, the trigger abstraction, the injec
 12. Review the verification list and confirm every item is covered before declaring the project complete.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
 
 Each item is a behavioural specification. The learner writes the corresponding `go test` code.
 
@@ -210,17 +260,35 @@ Each item is a behavioural specification. The learner writes the corresponding `
 
 The project is complete when, in addition to the rules above:
 
-- Every item in the verification list is a passing test that the learner wrote themselves.
-- The tests pass under `go test -race ./...` from the project folder.
-- The orchestration contains no third-party imports and no `time.Sleep`.
-- The orchestration never calls `os.Exit`.
-- The configuration struct has the exact pinned values and a constructor that rejects non-positive values for any timeout or budget.
-- The production `main` is the only place that imports `os/signal`; the orchestration and the tests do not import it. The source-review static gate for `os/signal` and the source-review static gate for `os.Exit` are both satisfied.
-- The learner can answer every self-assessment question without rereading the README.
+- [ ] Every item in the verification list is a passing test that the learner wrote themselves.
+- [ ] The tests pass under `go test -race ./...` from the project folder.
+- [ ] The orchestration contains no third-party imports and no `time.Sleep`.
+- [ ] The orchestration never calls `os.Exit`.
+- [ ] The configuration struct has the exact pinned values and a constructor that rejects non-positive values for any timeout or budget.
+- [ ] The production `main` is the only place that imports `os/signal`; the orchestration and the tests do not import it. The source-review static gate for `os/signal` and the source-review static gate for `os.Exit` are both satisfied.
+- [ ] The learner can answer every self-assessment question without rereading the README.
 
 ## 19. Optional Extensions
 
 At most two. Pick one only if the core project is already complete and tested. Optional extensions must not weaken any documented contract.
 
 - Add a `Ready` handler that returns `503` once the shutdown sequence has begun. Documented as a readiness probe hook. The handler does not require CSRF.
-- Add a lifecycle event recorder that the orchestration calls at the documented transitions (serve started, shutdown started, `Server.Shutdown` returned, force-close started, dependency `i` closed, run returned). The recorder is an injected interface used by tests for assertions; it is not part of the production configuration and must not affect the shutdown sequence.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 059 — Session Cookie Auth](../../04-apis-and-services/059_session_cookie_auth/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide), [Project 041 — Context Timeout Example](../../03-concurrency/041_context_timeout_example/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`os/signal`](https://pkg.go.dev/os/signal).
+
+### Project-specific learning focus
+
+- **Learn now:** serve-loop ownership, expected close errors, signal handling, readiness transitions, bounded draining, forced close fallback, dependency close order, and lifecycle tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

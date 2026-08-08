@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project 056 — `cors_header_middleware`. Folder: `04-apis-and-services/056_cors_header_middleware/`. README only; the learner writes all source and tests.
+- Project 056 — `cors_header_middleware`.
+- Folder: `04-apis-and-services/056_cors_header_middleware/`.
+- README only; the learner writes all source and tests.
 
 ## 2. Project Idea
 
@@ -10,11 +12,16 @@ Build a single CORS middleware for a small JSON HTTP API on top of `net/http`. T
 
 ## 3. Why This Project Now?
 
-Projects 046 through 055 taught how to build handlers, route requests, return JSON envelopes, and authenticate with bearer tokens inside two web frameworks. None of those projects addressed what happens when a browser front-end hosted on a different origin calls the API. Project 056 is the first project in the plan whose security contract is decided almost entirely by HTTP response headers rather than by the response body. Understanding CORS deeply is the prerequisite for the per-client rate limiter in Project 057, which also has to decide who a request is for, and for the OpenAPI contract in Project 058, which has to describe the CORS behaviour of the API.
+- Projects 046 through 055 taught how to build handlers, route requests, return JSON envelopes, and authenticate with bearer tokens inside two web frameworks.
+- None of those projects addressed what happens when a browser front-end hosted on a different origin calls the API.
+- Project 056 is the first project in the plan whose security contract is decided almost entirely by HTTP response headers rather than by the response body.
+- Understanding CORS deeply is the prerequisite for the per-client rate limiter in Project 057, which also has to decide who a request is for, and for the OpenAPI contract in Project 058, which has to describe the CORS behaviour of the API.
 
 ## 4. Prerequisites
 
-Required earlier projects: Project 055 and Project 046. Earlier HTTP, middleware, and JSON-envelope projects are useful review but are not formally required. The learner must already understand `net/http` handlers, the middleware chain pattern from Project 048, request and response header manipulation, the difference between a preflight and a simple request, and how to run a server under `httptest`.
+- Required earlier projects: Project 055 and Project 046.
+- Earlier HTTP, middleware, and JSON-envelope projects are useful review but are not formally required.
+- The learner must already understand `net/http` handlers, the middleware chain pattern from Project 048, request and response header manipulation, the difference between a preflight and a simple request, and how to run a server under `httptest`.
 
 ## 5. What You Must Know Before Starting
 
@@ -30,21 +37,41 @@ Required earlier projects: Project 055 and Project 046. Earlier HTTP, middleware
 
 ## 6. Explanation of New Concepts
 
-**Simple request versus preflight.** Browsers classify cross-origin requests by HTTP method and by the set of "non-simple" request headers. Simple requests are sent straight to the server. Anything else triggers a preflight: the browser sends an `OPTIONS` request whose purpose is to ask permission before the real request is sent. A server that ignores preflights will appear to work with `curl` but fail inside a real browser.
+### Concepts
 
-**Origin allowlist.** A server picks the exact list of origins it is willing to talk to. Anything outside that list is rejected at the middleware layer with no allow headers in the response. Reflecting the incoming `Origin` header verbatim into `Access-Control-Allow-Origin` is a security defect, not a convenience, because any origin can put any string there.
+- **Simple request versus preflight.** Browsers classify cross-origin requests by HTTP method and by the set of "non-simple" request headers.
+- Simple requests are sent straight to the server.
+- Anything else triggers a preflight: the browser sends an `OPTIONS` request whose purpose is to ask permission before the real request is sent.
+- A server that ignores preflights will appear to work with `curl` but fail inside a real browser.
 
-**Credentialed CORS.** When `Access-Control-Allow-Credentials: true` is set, the browser will only honour a non-wildcard `Access-Control-Allow-Origin` and only when that origin value is concrete. The middleware echoes the exact configured allowed origin and never a wildcard.
+- **Origin allowlist.** A server picks the exact list of origins it is willing to talk to.
+- Anything outside that list is rejected at the middleware layer with no allow headers in the response.
+- Reflecting the incoming `Origin` header verbatim into `Access-Control-Allow-Origin` is a security defect, not a convenience, because any origin can put any string there.
 
-**`Vary` and cache keying.** Public caches key a stored response on the request headers listed in `Vary`. When a server picks `Access-Control-Allow-Origin` per request, the cache must also key on `Origin`, otherwise it can serve one tenant's CORS headers to another tenant's browser. The middleware treats `Vary` as a case-insensitive set of tokens. Tokens already present from the downstream handler are preserved; tokens added by the middleware are merged in; the resulting header is serialised exactly once. The merged header must be finalised before the downstream handler is allowed to commit the response. The safe way to enforce this is to wrap the response writer at the middleware boundary, so that any later `WriteHeader` or `Write` call sees the merged `Vary` and cannot drop it. Setting `Vary` once before calling the downstream handler and assuming the handler will not overwrite it is unsafe; an explicit response-writer boundary is what makes the preservation observable.
+- **Credentialed CORS.** When `Access-Control-Allow-Credentials: true` is set, the browser will only honour a non-wildcard `Access-Control-Allow-Origin` and only when that origin value is concrete.
+- The middleware echoes the exact configured allowed origin and never a wildcard.
 
-**Security headers.** Apart from CORS, the middleware writes a fixed set of defensive headers on every response it produces, including the `204` and `403` responses it writes itself: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. `Strict-Transport-Security: max-age=31536000; includeSubDomains` is written only when `Request.TLS` is non-nil. HSTS is not a configuration toggle in this project. Plain-HTTP requests, including local test requests over `httptest`, never receive HSTS.
+- **`Vary` and cache keying.** Public caches key a stored response on the request headers listed in `Vary`.
+- When a server picks `Access-Control-Allow-Origin` per request, the cache must also key on `Origin`, otherwise it can serve one tenant's CORS headers to another tenant's browser.
+- The middleware treats `Vary` as a case-insensitive set of tokens.
+- Tokens already present from the downstream handler are preserved; tokens added by the middleware are merged in; the resulting header is serialised exactly once.
+- The merged header must be finalised before the downstream handler is allowed to commit the response.
+- The safe way to enforce this is to wrap the response writer at the middleware boundary, so that any later `WriteHeader` or `Write` call sees the merged `Vary` and cannot drop it.
+- Setting `Vary` once before calling the downstream handler and assuming the handler will not overwrite it is unsafe; an explicit response-writer boundary is what makes the preservation observable.
 
-**Preflight handling.** A preflight is only a request whose method is `OPTIONS` and that carries both a non-empty `Origin` header and a non-empty `Access-Control-Request-Method` header. The middleware validates the origin against the allowlist, validates the requested method against the configured method list using case-sensitive comparison, and validates the requested header set against the configured header list using case-insensitive comparison. The requested header set is parsed by splitting on commas, trimming whitespace from each item, and rejecting the whole preflight when any item is empty or any parsed name is outside the allowlist. A missing `Access-Control-Request-Headers` header means an empty requested set, which is valid.
+- **Security headers.** Apart from CORS, the middleware writes a fixed set of defensive headers on every response it produces, including the `204` and `403` responses it writes itself: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. `Strict-Transport-Security: max-age=31536000; includeSubDomains` is written only when `Request.TLS` is non-nil.
+- HSTS is not a configuration toggle in this project.
+- Plain-HTTP requests, including local test requests over `httptest`, never receive HSTS.
+
+- **Preflight handling.** A preflight is only a request whose method is `OPTIONS` and that carries both a non-empty `Origin` header and a non-empty `Access-Control-Request-Method` header.
+- The middleware validates the origin against the allowlist, validates the requested method against the configured method list using case-sensitive comparison, and validates the requested header set against the configured header list using case-insensitive comparison.
+- The requested header set is parsed by splitting on commas, trimming whitespace from each item, and rejecting the whole preflight when any item is empty or any parsed name is outside the allowlist.
+- A missing `Access-Control-Request-Headers` header means an empty requested set, which is valid.
 
 ## 7. Learning Objective
 
-After finishing this project, the learner can explain in their own words why a CORS middleware must never reflect arbitrary origins, why credentialed mode forbids wildcards, what `Vary: Origin` is for and why it must be merged through a response-writer boundary, what distinguishes a preflight from an ordinary `OPTIONS`, why HTTP method tokens are case-sensitive while header names are not, and why HSTS is only emitted when the request is actually over TLS. The learner can also write a deterministic test suite that pins every behaviour.
+- After finishing this project, the learner can explain in their own words why a CORS middleware must never reflect arbitrary origins, why credentialed mode forbids wildcards, what `Vary: Origin` is for and why it must be merged through a response-writer boundary, what distinguishes a preflight from an ordinary `OPTIONS`, why HTTP method tokens are case-sensitive while header names are not, and why HSTS is only emitted when the request is actually over TLS.
+- The learner can also write a deterministic test suite that pins every behaviour.
 
 ## 8. Functional Requirements
 
@@ -65,6 +92,8 @@ After finishing this project, the learner can explain in their own words why a C
 15. The middleware is safe for concurrent use. Configuration is set at construction time and treated as read-only at request time.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
 
 The middleware consumes an `http.Request` and an `http.ResponseWriter` and runs before the downstream handler. Inputs that matter to its decision are: the request method, the `Origin` header (optional), `Access-Control-Request-Method` (optional), and `Access-Control-Request-Headers` (optional, comma-separated list of names). Outputs are responses written directly for `403` cases and `204` cases, and response header additions on the response writer for allowed non-preflight cases. Example textual inputs and the expected textual outputs:
 
@@ -131,6 +160,8 @@ The middleware consumes an `http.Request` and an `http.ResponseWriter` and runs 
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each item is a behavioural specification. The learner writes the corresponding `go test` code.
 
 - Allowed origin, allowed method, valid preflight: response is `204`, body has zero bytes, `Access-Control-Allow-Origin` equals the exact allowed origin, `Access-Control-Allow-Credentials: true`, `Access-Control-Allow-Methods: GET, POST, PUT, DELETE`, `Access-Control-Allow-Headers: Content-Type, X-Request-ID, X-CSRF-Token`, `Access-Control-Max-Age: 600`, `Vary` includes `Origin`, `Access-Control-Request-Method`, `Access-Control-Request-Headers`, the fixed security headers are present, HSTS is present when `Request.TLS` is non-nil, handler is not called.
@@ -195,18 +226,36 @@ Each item is a behavioural specification. The learner writes the corresponding `
 
 The project is complete when, in addition to the rules above:
 
-- Every item in the verification list is a passing test that the learner wrote themselves.
-- The tests pass under `go test -race ./...` from the project folder.
-- The middleware contains no third-party imports.
-- The configuration struct has the exact fixed values and a constructor that rejects every invalid input listed in the rules.
-- The middleware never emits HSTS on a request with `Request.TLS` nil.
-- The middleware never emits `Access-Control-Allow-Origin: *` with credentials enabled.
-- The `Vary` header serialised on the wire is the case-insensitive union of pre-existing tokens and the tokens the middleware adds, with no duplicates and a stable order that the tests pin.
-- The learner can answer every self-assessment question without rereading the README.
+- [ ] Every item in the verification list is a passing test that the learner wrote themselves.
+- [ ] The tests pass under `go test -race ./...` from the project folder.
+- [ ] The middleware contains no third-party imports.
+- [ ] The configuration struct has the exact fixed values and a constructor that rejects every invalid input listed in the rules.
+- [ ] The middleware never emits HSTS on a request with `Request.TLS` nil.
+- [ ] The middleware never emits `Access-Control-Allow-Origin: *` with credentials enabled.
+- [ ] The `Vary` header serialised on the wire is the case-insensitive union of pre-existing tokens and the tokens the middleware adds, with no duplicates and a stable order that the tests pin.
+- [ ] The learner can answer every self-assessment question without rereading the README.
 
 ## 19. Optional Extensions
 
 At most two. Pick one only if the core project is already complete and tested. Optional extensions must not add speculative configuration fields, wildcard fallbacks, or insecure handlers.
 
 - Add a tiny per-response decision struct (`Origin`, `Decision`, `AllowedHeaders`) that the application may read after `next` returns, useful for future structured logging.
-- Add a Vary-policy comment block at the top of the middleware that documents, in prose, exactly which request headers are part of the cache key for each response class.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 055 — Fiber Framework CRUD](../../04-apis-and-services/055_fiber_framework_crud/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide), [Project 034 — Worker Pool Basic](../../03-concurrency/034_worker_pool_basic/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [Fetch Standard: CORS protocol](https://fetch.spec.whatwg.org/#http-cors-protocol), [RFC 6797: HSTS](https://www.rfc-editor.org/rfc/rfc6797.html), [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+### Project-specific learning focus
+
+- **Learn now:** simple versus preflight requests, exact-origin allowlists, credential rules, Vary cache keys, safe headers, HTTPS-only HSTS, and denial behavior.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project **013** — `013_time_world_clock`. The directory name and number must match exactly.
+- Project **013** — `013_time_world_clock`.
+- The directory name and number must match exactly.
 
 ## 2. Project Idea
 
@@ -12,9 +13,12 @@ The interesting part is the distinction between the *instant* (a single point on
 
 ## 3. Why This Project Now?
 
-Projects 011 and 012 introduced injected I/O, small domain logic with a declared policy, and integer-cents arithmetic. Project 013 keeps those habits and adds a new one: the program's behavior must be **deterministic**, even though "time" feels like it depends on when the program runs. The instant is provided by the caller — typed, or fixed in a test — so the answer is the same whether the program runs at noon or at midnight.
+- Projects 011 and 012 introduced injected I/O, small domain logic with a declared policy, and integer-cents arithmetic.
+- Project 013 keeps those habits and adds a new one: the program's behavior must be **deterministic**, even though "time" feels like it depends on when the program runs.
+- The instant is provided by the caller — typed, or fixed in a test — so the answer is the same whether the program runs at noon or at midnight.
 
-This project is also the first time the learner meets a data source outside the program: the IANA time zone database that the operating system provides. The contract is "ask for a zone by name, get back its rules or an error"; the program must not assume a zone exists just because a string was typed.
+- This project is also the first time the learner meets a data source outside the program: the IANA time zone database that the operating system provides.
+- The contract is "ask for a zone by name, get back its rules or an error"; the program must not assume a zone exists just because a string was typed.
 
 ## 4. Prerequisites
 
@@ -35,33 +39,50 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Instant versus local representation
+### Concepts
 
-An instant is a single point on the timeline. It does not have a date or a clock reading; those are properties of how a particular zone chooses to *display* the instant. Two zones display the same instant with different wall readings; one zone can show "Tuesday 23:00" while another shows "Wednesday 05:00" for the same instant because they are far apart across the date line.
+#### Instant versus local representation
 
-A program that wants to "convert a time between zones" is really doing two things: keep the instant unchanged, and change the zone used to render it. The instant must not be touched by the conversion.
+- An instant is a single point on the timeline.
+- It does not have a date or a clock reading; those are properties of how a particular zone chooses to *display* the instant.
+- Two zones display the same instant with different wall readings; one zone can show "Tuesday 23:00" while another shows "Wednesday 05:00" for the same instant because they are far apart across the date line.
 
-### IANA time zone names
+- A program that wants to "convert a time between zones" is really doing two things: keep the instant unchanged, and change the zone used to render it.
+- The instant must not be touched by the conversion.
 
-An IANA name like `Europe/Berlin` is not a fixed UTC offset. It is a key into a database of rules that change over time: daylight-saving transitions, historical adjustments, and political changes. `time.LoadLocation` looks up that key on the operating system. If the key is unknown, it returns an error and the program must not pretend it succeeded.
+#### IANA time zone names
 
-### Unknown zone handling
+- An IANA name like `Europe/Berlin` is not a fixed UTC offset.
+- It is a key into a database of rules that change over time: daylight-saving transitions, historical adjustments, and political changes. `time.LoadLocation` looks up that key on the operating system.
+- If the key is unknown, it returns an error and the program must not pretend it succeeded.
 
-A typo, a fake zone, or a zone the operating system does not carry produces an error from `time.LoadLocation`. The contract for this project is straightforward: **if either the source zone or the target zone is unknown, the program reports the unknown name, produces no conversion result, and exits cleanly.** The source rendering is *not* printed in that case. The program does not panic, does not fall back to UTC silently, and does not invent a zone.
+#### Unknown zone handling
 
-### Day-boundary case
+- A typo, a fake zone, or a zone the operating system does not carry produces an error from `time.LoadLocation`.
+- The contract for this project is straightforward: **if either the source zone or the target zone is unknown, the program reports the unknown name, produces no conversion result, and exits cleanly.** The source rendering is *not* printed in that case.
+- The program does not panic, does not fall back to UTC silently, and does not invent a zone.
 
-The offsets between zones can place the same instant on adjacent calendar dates. For example, `Asia/Tokyo` is far enough ahead of `America/Los_Angeles` that a late-evening instant in Los Angeles is already the next day in Tokyo. The program must surface that, not hide it: when the calendar day differs between the two zones, the output for each zone includes the date, not just the clock.
+#### Day-boundary case
 
-### Calendar validation and DST scope
+- The offsets between zones can place the same instant on adjacent calendar dates.
+- For example, `Asia/Tokyo` is far enough ahead of `America/Los_Angeles` that a late-evening instant in Los Angeles is already the next day in Tokyo.
+- The program must surface that, not hide it: when the calendar day differs between the two zones, the output for each zone includes the date, not just the clock.
 
-Go can normalize out-of-range calendar fields instead of rejecting them. For example, an extra day can roll into the next month. This program must reject malformed and impossible calendar inputs, including dates such as `2025-02-30`, rather than silently converting a different date from the one the user supplied.
+#### Calendar validation and DST scope
 
-Daylight-saving gaps and repeated wall times are important, but resolving their ambiguity is outside this project's required scope. Required examples and tests must use fixed instants away from DST transitions. The learner should still know that constructing a local wall time during a transition can select an offset in a way the application did not intend; production scheduling software needs an explicit policy for that case.
+- Go can normalize out-of-range calendar fields instead of rejecting them.
+- For example, an extra day can roll into the next month.
+- This program must reject malformed and impossible calendar inputs, including dates such as `2025-02-30`, rather than silently converting a different date from the one the user supplied.
 
-### Determinism and the local zone
+- Daylight-saving gaps and repeated wall times are important, but resolving their ambiguity is outside this project's required scope.
+- Required examples and tests must use fixed instants away from DST transitions.
+- The learner should still know that constructing a local wall time during a transition can select an offset in a way the application did not intend; production scheduling software needs an explicit policy for that case.
 
-The machine's local zone is whatever the host operating system was configured with — it can be UTC on a server, `Europe/Berlin` on a laptop, or anything else. A test that compares a `time.Time` against the machine's local zone is fragile: the same test passes on one machine and fails on another. The tests for this project must construct instants and zones explicitly; they must not call `time.Now` and they must not rely on the machine's local zone.
+#### Determinism and the local zone
+
+- The machine's local zone is whatever the host operating system was configured with — it can be UTC on a server, `Europe/Berlin` on a laptop, or anything else.
+- A test that compares a `time.Time` against the machine's local zone is fragile: the same test passes on one machine and fails on another.
+- The tests for this project must construct instants and zones explicitly; they must not call `time.Now` and they must not rely on the machine's local zone.
 
 ## 7. Learning Objective
 
@@ -90,19 +111,21 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - Year, month, day, hour, minute, second: integers the user types. Example: `2025`, `1`, `1`, `0`, `0`, `0`.
 - Source zone: an IANA name. Example: `Europe/Berlin`.
 - Target zone: an IANA name. Example: `Asia/Tokyo`.
 
-### Outputs
+#### Outputs
 
 - A line showing the source-zone rendering of the instant: date, clock, zone abbreviation.
 - A line showing the target-zone rendering of the same instant: date, clock, zone abbreviation.
 - When the dates differ between the two zones, a note that the calendar day changed.
 
-### Example text-only success run
+#### Example text-only success run
 
 The instant `2025-01-01 00:00:00` in `Europe/Berlin` is the same instant as `2025-01-01 08:00:00` in `Asia/Tokyo` (Berlin is UTC+1 in January, Tokyo is UTC+9).
 
@@ -112,7 +135,7 @@ Target (Asia/Tokyo):   2025-01-01 08:00:00 JST
 Note: same calendar day.
 ```
 
-### Example day-boundary run
+#### Example day-boundary run
 
 The instant `2025-01-01 23:00:00` in `America/Los_Angeles` (UTC-8 in January) corresponds to `2025-01-02 08:00:00` in `Europe/Berlin` (UTC+1 in January) and `2025-01-02 16:00:00` in `Asia/Tokyo` (UTC+9 all year).
 
@@ -122,7 +145,7 @@ Target (Asia/Tokyo):          2025-01-02 16:00:00 JST
 Note: different calendar day.
 ```
 
-### Example unknown-zone error run
+#### Example unknown-zone error run
 
 ```
 Source zone: Mars/Olympus
@@ -131,7 +154,7 @@ Unknown time zone: Mars/Olympus
 
 The same shape applies when the target zone is the one that is unknown; the program reports the unknown name and produces no further output.
 
-### Example invalid-calendar-field error run
+#### Example invalid-calendar-field error run
 
 ```
 Year: 2025
@@ -181,6 +204,8 @@ Month must be between 1 and 12.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. The instant and zones are constructed in the test code; no case calls `time.Now` or relies on `time.Local`.
 
 - A winter instant in `Europe/Berlin` rendered in `Asia/Tokyo` produces the expected date and clock, and the dates are equal.
@@ -228,17 +253,36 @@ Each case is described in natural language. The instant and zones are constructe
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and the tests construct instants and zones explicitly without calling `time.Now` or relying on `time.Local`.
-- A learner can run the test suite on any machine and get the same results.
-- The package documentation explains the distinction between an instant and a local representation, and the "round once at the boundary" rules of section 12.
-- The unknown-zone error path is exercised by tests for *both* the source and the target zone, and in both cases no conversion result is produced.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and the tests construct instants and zones explicitly without calling `time.Now` or relying on `time.Local`.
+- [ ] A learner can run the test suite on any machine and get the same results.
+- [ ] The package documentation explains the distinction between an instant and a local representation, and the "round once at the boundary" rules of section 12.
+- [ ] The unknown-zone error path is exercised by tests for *both* the source and the target zone, and in both cases no conversion result is produced.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Multiple target zones.** Accept a list of target zones after the first one and render the instant in each. Keep the output format unchanged.
-- **Day-of-year label.** When the target rendering falls on a different calendar day, also print the day-of-year for each zone so the offset is visible. Do not add a full calendar library.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 012 — Bill Splitter](../../01-foundations/012_bill_splitter/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`time/tzdata`](https://pkg.go.dev/time/tzdata).
+- **Standards and concept references:** [IANA Time Zone Database](https://www.iana.org/time-zones).
+
+### Project-specific learning focus
+
+- **Learn now:** instants versus civil time, UTC offsets, daylight-saving gaps and overlaps, location data, and deterministic clocks.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

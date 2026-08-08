@@ -1,18 +1,33 @@
 # Project 097 — Git CLI Mini Clone
 
 ## 1. Project Name and Number
-Project 097, `097_git_cli_mini_clone`. Build a small educational content-addressed object store and tracker inspired by Git's historical object format. The store is local, uses a `.minigit` directory under a supplied work tree, and pins the SHA-1 input shape and the canonical serialization rules so the educational object format is precise. This README is a learning guide only. It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands. Text-only input and output examples are permitted.
+
+- Project 097, `097_git_cli_mini_clone`.
+- Build a small educational content-addressed object store and tracker inspired by Git's historical object format.
+- The store is local, uses a `.minigit` directory under a supplied work tree, and pins the SHA-1 input shape and the canonical serialization rules so the educational object format is precise.
+- This README is a learning guide only.
+- It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+- Text-only input and output examples are permitted.
 
 ## 2. Project Idea
+
 The caller supplies an existing empty directory. The program creates a `.minigit` directory under that root and refuses to operate otherwise. The store writes only within `.minigit`. The store reads explicitly requested work tree paths after containment and symlink checks; it never writes a work tree file and never reads an unstaged path, a host identity, an environment value, or the contents of a `.git` entry. Blob, tree, commit, and index objects are content-addressed by SHA-1 with a pinned header shape and stored as zlib-compressed files under `.minigit`. The index is a versioned document; the commit object references a tree built from the current live index and an optional single parent. SHA-1 is retained only to study Git's historical object format and is not a security recommendation.
 
 ## 3. Why This Project Now?
-Projects 025 and 030 are the formal prerequisites: Project 025 contributes streaming and hashing filesystem discipline, and Project 030 contributes safe bounded file and container integrity. Project 096 is optional immediate-catalog-predecessor context, while Projects 087 and 088 are optional prior review for supplied-path operations, stable ordering, and atomic replacement.
+
+- Projects 025 and 030 are the formal prerequisites: Project 025 contributes streaming and hashing filesystem discipline, and Project 030 contributes safe bounded file and container integrity.
+- Project 096 is optional immediate-catalog-predecessor context, while Projects 087 and 088 are optional prior review for supplied-path operations, stable ordering, and atomic replacement.
 
 ## 4. Prerequisites
-Projects 025 and 030 are the formal prerequisites. Project 025 provides streaming and hashing filesystem discipline; Project 030 provides safe bounded file and container integrity. Project 096 is optional immediate-catalog-predecessor context. Optional prior review includes Project 087 for supplying a path and a small operation set to that path and Project 088 for stable durable-state ordering. Be comfortable with byte slice handling, fixed format serialization, atomic file replacement through temp-file-and-rename, the difference between a manifest and an index, and the boundary between an educational format and a real Git installation.
+
+- Projects 025 and 030 are the formal prerequisites.
+- Project 025 provides streaming and hashing filesystem discipline; Project 030 provides safe bounded file and container integrity.
+- Project 096 is optional immediate-catalog-predecessor context.
+- Optional prior review includes Project 087 for supplying a path and a small operation set to that path and Project 088 for stable durable-state ordering.
+- Be comfortable with byte slice handling, fixed format serialization, atomic file replacement through temp-file-and-rename, the difference between a manifest and an index, and the boundary between an educational format and a real Git installation.
 
 ## 5. What You Must Know Before Starting
+
 - A content-addressed store addresses every object by a digest of its content. Matching digests identify a candidate existing object, but the store still verifies its kind, declared length, recomputed digest, and content bytes so corruption or the theoretical collision case is never silently accepted.
 - The pinned SHA-1 input for every object in this store is the ASCII object kind, one ASCII space, the base-10 content byte length with no leading zero except the single digit `0`, one zero byte, and then the exact content bytes. The kind and the length prefix are part of the digest input.
 - Object kinds in this educational store are exactly `blob`, `tree`, `commit`, and `index`. Object files are zlib-compressed on disk.
@@ -26,6 +41,9 @@ Projects 025 and 030 are the formal prerequisites. Project 025 provides streamin
 - The store writes only within `.minigit`. The store reads explicitly requested work tree paths after containment and symlink checks and never reads an unstaged path.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 The work tree is supplied by the caller. The caller supplies an existing empty directory; the program refuses to operate on a non-empty directory. The program creates a `.minigit` directory inside the supplied root. The presence of a `.git` entry anywhere inside the supplied root is rejected by presence only; the program never opens or reads the contents of a `.git` entry. After successful initialization the learner may create work tree files and stage them.
 
 The store reads only what the caller explicitly requests. Reads are confined to paths the caller names, after the containment check and the symlink check pass. The store never writes a work tree file. The store never reads an unstaged path, a host identity, an environment value, or a `.git` entry's contents.
@@ -54,9 +72,23 @@ The existing-object behavior is a full verification. Before the store accepts a 
 Atomic replacement applies to the live index path and the live commit-ref path. A temporary file is written, flushed, and renamed into place. A crash before rename preserves the previous revision; a crash after rename installs the new revision.
 
 ## 7. Learning Objective
-After completing this project you must be able to explain in your own words: what the exact SHA-1 input is for a blob, a tree, a commit, and an index; why SHA-1 is retained for study only and not as a security recommendation; how a fully verified existing object behaves as an idempotent no-op and how a same-digest different-content collision is reported as a typed integrity outcome; why the index is itself content-addressed and versioned; why each index revision is replaced atomically; why stage paths are sorted by raw UTF-8 byte sequence; why an intermediate path component that is a symlink escaping the work tree is rejected even when the supplied path resolves inside the work tree; why the index caps a staged regular file at `16` MiB and the index itself at `10,000` paths; why the commit builds its tree from the current live index rather than from a caller-supplied tree digest; why the timestamp is injected by the caller as a normalized UTC value; why the store writes only within `.minigit` but reads only the explicitly requested work tree paths after containment and symlink checks; why the store never reads an unstaged path, host identity, environment value, or `.git` contents; and why the project is an educational store and not a Git implementation and makes no broad Git compatibility claim.
+
+- After completing this project you must be able to explain in your own words: what the exact SHA-1 input is for a blob, a tree, a commit, and an index;
+- Why SHA-1 is retained for study only and not as a security recommendation;
+- How a fully verified existing object behaves as an idempotent no-op and how a same-digest different-content collision is reported as a typed integrity outcome;
+- Why the index is itself content-addressed and versioned;
+- Why each index revision is replaced atomically;
+- Why stage paths are sorted by raw UTF-8 byte sequence;
+- Why an intermediate path component that is a symlink escaping the work tree is rejected even when the supplied path resolves inside the work tree;
+- Why the index caps a staged regular file at `16` MiB and the index itself at `10,000` paths;
+- Why the commit builds its tree from the current live index rather than from a caller-supplied tree digest;
+- Why the timestamp is injected by the caller as a normalized UTC value;
+- Why the store writes only within `.minigit` but reads only the explicitly requested work tree paths after containment and symlink checks;
+- Why the store never reads an unstaged path, host identity, environment value, or `.git` contents;
+- And why the project is an educational store and not a Git implementation and makes no broad Git compatibility claim.
 
 ## 8. Functional Requirements
+
 1. The program accepts an explicitly supplied work tree directory that exists and is empty. A non-empty directory is rejected. The presence of a `.git` entry anywhere inside the supplied root is rejected by presence only; the program never opens or reads the contents of a `.git` entry.
 2. The program creates and uses only the `.minigit` path under the supplied work tree. The store writes only within `.minigit`. The store reads only the explicitly requested work tree paths after the containment check and the symlink check pass. The store never writes a work tree file, never reads an unstaged path, host identity, environment value, or `.git` contents.
 3. The SHA-1 input for every object is the ASCII object kind, exactly one of `blob`, `tree`, `commit`, or `index`; one ASCII space byte; the base-10 content byte length with no leading zero except the single digit `0`; one zero byte; and the exact content bytes. The known empty-blob vector for `blob` and empty content is `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391`.
@@ -77,6 +109,9 @@ After completing this project you must be able to explain in your own words: wha
 18. The store is an educational format. It makes no broad Git compatibility claim beyond the pinned SHA-1 object identity shape and the fixed kind set.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
+
 - Inputs are the supplied work tree directory, the list of paths to stage from the work tree, and the inputs to commit: the injected author tuple, the injected committer tuple, the injected normalized UTC timestamp, the message, the optional single parent digest, and the explicit allow-empty flag.
 - Outputs are the digest of each staged blob, the digest of the index revision, the digest of the tree, the digest of the commit, and the new live commit-ref content. A failed operation returns a typed outcome that identifies the boundary at which it failed.
 - Text-only behaviour example. Initialize the store on an empty temporary directory. Stage a small text file. Build a commit with no parent using the injected author and timestamp. Read the commit object and observe that its tree entries match the live index snapshot, while the tree and index retain distinct digests because their object kinds and canonical documents are distinct. The commit digest depends only on its inputs.
@@ -86,6 +121,7 @@ After completing this project you must be able to explain in your own words: wha
 - Text-only behaviour example. Stage a path whose intermediate component is a symlink that escapes the work tree. The operation is rejected at the intermediate-path check before any blob or tree is written.
 
 ## 10. Rules and Edge Cases
+
 - A work tree that is non-empty is rejected at initialization. A work tree that contains a `.git` entry is rejected by presence only, and the program never opens or reads the contents of the `.git` entry.
 - A staged path that is absolute, contains an empty segment, contains a dot segment, contains a dot-dot segment, contains a NUL byte, or exceeds `255` bytes is rejected before any I/O.
 - A staged regular file larger than `16` MiB is rejected. An index that would carry more than `10,000` staged paths is rejected.
@@ -99,6 +135,7 @@ After completing this project you must be able to explain in your own words: wha
 - The empty blob's known digest vector is `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391`. The empty tree's digest and the empty index's digest are defined by the pinned SHA-1 input and the pinned canonical serialization; their values are computed by the implementation under test.
 
 ## 11. Project Constraints
+
 - Local-only operation. No branches, no remotes, no network, no packfiles, no delta compression, no merge, no checkout, no credential handling, no hooks, no submodules, no mutation of a real Git repository.
 - The store uses a single content-addressed object layer with zlib compression and a single small versioned index. The compression format is zlib; the kind set is fixed at `blob`, `tree`, `commit`, and `index`; the serialization is canonical and fixed.
 - The store uses SHA-1 for object identity because that is Git's historical format. The store does not claim SHA-1 as a security primitive and is explicit that the choice is for study.
@@ -107,6 +144,7 @@ After completing this project you must be able to explain in your own words: wha
 - No broad claim of Git compatibility is made. The store is an educational format whose object identity shape is shared with Git and whose operational surface is local-only.
 
 ## 12. Design Questions Before Coding
+
 - What is the exact byte sequence that forms the SHA-1 input for `blob`, `tree`, `commit`, and `index`?
 - What is the empty-blob digest vector and why is it pinned?
 - How is the on-disk layout derived from the digest, and what does full verification of an existing object look like?
@@ -119,6 +157,7 @@ After completing this project you must be able to explain in your own words: wha
 - What is the educational scope of this store, and what is explicitly not claimed about Git compatibility?
 
 ## 13. Implementation Milestones
+
 1. Define the work tree boundary, the supplied-empty-directory check, the `.git` presence rejection, and the `.minigit` path the program creates and owns.
 2. Pin the SHA-1 input bytes: kind, one space, base-10 length with no leading zero except `0`, one zero byte, content. Define the kind set `blob`, `tree`, `commit`, and `index`. Define the empty-blob digest vector.
 3. Implement the on-disk layout: leading two hex characters of the digest as a subdirectory, remaining hex characters as the file name. Implement zlib compression and decompression on the object file contents.
@@ -132,6 +171,9 @@ After completing this project you must be able to explain in your own words: wha
 11. Verify under the race detector and reproduce the honest statement about SHA-1 choice and the absence of broad Git compatibility claims.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Empty blob known vector: feed empty bytes through the `blob` digest and assert the digest equals `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391`.
 - Round trip: hash a blob, read it back through the zlib-compressed on-disk file, and assert the read content equals the original bytes.
 - Duplicate object storage: hash the same content twice and assert the store owns exactly one object file for that digest and the digest is unchanged.
@@ -154,6 +196,7 @@ After completing this project you must be able to explain in your own words: wha
 - Reads only explicitly requested paths: assert that the store reads only the paths the caller names after the containment and symlink checks pass, and that no unstaged path, host identity, environment value, or `.git` contents are read.
 
 ## 15. Common Mistakes to Watch For
+
 - Forgetting any part of the SHA-1 input header. The kind, the ASCII space, the base-10 length with no leading zero except `0`, the zero byte, and the content are all part of the digest input.
 - Using leading zeros on the base-10 length except the single digit `0`. A length prefix of `0123` is incorrect.
 - Reading any work tree path that the caller did not explicitly stage. The store reads only named paths after the containment and symlink checks pass.
@@ -170,6 +213,7 @@ After completing this project you must be able to explain in your own words: wha
 - Re-using real Git's `.git` directory layout to mean that the project is Git-compatible. The store uses `.minigit`.
 
 ## 16. Topics and References for Study
+
 - The Git internals documentation covering object identity, the SHA-1 input header, the object directory layout, and the role of compression in object files. Treat the documentation as background for the historical format and the caveats about modern digest choices.
 - The zlib documentation for the compression format used on every object file.
 - The UTF-8 byte comparison discipline for the index and tree sort order.
@@ -178,19 +222,53 @@ After completing this project you must be able to explain in your own words: wha
 - Projects 025 and 030 are the formal prerequisites: Project 025 for streaming and hashing filesystem discipline and Project 030 for safe bounded file and container integrity. Project 096 is optional immediate-catalog-predecessor context; Projects 087 and 088 are optional study for supplied-path operations and stable durable-state ordering.
 
 ## 17. Self-Assessment Questions
-- What exact byte sequence forms the SHA-1 input for each object kind, and why is SHA-1 retained only for historical study?
-- Why are objects immutable and fully verified before idempotent reuse, and how are corruption and same-digest different-content collisions reported?
-- Why is the index content-addressed and versioned, and why are index and commit-ref replacements atomic?
-- Why does raw UTF-8 byte ordering make index and tree serialization independent of supply order and map iteration?
-- How do containment checks reject absolute, traversal, empty-segment, dot, dot-dot, and out-of-tree paths before I/O?
-- How does the intermediate-symlink policy protect the work-tree boundary, and how are absolute or out-of-tree leaf symlinks handled?
-- What does the store write inside `.minigit`, what explicitly requested paths may it read, and what host or repository data must it never read?
-- Why does a commit build its tree from the live index rather than accept a caller-supplied tree digest?
-- Why are caller-supplied normalized UTC metadata and the allow-empty rule needed for deterministic commit behavior?
-- What does the educational, local format guarantee, and what Git compatibility or production behavior does it explicitly not claim?
+
+1. What exact byte sequence forms the SHA-1 input for each object kind, and why is SHA-1 retained only for historical study?
+2. Why are objects immutable and fully verified before idempotent reuse, and how are corruption and same-digest different-content collisions reported?
+3. Why is the index content-addressed and versioned, and why are index and commit-ref replacements atomic?
+4. Why does raw UTF-8 byte ordering make index and tree serialization independent of supply order and map iteration?
+5. How do containment checks reject absolute, traversal, empty-segment, dot, dot-dot, and out-of-tree paths before I/O?
+6. How does the intermediate-symlink policy protect the work-tree boundary, and how are absolute or out-of-tree leaf symlinks handled?
+7. What does the store write inside `.minigit`, what explicitly requested paths may it read, and what host or repository data must it never read?
+8. Why does a commit build its tree from the live index rather than accept a caller-supplied tree digest?
+9. Why are caller-supplied normalized UTC metadata and the allow-empty rule needed for deterministic commit behavior?
+10. What does the educational, local format guarantee, and what Git compatibility or production behavior does it explicitly not claim?
 
 ## 18. Definition of Completion
-The project is complete when the program accepts an existing empty directory, creates `.minigit` inside it, refuses a non-empty directory, and never opens `.git` contents; when object identity uses the exact pinned header and the empty-blob vector; when zlib-compressed immutable objects are fully verified before idempotent reuse and corruption or collision is never overwritten; when the path, file-size, index-size, symlink-target, containment, and ordering rules are enforced; when index, tree, and commit use the exact version-1 compact JSON field orders and bounds pinned in this guide; when a commit derives its tree from the live index, keeps tree and index as distinct object kinds, and applies the allow-empty rule to both an empty root and an unchanged child; when live index and commit-ref replacement is atomic; when the store writes only inside `.minigit` and reads only explicitly staged safe paths; when the learner-written tests cover vectors, round trips, verification, corruption, path and symlink safety, deterministic serialization, empty commits, parent linkage, and failure preservation; when the race detector is clean; when the documentation retains the honest SHA-1 and non-Git limitations; and when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+
+- [ ] The project is complete when the program accepts an existing empty directory, creates `.minigit` inside it, refuses a non-empty directory, and never opens `.git` contents;
+- [ ] When object identity uses the exact pinned header and the empty-blob vector;
+- [ ] When zlib-compressed immutable objects are fully verified before idempotent reuse and corruption or collision is never overwritten;
+- [ ] When the path, file-size, index-size, symlink-target, containment, and ordering rules are enforced;
+- [ ] When index, tree, and commit use the exact version-1 compact JSON field orders and bounds pinned in this guide;
+- [ ] When a commit derives its tree from the live index, keeps tree and index as distinct object kinds, and applies the allow-empty rule to both an empty root and an unchanged child;
+- [ ] When live index and commit-ref replacement is atomic;
+- [ ] When the store writes only inside `.minigit` and reads only explicitly staged safe paths;
+- [ ] When the learner-written tests cover vectors, round trips, verification, corruption, path and symlink safety, deterministic serialization, empty commits, parent linkage, and failure preservation;
+- [ ] When the race detector is clean;
+- [ ] When the documentation retains the honest SHA-1 and non-Git limitations;
+- [ ] And when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
 
 ## 19. Optional Extensions
+
 - A read-only object inspection command that accepts a digest and reports the verified kind, declared byte length, and a bounded escaped summary without mutating the object store or exposing arbitrary binary content.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 025 — File Duplicate Finder](../../02-data-structures/025_file_duplicate_finder/README.md#20-prerequisite-based-documentation-guide), [Project 030 — File Encryptor and Decryptor](../../02-data-structures/030_file_encryptor_decryptor/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`compress/zlib`](https://pkg.go.dev/compress/zlib), [`crypto/sha1`](https://pkg.go.dev/crypto/sha1).
+- **Standards and concept references:** [Pro Git: Git objects](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects), [Git repository layout](https://git-scm.com/docs/gitrepository-layout).
+
+### Project-specific learning focus
+
+- **Learn now:** object headers and hashes, zlib storage, tree ordering, path containment and symlinks, index design, atomic reference updates, corruption detection, and format limits.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

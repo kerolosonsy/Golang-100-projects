@@ -1,59 +1,151 @@
 # Project 090 — Cron Job Scheduler
 
 ## 1. Project Name and Number
-Project 090, cron_job_scheduler. Build a deterministic in-process job scheduler that supports two simplified schedules only, a one-shot run-at and a fixed interval, with an injected clock, a manual wake boundary, an injected executor, explicit lifecycle, non-overlap semantics, a documented skip-to-next misfire policy, and versioned JSON persistence. This README is a learning guide only and contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
-> **Scope.** This is not a general cron implementation. It does not support cron expressions, time zones, daylight saving, distributed leader election, or external exactly-once effect delivery.
+- Project 090, cron_job_scheduler.
+- Build a deterministic in-process job scheduler that supports two simplified schedules only, a one-shot run-at and a fixed interval, with an injected clock, a manual wake boundary, an injected executor, explicit lifecycle, non-overlap semantics, a documented skip-to-next misfire policy, and versioned JSON persistence.
+- This README is a learning guide only and contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- > **Scope.** This is not a general cron implementation.
+- It does not support cron expressions, time zones, daylight saving, distributed leader election, or external exactly-once effect delivery.
 
 ## 2. Project Idea
+
 Each job has a unique identifier, an optional interval, an enabled flag, a non-overlap policy, a last-completed-at timestamp, a current run reference, and a derived next-run timestamp. A priority queue ordered by next-run and then by job ID drives scheduling. The manual wake boundary advances only through one of three explicit actions: the caller adds or updates a job, an injected clock event fires, or shutdown is requested. At most one execution per job runs at a time. When a run is still active at its next time, the scheduler pins a deterministic skip policy: overlapping and missed occurrences are skipped and the next interval is anchored strictly after the current time, never catching up.
 
 ## 3. Why This Project Now?
-This project takes its required foundation from Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache), which together supply ticker-driven and interval-based scheduling primitives, context-cancellation propagation through long-running operations, and copy-safe ownership with bounded TTL-style expiry. The catalog's immediate predecessor is Project 089 (raft_consensus_impl); Project 089 is referenced here only as optional context for the discipline of separating simulated authority from external effects, distinguishing pending from committed outcomes, and operating a deterministic event loop. This project applies that discipline to a single-process scheduler: time, lifecycle, and persistence are explicit, and the same skip policy governs both runtime misfire and restart recovery.
+
+- This project takes its required foundation from Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache), which together supply ticker-driven and interval-based scheduling primitives, context-cancellation propagation through long-running operations, and copy-safe ownership with bounded TTL-style expiry.
+- The catalog's immediate predecessor is Project 089 (raft_consensus_impl); Project 089 is referenced here only as optional context for the discipline of separating simulated authority from external effects, distinguishing pending from committed outcomes, and operating a deterministic event loop.
+- This project applies that discipline to a single-process scheduler: time, lifecycle, and persistence are explicit, and the same skip policy governs both runtime misfire and restart recovery.
 
 ## 4. Prerequisites
-Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache) are the required prerequisites. Project 089 (raft_consensus_impl) is the immediate catalog predecessor and is useful for context but is not required. Be comfortable with priority queues, injected clocks and executors, contexts, graceful shutdown, versioned JSON, schema validation, deterministic fake-clock testing, race-detector tests, and the distinction between scheduled time, actual execution time, and external effect delivery.
+
+- Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache) are the required prerequisites.
+- Project 089 (raft_consensus_impl) is the immediate catalog predecessor and is useful for context but is not required.
+- Be comfortable with priority queues, injected clocks and executors, contexts, graceful shutdown, versioned JSON, schema validation, deterministic fake-clock testing, race-detector tests, and the distinction between scheduled time, actual execution time, and external effect delivery.
 
 ## 5. What You Must Know Before Starting
-Know that at-most-one overlap and at-most-one application per occurrence are different goals. Understand that priority ordering by next-run alone is not deterministic when several jobs share the same time, that anchored scheduling prevents runaway catch-up bursts after long pause, that versioned persistence requires stable field names, validated re-parse, and replacement rather than merge, and that "running" state is volatile and must not be persisted as if durable.
+
+- Know that at-most-one overlap and at-most-one application per occurrence are different goals.
+- Understand that priority ordering by next-run alone is not deterministic when several jobs share the same time, that anchored scheduling prevents runaway catch-up bursts after long pause, that versioned persistence requires stable field names, validated re-parse, and replacement rather than merge, and that "running" state is volatile and must not be persisted as if durable.
 
 ## 6. Explanation of New Concepts
-A job has a unique identifier, which is a non-empty UTF-8 string of at most 128 bytes. The job is either one-shot or interval. A one-shot job has no interval and must have a valid absolute next-run timestamp (its run-at). An interval job has a strictly positive interval in ticks and must have a valid absolute next-run timestamp for its first occurrence. A job stores its scheduler-owned fields: identifier, schedule kind, interval, non-overlap policy, enabled flag, next-run absolute timestamp, state, last outcome kind, last outcome timestamp, and bounded last error text. Identification, schedule kind, interval, and non-overlap policy are immutable for the job's lifetime. Enabled and next-run may change only through validated scheduling operations; state and last outcome change only through scheduler-owned transitions.
 
-The allowed values for the non-overlap policy are exactly Skip, which means a run that is still active at its next scheduled time is dropped, the next interval is anchored strictly after the current time, and a Skipped event is recorded for that occurrence; and Queue, which the required project does not implement. The documented contract therefore treats the only valid non-overlap policy as Skip and rejects every other value. The project does not invent additional policies and does not implement Queue.
+### Concepts
 
-The priority queue orders jobs by next-run first, breaking ties with job ID in ascending byte order. This rule is the only tie-breaker and is used for both selection at wake and for any deterministic listing. The queue never orders only by wall-clock time and never uses map iteration.
+- A job has a unique identifier, which is a non-empty UTF-8 string of at most 128 bytes.
+- The job is either one-shot or interval.
+- A one-shot job has no interval and must have a valid absolute next-run timestamp (its run-at).
+- An interval job has a strictly positive interval in ticks and must have a valid absolute next-run timestamp for its first occurrence.
+- A job stores its scheduler-owned fields: identifier, schedule kind, interval, non-overlap policy, enabled flag, next-run absolute timestamp, state, last outcome kind, last outcome timestamp, and bounded last error text.
+- Identification, schedule kind, interval, and non-overlap policy are immutable for the job's lifetime.
+- Enabled and next-run may change only through validated scheduling operations; state and last outcome change only through scheduler-owned transitions.
 
-The injected clock is the only way logical time moves. Explicit clock delivery, add, update, cancel, executor completion, and shutdown are scheduler events. At each event boundary the scheduler observes the clock once and processes every enabled job whose next-run is equal to or earlier than the observed time in queue order. A non-running eligible job is dispatched according to the runtime-lateness policy; an interval job whose prior run is still active records a Skipped occurrence and advances according to the non-overlap policy.
+- The allowed values for the non-overlap policy are exactly Skip, which means a run that is still active at its next scheduled time is dropped, the next interval is anchored strictly after the current time, and a Skipped event is recorded for that occurrence; and Queue, which the required project does not implement.
+- The documented contract therefore treats the only valid non-overlap policy as Skip and rejects every other value.
+- The project does not invent additional policies and does not implement Queue.
 
-Runtime lateness and restart misfire are distinct categories. Runtime lateness happens during a normal wake when the observed clock is greater than the next-run of a non-running enabled job. Such a job is dispatched exactly once at this wake even if it is arbitrarily late; it is not marked Missed and is not enqueued for later catch-up. A one-shot job dispatched late runs and is then marked Completed only after its executor returns. Restart misfire applies only to load: a one-shot whose next-run was at or before the load-time boundary is the only situation that produces the Missed terminal state. A job that missed while down is never run unexpectedly on restart, regardless of how far past its next-run the load-time boundary is.
+- The priority queue orders jobs by next-run first, breaking ties with job ID in ascending byte order.
+- This rule is the only tie-breaker and is used for both selection at wake and for any deterministic listing.
+- The queue never orders only by wall-clock time and never uses map iteration.
 
-The skip policy has a precise shape that applies to interval jobs with Skip while a run is still active. When processing an interval job at an observed time whose next-run is at or before the observed time, the scheduler checks whether the run for that occurrence is still active. If no run is active for that occurrence, the scheduler dispatches one run. If the previous run is still active, the occurrence is dropped and a Skipped event is recorded for it; no additional run is started. The next occurrence is anchored to the first scheduled timestamp strictly after the observed time, computed by adding whole interval steps from the prior scheduled next-run until the first timestamp that is strictly greater than the observed time.
+- The injected clock is the only way logical time moves.
+- Explicit clock delivery, add, update, cancel, executor completion, and shutdown are scheduler events.
+- At each event boundary the scheduler observes the clock once and processes every enabled job whose next-run is equal to or earlier than the observed time in queue order.
+- A non-running eligible job is dispatched according to the runtime-lateness policy; an interval job whose prior run is still active records a Skipped occurrence and advances according to the non-overlap policy.
 
-Anchoring uses the prior scheduled next-run rather than observed time whenever possible. For an interval job the next occurrence is the smallest next-run equal to prior scheduled next-run plus N times interval such that the result is strictly greater than the observed time. Using observed time plus interval is permitted only when that happens to equal the anchored result; it is never used when it would skip an occurrence or insert an extra one. A one-shot job dispatched after its scheduled time, including arbitrarily late, runs exactly once; the scheduler does not catch up additional one-shots.
+- Runtime lateness and restart misfire are distinct categories.
+- Runtime lateness happens during a normal wake when the observed clock is greater than the next-run of a non-running enabled job.
+- Such a job is dispatched exactly once at this wake even if it is arbitrarily late; it is not marked Missed and is not enqueued for later catch-up.
+- A one-shot job dispatched late runs and is then marked Completed only after its executor returns.
+- Restart misfire applies only to load: a one-shot whose next-run was at or before the load-time boundary is the only situation that produces the Missed terminal state.
+- A job that missed while down is never run unexpectedly on restart, regardless of how far past its next-run the load-time boundary is.
 
-The executor is injected and context-aware. The scheduler creates one cancellable context per run that is independent of the scheduler context and that is cancelled only by cancel or shutdown. The executor returns when its work completes, and the scheduler treats its return as the run result. Completion of a run records its outcome (success or bounded error) but does not advance next-run a second time; next-run was already advanced when the run was dispatched or when the occurrence was skipped. A successful return records a success outcome with its timestamp. A non-nil error records a bounded error of at most 1 KiB and its timestamp. A run is started exactly once per dispatch and the scheduler never dispatches the same occurrence twice; idempotency of effects inside the injected executor remains outside the scheduler guarantee.
+- The skip policy has a precise shape that applies to interval jobs with Skip while a run is still active.
+- When processing an interval job at an observed time whose next-run is at or before the observed time, the scheduler checks whether the run for that occurrence is still active.
+- If no run is active for that occurrence, the scheduler dispatches one run.
+- If the previous run is still active, the occurrence is dropped and a Skipped event is recorded for it; no additional run is started.
+- The next occurrence is anchored to the first scheduled timestamp strictly after the observed time, computed by adding whole interval steps from the prior scheduled next-run until the first timestamp that is strictly greater than the observed time.
 
-Cancel has three deterministic outcomes. Cancelling a pending job removes it from the priority queue and transitions the state to Cancelled immediately. Cancelling a running job signals the executor context; the state becomes Cancelled only after the run returns, and the recorded outcome reflects the cancellation rather than the run's own error. Cancelling a job already in the Cancelled state reports the existing Cancelled outcome and changes nothing. Cancelling a job in the Completed or Missed terminal state reports that existing terminal outcome and does not transition it to Cancelled. Cancel does not call the executor directly; it only signals the run's context and removes or transitions pending state.
+- Anchoring uses the prior scheduled next-run rather than observed time whenever possible.
+- For an interval job the next occurrence is the smallest next-run equal to prior scheduled next-run plus N times interval such that the result is strictly greater than the observed time.
+- Using observed time plus interval is permitted only when that happens to equal the anchored result; it is never used when it would skip an occurrence or insert an extra one.
+- A one-shot job dispatched after its scheduled time, including arbitrarily late, runs exactly once; the scheduler does not catch up additional one-shots.
 
-Shutdown is explicit, idempotent, and bounded by a caller-supplied context. Shutdown stops accepting new wake events, cancels the scheduler context, and signals every still-running executor context. It waits for the caller's context to expire or for all owned runs to return, whichever comes first. If the caller's context expires first, the scheduler reports shutdown timed out without claiming that all runs have stopped, preserves persistent state that load can read safely, and does not persist a running marker. Subsequent shutdown calls remain idempotent and may observe eventual completion; they return the documented final lifecycle outcome instead of being pinned to a stale prior timeout result.
+- The executor is injected and context-aware.
+- The scheduler creates one cancellable context per run that is independent of the scheduler context and that is cancelled only by cancel or shutdown.
+- The executor returns when its work completes, and the scheduler treats its return as the run result.
+- Completion of a run records its outcome (success or bounded error) but does not advance next-run a second time; next-run was already advanced when the run was dispatched or when the occurrence was skipped.
+- A successful return records a success outcome with its timestamp.
+- A non-nil error records a bounded error of at most 1 KiB and its timestamp.
+- A run is started exactly once per dispatch and the scheduler never dispatches the same occurrence twice; idempotency of effects inside the injected executor remains outside the scheduler guarantee.
 
-Validation is enforced at every entry point. Add requires a unique identifier, valid schedule kind, valid absolute next-run, strictly positive interval for interval jobs, enabled semantics, and a valid non-overlap policy. Update may set a new future next-run or toggle enabled, but may not change the identifier, schedule kind, interval, or non-overlap policy. Callers may not directly forge state, last-outcome timestamps, or errors; those are scheduler-owned fields. Re-adding an identifier whose state is Cancelled, Completed, or Missed is treated as a new add with full validation. Persistence is replacement: load replaces the in-memory scheduler state with the validated snapshot; a corrupt or invalid snapshot returns an error and leaves prior state untouched.
+- Cancel has three deterministic outcomes.
+- Cancelling a pending job removes it from the priority queue and transitions the state to Cancelled immediately.
+- Cancelling a running job signals the executor context; the state becomes Cancelled only after the run returns, and the recorded outcome reflects the cancellation rather than the run's own error.
+- Cancelling a job already in the Cancelled state reports the existing Cancelled outcome and changes nothing.
+- Cancelling a job in the Completed or Missed terminal state reports that existing terminal outcome and does not transition it to Cancelled.
+- Cancel does not call the executor directly; it only signals the run's context and removes or transitions pending state.
 
-Persistence uses a version-one JSON document. The document has exactly three top-level members: version, schema, and jobs. The schema records the snapshot generation, the observed-time boundary, and a stable format identifier. Each job carries identifier, schedule kind, interval in ticks or null, non-overlap policy, enabled flag, next-run absolute timestamp, persisted state, last outcome kind, last outcome timestamp, and bounded last error text. Persisted state is exactly Pending, Completed, Missed, or Cancelled; Ready and Running are never persisted. There is no is-running field, no current run reference, and no duration-until-first-run field: a job's first scheduled occurrence is its absolute next-run, and running state is strictly volatile. The snapshot is written under the same narrow atomic-file-save contract as Project 087: temporary file, checked write, synchronization, checked close, same-directory rename, parent directory synchronization, and a narrow same-filesystem guarantee. The snapshot is invalid on trailing JSON, unknown fields, unknown version, missing required fields, duplicate identifiers, invalid time values, invalid identifiers, invalid schedule kinds, invalid non-overlap policies, invalid states, invalid last outcomes, invalid interval values, or any other documented bound violation. Because unknown fields are rejected, a supplied is-running field is treated as an unknown-field schema error rather than as a special runtime signal.
+- Shutdown is explicit, idempotent, and bounded by a caller-supplied context.
+- Shutdown stops accepting new wake events, cancels the scheduler context, and signals every still-running executor context.
+- It waits for the caller's context to expire or for all owned runs to return, whichever comes first.
+- If the caller's context expires first, the scheduler reports shutdown timed out without claiming that all runs have stopped, preserves persistent state that load can read safely, and does not persist a running marker.
+- Subsequent shutdown calls remain idempotent and may observe eventual completion; they return the documented final lifecycle outcome instead of being pinned to a stale prior timeout result.
 
-Disabled jobs are never dispatched. A disabled job is held outside the eligible set until an update sets enabled true; an enable or update that retains the job must supply or keep a future valid next-run and may not alter immutable identity, schedule kind, interval, or policy. Update accepts a future next-run computed from the documented anchoring rules or any future timestamp strictly greater than the prior scheduled next-run; supplying a smaller next-run is rejected unless an explicit repositioning policy is documented, which this project does not provide.
+- Validation is enforced at every entry point.
+- Add requires a unique identifier, valid schedule kind, valid absolute next-run, strictly positive interval for interval jobs, enabled semantics, and a valid non-overlap policy.
+- Update may set a new future next-run or toggle enabled, but may not change the identifier, schedule kind, interval, or non-overlap policy.
+- Callers may not directly forge state, last-outcome timestamps, or errors; those are scheduler-owned fields.
+- Re-adding an identifier whose state is Cancelled, Completed, or Missed is treated as a new add with full validation.
+- Persistence is replacement: load replaces the in-memory scheduler state with the validated snapshot; a corrupt or invalid snapshot returns an error and leaves prior state untouched.
 
-The required state machine has a small set of deterministic transitions. Pending is the initial persisted state for one-shot and interval jobs that are disabled or whose next-run is in the future. Ready is a transient in-memory state observed only inside an event boundary when next-run has reached the observed time. Running is a strictly volatile in-memory state set only at dispatch and cleared only when the run returns; neither Ready nor Running is persisted. Skipped is a recorded event for an interval occurrence blocked because the prior run was still active; it does not replace the Running state. Completed is the terminal state for a one-shot job after its executor returns with either success or error; next-run is cleared. Missed is the terminal state for a one-shot job whose next-run elapsed while the scheduler was down; next-run is cleared and it is never run. Cancelled is the terminal state for a job whose pending or running occurrence was cancelled; a running transition to Cancelled is observed only after the run returns. A job in Completed, Missed, or Cancelled cannot transition further; cancel against any of those states reports the existing terminal outcome without transitioning the state. Every state mutation is atomic at an event boundary; executor work happens outside that boundary and its completion is handled as a later event.
+- Persistence uses a version-one JSON document.
+- The document has exactly three top-level members: version, schema, and jobs.
+- The schema records the snapshot generation, the observed-time boundary, and a stable format identifier.
+- Each job carries identifier, schedule kind, interval in ticks or null, non-overlap policy, enabled flag, next-run absolute timestamp, persisted state, last outcome kind, last outcome timestamp, and bounded last error text.
+- Persisted state is exactly Pending, Completed, Missed, or Cancelled; Ready and Running are never persisted.
+- There is no is-running field, no current run reference, and no duration-until-first-run field: a job's first scheduled occurrence is its absolute next-run, and running state is strictly volatile.
+- The snapshot is written under the same narrow atomic-file-save contract as Project 087: temporary file, checked write, synchronization, checked close, same-directory rename, parent directory synchronization, and a narrow same-filesystem guarantee.
+- The snapshot is invalid on trailing JSON, unknown fields, unknown version, missing required fields, duplicate identifiers, invalid time values, invalid identifiers, invalid schedule kinds, invalid non-overlap policies, invalid states, invalid last outcomes, invalid interval values, or any other documented bound violation.
+- Because unknown fields are rejected, a supplied is-running field is treated as an unknown-field schema error rather than as a special runtime signal.
 
-The snapshot is taken once at the same observed time used for an event decision, with the persistent fields stable at that boundary, and is written through the same atomic file replacement boundary. A job with an active executor is serialized as Pending rather than Running. For an active interval it contains the already-advanced next-run and the last outcome from before that executor completes. For an active one-shot it retains the elapsed run-at, so a process restart classifies it as Missed instead of replaying a possibly completed external effect. Neither case contains a Running marker or current run reference; a later snapshot captures the executor's new outcome. The snapshot does not block the executor; it observes persistent fields under a short critical section and never holds that section across executor work.
+- Disabled jobs are never dispatched.
+- A disabled job is held outside the eligible set until an update sets enabled true; an enable or update that retains the job must supply or keep a future valid next-run and may not alter immutable identity, schedule kind, interval, or policy.
+- Update accepts a future next-run computed from the documented anchoring rules or any future timestamp strictly greater than the prior scheduled next-run; supplying a smaller next-run is rejected unless an explicit repositioning policy is documented, which this project does not provide.
 
-Text-only state examples are permitted. An interval job of one tick where the first run is still active at the second tick: the second tick is dropped as a Skipped event, next-run is anchored to the first whole-interval step past the observed time, no catch-up run is dispatched. A one-shot whose next-run passed while the scheduler is down: on load the job transitions to Missed, is not dispatched, and stays terminal until re-added. A runtime late one-shot whose next-run was two ticks ago when the wake arrives: the one-shot is dispatched exactly once now; it is not split into multiple runs and is not marked Missed; it is marked Completed only after the executor returns. A failing run records a bounded error and remains in its interval cadence. A cancel during a long run signals the executor context and transitions to Cancelled only after the run returns.
+- The required state machine has a small set of deterministic transitions.
+- Pending is the initial persisted state for one-shot and interval jobs that are disabled or whose next-run is in the future.
+- Ready is a transient in-memory state observed only inside an event boundary when next-run has reached the observed time.
+- Running is a strictly volatile in-memory state set only at dispatch and cleared only when the run returns; neither Ready nor Running is persisted.
+- Skipped is a recorded event for an interval occurrence blocked because the prior run was still active; it does not replace the Running state.
+- Completed is the terminal state for a one-shot job after its executor returns with either success or error; next-run is cleared.
+- Missed is the terminal state for a one-shot job whose next-run elapsed while the scheduler was down; next-run is cleared and it is never run.
+- Cancelled is the terminal state for a job whose pending or running occurrence was cancelled; a running transition to Cancelled is observed only after the run returns.
+- A job in Completed, Missed, or Cancelled cannot transition further; cancel against any of those states reports the existing terminal outcome without transitioning the state.
+- Every state mutation is atomic at an event boundary; executor work happens outside that boundary and its completion is handled as a later event.
+
+- The snapshot is taken once at the same observed time used for an event decision, with the persistent fields stable at that boundary, and is written through the same atomic file replacement boundary.
+- A job with an active executor is serialized as Pending rather than Running.
+- For an active interval it contains the already-advanced next-run and the last outcome from before that executor completes.
+- For an active one-shot it retains the elapsed run-at, so a process restart classifies it as Missed instead of replaying a possibly completed external effect.
+- Neither case contains a Running marker or current run reference; a later snapshot captures the executor's new outcome.
+- The snapshot does not block the executor; it observes persistent fields under a short critical section and never holds that section across executor work.
+
+- Text-only state examples are permitted.
+- An interval job of one tick where the first run is still active at the second tick: the second tick is dropped as a Skipped event, next-run is anchored to the first whole-interval step past the observed time, no catch-up run is dispatched.
+- A one-shot whose next-run passed while the scheduler is down: on load the job transitions to Missed, is not dispatched, and stays terminal until re-added.
+- A runtime late one-shot whose next-run was two ticks ago when the wake arrives: the one-shot is dispatched exactly once now; it is not split into multiple runs and is not marked Missed; it is marked Completed only after the executor returns.
+- A failing run records a bounded error and remains in its interval cadence.
+- A cancel during a long run signals the executor context and transitions to Cancelled only after the run returns.
 
 ## 7. Learning Objective
-Design and verify a deterministic in-process job scheduler that supports only one-shot and interval schedules, orders by next-run then identifier, observes one logical time per wake action, enforces at-most-one run per job with the skip-to-next misfire policy, supports explicit cancel, idempotent shutdown, and versioned JSON persistence, and makes external exactly-once, time zones, and distributed leadership explicit non-goals.
+
+- Design and verify a deterministic in-process job scheduler that supports only one-shot and interval schedules, orders by next-run then identifier, observes one logical time per wake action, enforces at-most-one run per job with the skip-to-next misfire policy, supports explicit cancel, idempotent shutdown, and versioned JSON persistence, and makes external exactly-once, time zones, and distributed leadership explicit non-goals.
 
 ## 8. Functional Requirements
+
 1. Support bounded job identifiers, two schedule kinds only, an absolute next-run timestamp, a strictly positive interval for interval jobs, an enabled flag, and the documented non-overlap policy; no duration-until-first-run field is accepted or persisted.
 2. Order the priority queue by next-run and then job ID, deterministically and independently of map iteration.
 3. Advance logical time only through the injected clock; handle clock delivery, add, update, cancel, executor completion, and shutdown as explicit scheduler events.
@@ -72,18 +164,57 @@ Design and verify a deterministic in-process job scheduler that supports only on
 16. Document non-goals: cron expressions, time zones, daylight saving, distributed leader election, and external exactly-once effect delivery.
 
 ## 9. Inputs and Outputs
-Inputs are validated job definitions, validated updates, cancel and shutdown requests, injected clock events, injected executor work, and versioned snapshot files. Outputs are dispatched runs, ordered applied records, deterministic snapshot bytes, typed validation or schema errors, persisted state, and clear miss-fire outcomes. No input or output depends on the network, the filesystem beyond the documented save path, wall-clock sleeps, or goroutine timing.
+
+### Interface Contract
+
+- Inputs are validated job definitions, validated updates, cancel and shutdown requests, injected clock events, injected executor work, and versioned snapshot files.
+- Outputs are dispatched runs, ordered applied records, deterministic snapshot bytes, typed validation or schema errors, persisted state, and clear miss-fire outcomes.
+- No input or output depends on the network, the filesystem beyond the documented save path, wall-clock sleeps, or goroutine timing.
 
 ## 10. Rules and Edge Cases
-The allowed non-overlap policy is exactly Skip. Queue is documented as not implemented and rejected on add or load. Ties on next-run are broken by identifier order. Wake time never moves backward. Disabled jobs are never dispatched. At every wake the scheduler observes the clock once and applies the runtime-lateness policy to enabled non-running jobs whose next-run is at or before the observed time; runtime lateness dispatches a one-shot exactly once and never produces a Missed state. While a run remains active, later due interval occurrences are recorded as Skipped and next-run is anchored by whole interval steps from the prior scheduled next-run to the first strictly-after-the-observed-time result. No catch-up run is ever executed for either runtime or restart gaps; an interval occurrence that loses its dispatch window is recorded as Skipped, not as a missed execution. Only a one-shot whose next-run was at or before the load-time boundary becomes Missed on load; an interval with stored next-run at or before load is anchored by adding whole intervals from that stored timestamp to the first strictly-after-load-time result and is not classified as Missed. Cancel of a Cancelled job reports the existing Cancelled outcome; cancel of a Completed or Missed job reports that existing terminal outcome without changing state. Shutdown is idempotent and may eventually observe completion even after an earlier call reported timeout. Persistence rejects unknown fields, missing fields, unknown versions, trailing JSON, duplicate identifiers, invalid identifiers, invalid schedule kinds, invalid non-overlap policies, invalid states, invalid last outcomes, invalid interval values, and any other bound violation; because unknown fields are rejected, a supplied is-running field is reported as a schema error rather than treated as a special runtime signal. There is no persisted duration-until-first-run and no persisted current run reference. Save failure before rename preserves the old file; best-effort cleanup of known temporary files is required. A post-rename reporting failure has an uncertain reported outcome and must not be described as rollback-safe.
+
+- The allowed non-overlap policy is exactly Skip.
+- Queue is documented as not implemented and rejected on add or load.
+- Ties on next-run are broken by identifier order.
+- Wake time never moves backward.
+- Disabled jobs are never dispatched.
+- At every wake the scheduler observes the clock once and applies the runtime-lateness policy to enabled non-running jobs whose next-run is at or before the observed time; runtime lateness dispatches a one-shot exactly once and never produces a Missed state.
+- While a run remains active, later due interval occurrences are recorded as Skipped and next-run is anchored by whole interval steps from the prior scheduled next-run to the first strictly-after-the-observed-time result.
+- No catch-up run is ever executed for either runtime or restart gaps; an interval occurrence that loses its dispatch window is recorded as Skipped, not as a missed execution.
+- Only a one-shot whose next-run was at or before the load-time boundary becomes Missed on load; an interval with stored next-run at or before load is anchored by adding whole intervals from that stored timestamp to the first strictly-after-load-time result and is not classified as Missed.
+- Cancel of a Cancelled job reports the existing Cancelled outcome; cancel of a Completed or Missed job reports that existing terminal outcome without changing state.
+- Shutdown is idempotent and may eventually observe completion even after an earlier call reported timeout.
+- Persistence rejects unknown fields, missing fields, unknown versions, trailing JSON, duplicate identifiers, invalid identifiers, invalid schedule kinds, invalid non-overlap policies, invalid states, invalid last outcomes, invalid interval values, and any other bound violation;
+- Because unknown fields are rejected, a supplied is-running field is reported as a schema error rather than treated as a special runtime signal.
+- There is no persisted duration-until-first-run and no persisted current run reference.
+- Save failure before rename preserves the old file; best-effort cleanup of known temporary files is required.
+- A post-rename reporting failure has an uncertain reported outcome and must not be described as rollback-safe.
 
 ## 11. Project Constraints
-One process, one in-memory scheduler, two schedule kinds only, deterministic priority ordering, injected clock, injected executor, version-one JSON persistence, no cron syntax, no time zones, no daylight saving, no network, no replication, no distributed leader, no transactional effect delivery, no in-progress run state in snapshots, and no background ticker. A production scheduler would need scheduling expression language, time-zone correctness, calendar effects, leader election, retries with backoff, metrics, observability, durable replay, multi-tenant isolation, partial-failure handling, and security.
+
+- One process, one in-memory scheduler, two schedule kinds only, deterministic priority ordering, injected clock, injected executor, version-one JSON persistence, no cron syntax, no time zones, no daylight saving, no network, no replication, no distributed leader, no transactional effect delivery, no in-progress run state in snapshots, and no background ticker.
+- A production scheduler would need scheduling expression language, time-zone correctness, calendar effects, leader election, retries with backoff, metrics, observability, durable replay, multi-tenant isolation, partial-failure handling, and security.
 
 ## 12. Design Questions Before Coding
-Why are only two schedule kinds supported? Why is the non-overlap policy exactly Skip and not Queue? Why break ties by identifier? Why observe the clock once per wake and not per job? Why are absolute next-run timestamps the schedule boundary rather than a duration-until-first-run? Why is runtime lateness not the same as restart misfire, and why does runtime lateness dispatch exactly once while only restart miss is recorded as Missed? How does the anchoring rule prevent a catch-up burst after a long pause, and why is observed time plus interval permitted only when it equals the anchored result? Why is a still-running run not repeated, and why is a skipped interval occurrence recorded as Skipped rather than retried? Why is running state strictly volatile and excluded from persistence, and why does an unknown is-running field become a schema error? Why are Completed, Missed, and Cancelled distinct terminal outcomes reported as-is on later cancel? Why do disabled jobs never dispatch, and why must enable or update supply or retain a future valid next-run? Why are immutable fields rejected on update and why are last-completed timestamps and errors scheduler-owned? Why must a snapshot be validated before any replacement? Why must save use a same-directory temporary file and parent directory synchronization? Why is shutdown idempotent, why can a later shutdown call return the documented final lifecycle outcome rather than a stale timeout, and what does a timeout specifically report?
+
+- Why are only two schedule kinds supported?
+- Why is the non-overlap policy exactly Skip and not Queue?
+- Why break ties by identifier?
+- Why observe the clock once per wake and not per job?
+- Why are absolute next-run timestamps the schedule boundary rather than a duration-until-first-run?
+- Why is runtime lateness not the same as restart misfire, and why does runtime lateness dispatch exactly once while only restart miss is recorded as Missed?
+- How does the anchoring rule prevent a catch-up burst after a long pause, and why is observed time plus interval permitted only when it equals the anchored result?
+- Why is a still-running run not repeated, and why is a skipped interval occurrence recorded as Skipped rather than retried?
+- Why is running state strictly volatile and excluded from persistence, and why does an unknown is-running field become a schema error?
+- Why are Completed, Missed, and Cancelled distinct terminal outcomes reported as-is on later cancel?
+- Why do disabled jobs never dispatch, and why must enable or update supply or retain a future valid next-run?
+- Why are immutable fields rejected on update and why are last-completed timestamps and errors scheduler-owned?
+- Why must a snapshot be validated before any replacement?
+- Why must save use a same-directory temporary file and parent directory synchronization?
+- Why is shutdown idempotent, why can a later shutdown call return the documented final lifecycle outcome rather than a stale timeout, and what does a timeout specifically report?
 
 ## 13. Implementation Milestones
+
 1. Establish bounded identifiers, schedule kinds, interval, absolute next-run, non-overlap policy, state, and last-outcome validation, with no duration-until-first-run field and no is-running field.
 2. Establish priority queue with next-run and identifier ordering and deterministic listing.
 3. Establish wake boundary, one clock observation, enabled and non-running eligibility, and dispatch order that separates runtime lateness from restart misfire.
@@ -97,6 +228,9 @@ Why are only two schedule kinds supported? Why is the non-overlap policy exactly
 11. Complete fake-clock, runtime lateness, anchoring, long-job, cancel, shutdown, snapshot round-trip, restart Missed and interval anchoring, unknown-field, disabled-job, and race-detector tests.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - One-shot job fires at its exact next-run and is marked Completed only after the executor returns.
 - A one-shot whose next-run was arbitrarily in the past at wake time dispatches exactly once and is not marked Missed or split into multiple runs.
 - Interval job fires repeatedly at next occurrences computed from the prior scheduled next-run plus whole intervals.
@@ -124,15 +258,50 @@ Why are only two schedule kinds supported? Why is the non-overlap policy exactly
 - Every test uses the injected clock, a manual wake, and a deterministic fake executor; no test depends on wall-clock time, real ticker, or goroutine timing.
 
 ## 15. Common Mistakes to Watch For
-Using a real ticker; allowing time to advance without a wake; ordering jobs only by next-run; using map iteration; rescheduling a still-running run by computing observed time plus interval without anchoring to the prior scheduled next-run; accumulating missed occurrences; persisting a running state, an is-running field, or a current run reference across restarts; confusing runtime lateness with restart misfire, running a missed one-shot on restart, or marking a runtime-late one-shot as Missed; changing immutable fields in update; allowing unknown non-overlap policies; treating an unknown field such as is-running as a special signal instead of a schema error; calling the executor from cancel; transitioning a Completed or Missed job to Cancelled on later cancel; pinning a later shutdown call to a stale prior timeout result; writing the snapshot from inside the critical section; writing to the same filesystem file from a different directory; ignoring close or directory sync errors; claiming production cron or time-zone support; treating in-memory state as durable; or persisting a duration-until-first-run alongside the absolute next-run.
+
+- Using a real ticker;
+- Allowing time to advance without a wake;
+- Ordering jobs only by next-run;
+- Using map iteration;
+- Rescheduling a still-running run by computing observed time plus interval without anchoring to the prior scheduled next-run;
+- Accumulating missed occurrences;
+- Persisting a running state, an is-running field, or a current run reference across restarts;
+- Confusing runtime lateness with restart misfire, running a missed one-shot on restart, or marking a runtime-late one-shot as Missed;
+- Changing immutable fields in update;
+- Allowing unknown non-overlap policies;
+- Treating an unknown field such as is-running as a special signal instead of a schema error;
+- Calling the executor from cancel;
+- Transitioning a Completed or Missed job to Cancelled on later cancel;
+- Pinning a later shutdown call to a stale prior timeout result;
+- Writing the snapshot from inside the critical section;
+- Writing to the same filesystem file from a different directory;
+- Ignoring close or directory sync errors;
+- Claiming production cron or time-zone support;
+- Treating in-memory state as durable;
+- Or persisting a duration-until-first-run alongside the absolute next-run.
 
 ## 16. Topics and References for Study
-Study Go documentation for the container heap, contexts, time values, JSON, sorting, file synchronization, rename, parent directory handles, temporary directories, and the race detector. Study priority queue design, the difference between scheduled time and execution time, misfire policies such as skip, anchor, fire once, fire all, and the limits of in-process scheduling. Study versioned persistence, atomic file replacement, and the limits of local filesystem durability. Review Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache) for timer, context-propagation, and copy-safe ownership primitives, and Project 089 (raft_consensus_impl) for the discipline that pending outcomes are not committed outcomes.
+
+- Study Go documentation for the container heap, contexts, time values, JSON, sorting, file synchronization, rename, parent directory handles, temporary directories, and the race detector.
+- Study priority queue design, the difference between scheduled time and execution time, misfire policies such as skip, anchor, fire once, fire all, and the limits of in-process scheduling.
+- Study versioned persistence, atomic file replacement, and the limits of local filesystem durability.
+- Review Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache) for timer, context-propagation, and copy-safe ownership primitives, and Project 089 (raft_consensus_impl) for the discipline that pending outcomes are not committed outcomes.
 
 ## 17. Self-Assessment Questions
-Why is only the Skip non-overlap policy supported, and what Queue-style value does the project explicitly refuse to accept? What moves logical time, and why is the schedule boundary an absolute next-run rather than a duration-until-first-run? Why break ties by identifier rather than insertion order or map iteration, and how does that single tie-breaker rule apply to selection at wake and to any deterministic listing? Why is runtime lateness distinct from restart misfire, and why does runtime lateness dispatch a one-shot exactly once without producing a Missed state? What does the skip policy do at a long overlap and at a long gap, and how does the anchoring rule use the prior scheduled next-run to prevent catch-up bursts? Why are one-shots whose next-run elapsed during downtime recorded as Missed on load while intervals are merely anchored forward, and why is no missed occurrence ever run unexpectedly on restart? Why is running state strictly volatile and excluded from persistence, and why does a supplied is-running field become a schema error rather than a runtime signal? Which fields are immutable on update, which scheduler-owned outcome fields may callers not forge directly, and why must Completed, Missed, and Cancelled each be reported as the existing terminal outcome on later cancel? Why must the entire snapshot be validated before replacement, why is unknown-field detection part of that validation, and why are disabled jobs never dispatched until enable or update supplies or retains a future valid next-run? Why must save use a same-directory temporary file and a parent directory synchronization, what does an idempotent shutdown guarantee, what does it specifically not guarantee after the caller's context expires, why may a later shutdown call return the documented final lifecycle outcome, and which broad production concerns are intentionally outside this project?
+
+1. Why is only the Skip non-overlap policy supported, and what Queue-style value does the project explicitly refuse to accept?
+2. What moves logical time, and why is the schedule boundary an absolute next-run rather than a duration-until-first-run?
+3. Why break ties by identifier rather than insertion order or map iteration, and how does that single tie-breaker rule apply to selection at wake and to any deterministic listing?
+4. Why is runtime lateness distinct from restart misfire, and why does runtime lateness dispatch a one-shot exactly once without producing a Missed state?
+5. What does the skip policy do at a long overlap and at a long gap, and how does the anchoring rule use the prior scheduled next-run to prevent catch-up bursts?
+6. Why are one-shots whose next-run elapsed during downtime recorded as Missed on load while intervals are merely anchored forward, and why is no missed occurrence ever run unexpectedly on restart?
+7. Why is running state strictly volatile and excluded from persistence, and why does a supplied is-running field become a schema error rather than a runtime signal?
+8. Which fields are immutable on update, which scheduler-owned outcome fields may callers not forge directly, and why must Completed, Missed, and Cancelled each be reported as the existing terminal outcome on later cancel?
+9. Why must the entire snapshot be validated before replacement, why is unknown-field detection part of that validation, and why are disabled jobs never dispatched until enable or update supplies or retains a future valid next-run?
+10. Why must save use a same-directory temporary file and a parent directory synchronization, what does an idempotent shutdown guarantee, what does it specifically not guarantee after the caller's context expires, why may a later shutdown call return the documented final lifecycle outcome, and which broad production concerns are intentionally outside this project?
 
 ## 18. Definition of Completion
+
 - [ ] Projects 031 (concurrent_timer), 041 (context_timeout_example), and 043 (thread_safe_cache) are treated as the required prerequisites.
 - [ ] Only one-shot and interval schedules are supported, with absolute next-run as the schedule boundary and no duration-until-first-run field.
 - [ ] Non-overlap policy is exactly Skip, with Queue documented as not implemented.
@@ -152,5 +321,25 @@ Why is only the Skip non-overlap policy supported, and what Queue-style value do
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
+
 - Add a deterministic inspector that records ordered applied events, missed occurrences, and skip decisions without changing runtime behavior.
-- Add a bounded in-process job registry that tracks per-job run counts and bounded last-error history, persisted through the same versioned JSON contract.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 031 — Concurrent Timer](../../03-concurrency/031_concurrent_timer/README.md#20-prerequisite-based-documentation-guide), [Project 041 — Context Timeout Example](../../03-concurrency/041_context_timeout_example/README.md#20-prerequisite-based-documentation-guide), [Project 043 — Thread-Safe Cache](../../03-concurrency/043_thread_safe_cache/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`container/heap`](https://pkg.go.dev/container/heap).
+- **Standards and concept references:** [POSIX crontab specification](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/crontab.html).
+
+### Project-specific learning focus
+
+- **Learn now:** priority queues, scheduled versus actual time, recurrence calculation, misfire policies, context-owned jobs, versioned persistence, atomic replacement, and in-process limits.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

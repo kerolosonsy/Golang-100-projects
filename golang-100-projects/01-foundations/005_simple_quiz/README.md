@@ -1,24 +1,29 @@
 # Project 005 — Simple Quiz
 
 ## 1. Project Name and Number
+
 - Number: **005**, level 1 (language basics and CLI).
 - Folder name in the table: **`005_simple_quiz`**, matching `01-foundations/005_simple_quiz/`.
 - Kind: a terminal quiz that walks an in-memory bank of multiple-choice questions, accepts the user's choice for each, and at the end prints the score and the corresponding percentage.
 
 ## 2. Project Idea
+
 Build a terminal quiz that asks a small in-memory bank of multiple-choice questions, accepts the user's choice for each, and at the end prints the score and the corresponding percentage. The questions are stored as a collection of typed records that bundle the prompt, the choices, and the correct choice. The quiz must handle three situations gracefully: every answer is correct, every answer is wrong, and a question in the bank has no choices at all. The program reacts to each situation with a clear message rather than crashing.
 
 ## 3. Why This Project Now?
+
 - Reuses everything from earlier projects and layers in a typed record bundling multiple fields under one name, the structural foundation for nearly every later project.
 - Introduces a collection type for ordered, indexable storage of homogeneous records.
 - Reinforces separating data (the bank) from logic (the asker, the evaluator, the reporter).
 - Introduces an edge case that appears whenever data is hand-written: a question in the bank may be missing its choices, and the program must react to this rather than crash on it.
 
 ## 4. Prerequisites
+
 - 004 must be complete, especially the loop termination habit and the input-validation style.
 - Environment: Go installed and on `PATH`.
 
 ## 5. What You Must Know Before Starting
+
 - Typed records: a way to bundle fields of different types under one name. Understand how to declare and instantiate them.
 - Collection types: an ordered, indexable sequence of elements of the same type. You can traverse it with an index and a value, and you can pre-declare it as a literal.
 - Traversal: how to visit each element once with a clear exit condition.
@@ -27,6 +32,9 @@ Build a terminal quiz that asks a small in-memory bank of multiple-choice questi
 - Type choice for the percentage calculation: integer division versus floating-point division, and why direct equality on a percentage is rarely safe.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 - A typed record as data plus knowledge: putting the correct answer inside the record is convenient for a small program; in larger systems it is often separated. The decision belongs to you.
 - A collection of records: storing an in-memory bank is a slice of records. The traversal order is the order of the collection, which is the order you choose to construct it in.
 - Variable-content records: a record's choices field can carry any number of entries, including zero. The program must handle the zero case sensibly even though it is unusual for a multiple-choice question, because the data may contain a malformed entry.
@@ -34,6 +42,7 @@ Build a terminal quiz that asks a small in-memory bank of multiple-choice questi
 - Two views of the same count: the program reports both the score as a count (correct out of total) and the corresponding percentage. Both numbers describe the same underlying count; the percentage is derived from it. Reporting the count in two inconsistent ways (for example, a fraction here and a percentage with different rounding there) is an avoidable source of inconsistency. Choose one rendering of the count and one rendering of the percentage and apply them uniformly across all outcomes.
 
 ## 7. Learning Objective
+
 By the end of the project you should be able to:
 - Declare a typed record that bundles a prompt, a list of choices, and a correct answer.
 - Build a collection of such records and traverse it in order.
@@ -43,20 +52,27 @@ By the end of the project you should be able to:
 - Handle an empty collection gracefully.
 
 ## 8. Functional Requirements
-- F1: The program holds an in-memory bank of questions. The bank must contain at least one ordinary multiple-choice question and must also include a question whose choices list is empty, so that the no-choices case is present in the data and can be observed. The total bank size is your design choice.
-- F2: The program walks the bank in order, presents each question, and reads the user's choice.
-- F3: The program records whether each answer is correct.
-- F4: After the last question, the program reports both the score (correct out of total) and the corresponding percentage. Both numbers reflect the same underlying count, and the reporting is consistent across all outcomes.
-- F5: The program handles the all-correct case and the all-wrong case in the same form as partial scores.
-- F6: A question with an empty list of choices is handled with a clear message rather than a crash.
-- F7: An empty or unrecognised choice is handled with a clear message rather than a crash.
-- F8: An empty bank is handled with a clear message rather than a crash.
+
+1. F1: The program holds an in-memory bank of questions. The bank must contain at least one ordinary multiple-choice question and must also include a question whose choices list is empty, so that the no-choices case is present in the data and can be observed. The total bank size is your design choice.
+2. F2: The program walks the bank in order, presents each question, and reads the user's choice.
+3. F3: The program records whether each answer is correct.
+4. F4: After the last question, the program reports both the score (correct out of total) and the corresponding percentage. Both numbers reflect the same underlying count, and the reporting is consistent across all outcomes.
+5. F5: The program handles the all-correct case and the all-wrong case in the same form as partial scores.
+6. F6: A question with an empty list of choices is handled with a clear message rather than a crash.
+7. F7: An empty or unrecognised choice is handled with a clear message rather than a crash.
+8. F8: An empty bank is handled with a clear message rather than a crash.
 
 ## 9. Inputs and Outputs
-**Inputs**:
+
+### Interface Contract
+
+#### Inputs
+
 - A choice string for each question, in the format your matcher accepts.
 
-**Outputs**: text to standard output. Text-only examples:
+#### Outputs
+
+Text to standard output. Text-only examples:
 
 - All answers correct:
   - The user answers every presented question correctly.
@@ -79,6 +95,7 @@ By the end of the project you should be able to:
   - Program prints a message indicating the bank contains no questions and exits without crashing.
 
 ## 10. Rules and Edge Cases
+
 - A choice string with surrounding whitespace: handled per your matching policy.
 - A choice string in a different case (upper versus lower): handled per your matching policy.
 - A choice string that does not correspond to any of the listed choices: rejected with a clear message.
@@ -89,6 +106,7 @@ By the end of the project you should be able to:
 - An end-of-file signal during input: handled without crashing.
 
 ## 11. Project Constraints
+
 - Libraries: the standard library only. The formatted I/O package and the strings package, if you choose to normalise inputs, are sufficient.
 - Prohibited: any external package.
 - Persistence: none. The bank is in the source code, not in a file.
@@ -96,6 +114,7 @@ By the end of the project you should be able to:
 - Scope: a small in-memory quiz. Loading questions from a file, randomising order, and adaptive difficulty are not required by the baseline.
 
 ## 12. Design Questions Before Coding
+
 - How many questions are in your bank, and how many choices per question? Justify the choice with readability and with the no-choices case you must cover.
 - Where does the bank live? As a package-level value, a function-local value, or otherwise? Reason about clarity.
 - Does the correct answer live inside the record, in a separate collection indexed somehow, or elsewhere? Each choice has trade-offs.
@@ -104,6 +123,7 @@ By the end of the project you should be able to:
 - How do you report the count and the percentage so that both describe the same underlying count, and so that the all-correct, all-wrong, and mixed cases use the same rendering?
 
 ## 13. Implementation Milestones
+
 1. M1: Create the source file in the project folder with the minimum required for a Go program to compile and run; verify with a build and run cycle.
 2. M2: Declare the typed record and define a bank of questions that contains at least one ordinary multiple-choice question and that also includes a no-choices case (a question whose choices list is empty).
 3. M3: Implement traversal over the bank in order, presenting each question and reading the user's choice.
@@ -114,6 +134,9 @@ By the end of the project you should be able to:
 8. M8: Run every verification scenario in section 14 and confirm the documented behaviour.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - All answers correct: the program prints the final result line in the canonical form with the appropriate count and percentage.
 - All answers wrong: the same form, with the count at zero.
 - Mixed answers: the same form, with a count strictly between zero and the total.
@@ -126,6 +149,7 @@ By the end of the project you should be able to:
 - The percentage calculation produces a value that reflects the actual ratio, not a truncated integer-only division.
 
 ## 15. Common Mistakes to Watch For
+
 - Using integer division for the percentage calculation, which truncates the fraction.
 - Embedding the correct answer in a way that confuses reading and evaluation logic.
 - Reporting the count and the percentage in inconsistent ways across the all-correct, all-wrong, and mixed cases. The two views must agree because they describe the same underlying count.
@@ -136,6 +160,7 @@ By the end of the project you should be able to:
 - Using a different rounding rule for the all-correct case than for partial cases; apply one rule.
 
 ## 16. Topics and References for Study
+
 - A Tour of Go: Structs; A Tour of Go: Slices.
 - Effective Go: Data structures.
 - The official documentation for the strings package, particularly the normalisation helpers.
@@ -143,6 +168,7 @@ By the end of the project you should be able to:
 - Search terms: `Go struct slice quiz data model`, `Go int vs float64 percentage`, `Go whitespace case folding strings`.
 
 ## 17. Self-Assessment Questions
+
 1. Why is it useful to bundle a question's prompt, choices, and correct answer in a single typed record rather than in parallel collections?
 2. A question in the bank has no choices. How should the program react when it encounters it, and why is it useful to include this case in the bank rather than excluding it from the data?
 3. Why does integer division produce the wrong percentage in most cases? Walk through an example.
@@ -151,13 +177,34 @@ By the end of the project you should be able to:
 6. How do your matching policies on case and whitespace affect the user experience, and what is the principle behind the policy you chose?
 
 ## 18. Definition of Completion
-- The program compiles and runs without compile errors.
-- All-correct, all-wrong, and mixed cases produce a final result that reports both the count and the percentage, in the same form.
-- A question with no choices and an empty bank each produce a clear message and never crash.
-- Empty or unrecognised choices are rejected with clear messages.
-- The bank is read-only during the quiz.
-- You can explain how your typed record is shaped, how the traversal works, how the percentage is derived from the count, and how the no-choices case is handled.
+
+- [ ] The program compiles and runs without compile errors.
+- [ ] All-correct, all-wrong, and mixed cases produce a final result that reports both the count and the percentage, in the same form.
+- [ ] A question with no choices and an empty bank each produce a clear message and never crash.
+- [ ] Empty or unrecognised choices are rejected with clear messages.
+- [ ] The bank is read-only during the quiz.
+- [ ] You can explain how your typed record is shaped, how the traversal works, how the percentage is derived from the count, and how the no-choices case is handled.
 
 ## 19. Optional Extensions
+
 - Optional 1: Add a random shuffle of the question order at the start of the quiz, keeping the same record shape and traversal.
-- Optional 2: Add a second quiz round with a different bank, accessible by the same program run, sharing the typed record and the same reporting line.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 004 — Number Guessing](../../01-foundations/004_number_guessing/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`strings`](https://pkg.go.dev/strings).
+- **Standards and concept references:** [A Tour of Go: structs and slices](https://go.dev/tour/moretypes/1).
+
+### Project-specific learning focus
+
+- **Learn now:** modeling question data, normalizing answers, calculating scores, and testing quiz sessions.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

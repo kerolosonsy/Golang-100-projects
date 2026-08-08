@@ -2,7 +2,7 @@
 
 ## 1. Project Name and Number
 
-Project 049 — JSON API Response Formatter, located in `049_json_api_response_formatter`.
+- Project 049 — JSON API Response Formatter, located in `049_json_api_response_formatter`.
 
 ## 2. Project Idea
 
@@ -10,13 +10,17 @@ Build a reusable response boundary for HTTP JSON APIs. It emits one stable succe
 
 ## 3. Why This Project Now?
 
-Project 048 introduced a router and middleware chain that can identify a request and select an endpoint. This project gives those endpoints one response owner, preventing every handler from inventing a different JSON shape or writing a second response after an error. Project 047 supplies concrete REST status cases, and Project 046 supplies handler and response-writer fundamentals. Project 050 will rely on this boundary for authentication failures without exposing token or credential details.
+- Project 048 introduced a router and middleware chain that can identify a request and select an endpoint.
+- This project gives those endpoints one response owner, preventing every handler from inventing a different JSON shape or writing a second response after an error.
+- Project 047 supplies concrete REST status cases, and Project 046 supplies handler and response-writer fundamentals.
+- Project 050 will rely on this boundary for authentication failures without exposing token or credential details.
 
 ## 4. Prerequisites
 
-Complete Projects 048 and 046 before starting. Earlier projects may be useful review, but they are not required prerequisites.
+- Complete Projects 048 and 046 before starting.
+- Earlier projects may be useful review, but they are not required prerequisites.
 
-You should already understand response commitment, `httptest`, JSON decoding and encoding, request IDs in context or headers, typed error classification, and why a handler must have one clear response owner.
+- You should already understand response commitment, `httptest`, JSON decoding and encoding, request IDs in context or headers, typed error classification, and why a handler must have one clear response owner.
 
 ## 5. What You Must Know Before Starting
 
@@ -31,21 +35,38 @@ You should already understand response commitment, `httptest`, JSON decoding and
 
 ## 6. Explanation of New Concepts
 
-An envelope is a stable outer JSON object that gives clients one predictable place to find application data or a public error. The success envelope contains a required `data` field and may contain a request identifier. The error envelope contains a required nested `error` object and may contain the same request identifier. The status remains in the HTTP response rather than being duplicated as an unstable body field.
+### Concepts
 
-The success data value is intentionally generic at this boundary. It may be a JSON object, array, string, number, boolean, or null when the selected endpoint contract permits it. The formatter is responsible for serializing it, not for deciding whether its domain meaning is valid.
+- An envelope is a stable outer JSON object that gives clients one predictable place to find application data or a public error.
+- The success envelope contains a required `data` field and may contain a request identifier.
+- The error envelope contains a required nested `error` object and may contain the same request identifier.
+- The status remains in the HTTP response rather than being duplicated as an unstable body field.
 
-A public error category is a controlled classification such as validation, authentication, not-found, or conflict. The category determines a fixed status, public code, and safe message. An internal cause may be attached to that category for logs, but it never changes the public message unless the contract explicitly defines a safe value.
+- The success data value is intentionally generic at this boundary.
+- It may be a JSON object, array, string, number, boolean, or null when the selected endpoint contract permits it.
+- The formatter is responsible for serializing it, not for deciding whether its domain meaning is valid.
 
-The response boundary first prepares a complete envelope in a temporary memory buffer. Only a successful encoding of that complete buffer can proceed to header and status commitment. If success data cannot be encoded, the buffer is discarded and a generic internal-error envelope is prepared instead. This ordering makes an encoding failure observable as a clean `500` when no bytes have been written.
+- A public error category is a controlled classification such as validation, authentication, not-found, or conflict.
+- The category determines a fixed status, public code, and safe message.
+- An internal cause may be attached to that category for logs, but it never changes the public message unless the contract explicitly defines a safe value.
 
-Commitment is one-way. After headers and status are selected and the body write begins, a write error can be recorded but cannot be turned into a second JSON response. The boundary therefore sets headers once, selects status once, and performs one body write for body-bearing responses.
+- The response boundary first prepares a complete envelope in a temporary memory buffer.
+- Only a successful encoding of that complete buffer can proceed to header and status commitment.
+- If success data cannot be encoded, the buffer is discarded and a generic internal-error envelope is prepared instead.
+- This ordering makes an encoding failure observable as a clean `500` when no bytes have been written.
 
-An application boundary is the trusted place to log an internal cause. It includes the request ID when one exists, uses a structured logger or injected output, and records a safe event rather than copying internal text into the client message. The logger must not be used as a channel for passwords, tokens, or other secrets.
+- Commitment is one-way.
+- After headers and status are selected and the body write begins, a write error can be recorded but cannot be turned into a second JSON response.
+- The boundary therefore sets headers once, selects status once, and performs one body write for body-bearing responses.
+
+- An application boundary is the trusted place to log an internal cause.
+- It includes the request ID when one exists, uses a structured logger or injected output, and records a safe event rather than copying internal text into the client message.
+- The logger must not be used as a channel for passwords, tokens, or other secrets.
 
 ## 7. Learning Objective
 
-By completion, you can define stable JSON response contracts, classify domain errors without leaking implementation detail, buffer before commitment, and enforce one response owner. You can explain the trade-off between clean encoding failure handling and memory use, implement bodyless `204` and `HEAD` behavior correctly, and verify headers, status, writes, logs, and public non-leakage deterministically.
+- By completion, you can define stable JSON response contracts, classify domain errors without leaking implementation detail, buffer before commitment, and enforce one response owner.
+- You can explain the trade-off between clean encoding failure handling and memory use, implement bodyless `204` and `HEAD` behavior correctly, and verify headers, status, writes, logs, and public non-leakage deterministically.
 
 ## 8. Functional Requirements
 
@@ -67,41 +88,69 @@ By completion, you can define stable JSON response contracts, classify domain er
 
 ## 9. Inputs and Outputs
 
-A success input consists of one of the supported HTTP success statuses `200 OK`, `201 Created`, or `202 Accepted`, a JSON-encodable data value, and an optional request ID. Another body-bearing success status is invalid formatter input and takes the generic pre-commit `500` path; `204` is handled separately and is always bodyless.
+### Interface Contract
 
-An error input consists of a typed or domain error category, an internal cause when one exists, and an optional request ID. The category selects the exact public mapping. A nil or otherwise absent error is not an error response and must not be silently converted into an arbitrary public failure.
+- A success input consists of one of the supported HTTP success statuses `200 OK`, `201 Created`, or `202 Accepted`, a JSON-encodable data value, and an optional request ID.
+- Another body-bearing success status is invalid formatter input and takes the generic pre-commit `500` path; `204` is handled separately and is always bodyless.
 
-Text-only success example: a successful request with data describing one note produces status `200`, content type `application/json; charset=utf-8`, and a JSON object whose only required top-level field is `data`. If a request ID is available, `request_id` is the additional top-level field and the response header carries the same value.
+- An error input consists of a typed or domain error category, an internal cause when one exists, and an optional request ID.
+- The category selects the exact public mapping.
+- A nil or otherwise absent error is not an error response and must not be silently converted into an arbitrary public failure.
 
-Text-only error example: a classified not-found cause produces status `404`, the JSON content type, and an error envelope whose nested code is `not_found` and whose nested message is exactly `resource not found`. The internal lookup detail is absent.
+- Text-only success example: a successful request with data describing one note produces status `200`, content type `application/json; charset=utf-8`, and a JSON object whose only required top-level field is `data`.
+- If a request ID is available, `request_id` is the additional top-level field and the response header carries the same value.
 
-Text-only unknown-error example: a dependency reports a cause containing a private file path. The client receives status `500`, code `internal_error`, and message `internal server error`; only a trusted application log may record a sanitized internal cause, and sensitive material remains redacted.
+- Text-only error example: a classified not-found cause produces status `404`, the JSON content type, and an error envelope whose nested code is `not_found` and whose nested message is exactly `resource not found`.
+- The internal lookup detail is absent.
 
-A serialized body is one complete JSON document followed by one line-feed character. Field presence and names are stable; success fields are emitted in the order `data` then `request_id`, and error fields in the order `error` then `request_id`, with nested error fields `code` then `message`. Clients must parse JSON rather than depend on object order, but deterministic order makes byte-level tests and diagnostics stable.
+- Text-only unknown-error example: a dependency reports a cause containing a private file path.
+- The client receives status `500`, code `internal_error`, and message `internal server error`; only a trusted application log may record a sanitized internal cause, and sensitive material remains redacted.
+
+- A serialized body is one complete JSON document followed by one line-feed character.
+- Field presence and names are stable; success fields are emitted in the order `data` then `request_id`, and error fields in the order `error` then `request_id`, with nested error fields `code` then `message`.
+- Clients must parse JSON rather than depend on object order, but deterministic order makes byte-level tests and diagnostics stable.
 
 ## 10. Rules and Edge Cases
 
-A success data value of null is valid if the endpoint's domain contract allows it. An unsupported value anywhere inside the data, an invalid floating-point value, or any other JSON encoding failure is an internal response failure. No prefix of the failed representation reaches the client.
+- A success data value of null is valid if the endpoint's domain contract allows it.
+- An unsupported value anywhere inside the data, an invalid floating-point value, or any other JSON encoding failure is an internal response failure.
+- No prefix of the failed representation reaches the client.
 
-If the generic error envelope itself cannot be encoded because of application-supplied data, the implementation has violated this contract: public generic fields are fixed safe strings and must remain encodable. The boundary must not fall back to plain-text `http.Error` after attempting JSON.
+- If the generic error envelope itself cannot be encoded because of application-supplied data, the implementation has violated this contract: public generic fields are fixed safe strings and must remain encodable.
+- The boundary must not fall back to plain-text `http.Error` after attempting JSON.
 
-A request ID is absent when it is empty. Whitespace-only values are not silently normalized into an ID. A non-empty value is treated as opaque response data only after its upstream request-ID policy has validated it; the formatter does not invent or sanitize IDs.
+- A request ID is absent when it is empty.
+- Whitespace-only values are not silently normalized into an ID.
+- A non-empty value is treated as opaque response data only after its upstream request-ID policy has validated it; the formatter does not invent or sanitize IDs.
 
-Mapped public messages are constants. Wrapping a known domain error with extra internal text does not alter its public code or message. An unknown error never becomes a public `400` merely because its text resembles a validation failure.
+- Mapped public messages are constants.
+- Wrapping a known domain error with extra internal text does not alter its public code or message.
+- An unknown error never becomes a public `400` merely because its text resembles a validation failure.
 
-For `401`, the `Bearer` challenge is part of the status contract. Other security response headers are outside this formatter unless the endpoint's explicit boundary owns them before commitment. The formatter must not overwrite unrelated headers after they have been committed.
+- For `401`, the `Bearer` challenge is part of the status contract.
+- Other security response headers are outside this formatter unless the endpoint's explicit boundary owns them before commitment.
+- The formatter must not overwrite unrelated headers after they have been committed.
 
-A `204` has no JSON content type and no body even when a caller supplies data. The formatter ignores that data for the bodyless response and does not attempt to encode it. A `HEAD` response is tested for zero bytes independently of the representation that would have been sent for `GET`.
+- A `204` has no JSON content type and no body even when a caller supplies data.
+- The formatter ignores that data for the bodyless response and does not attempt to encode it.
+- A `HEAD` response is tested for zero bytes independently of the representation that would have been sent for `GET`.
 
-A response writer failure after the one body write is not recoverable as another HTTP response. It is reported through the chosen application boundary and never triggers a second status, header set, body write, or `http.Error` call.
+- A response writer failure after the one body write is not recoverable as another HTTP response.
+- It is reported through the chosen application boundary and never triggers a second status, header set, body write, or `http.Error` call.
 
-Response buffering covers the complete envelope for one response. It does not provide streaming, a general memory quota, or protection against an arbitrarily large JSON value. If an endpoint can produce large data, that endpoint must impose its own bounded contract or choose a different design outside this project's required scope.
+- Response buffering covers the complete envelope for one response.
+- It does not provide streaming, a general memory quota, or protection against an arbitrarily large JSON value.
+- If an endpoint can produce large data, that endpoint must impose its own bounded contract or choose a different design outside this project's required scope.
 
 ## 11. Project Constraints
 
-Use only the Go standard library. Appropriate standard facilities include `encoding/json`, `bytes`, `errors`, `fmt` only for controlled internal context, `net/http`, `net/http/httptest`, and `log/slog` or another injected standard logging destination. Do not use a web framework, third-party envelope library, `http.Error` for JSON responses, raw internal error strings, stack traces, SQL paths, or secrets in client output.
+- Use only the Go standard library.
+- Appropriate standard facilities include `encoding/json`, `bytes`, `errors`, `fmt` only for controlled internal context, `net/http`, `net/http/httptest`, and `log/slog` or another injected standard logging destination.
+- Do not use a web framework, third-party envelope library, `http.Error` for JSON responses, raw internal error strings, stack traces, SQL paths, or secrets in client output.
 
-The required formatter is not a streaming writer and does not promise unlimited response safety. Do not prescribe function signatures, generated code, or a particular domain-error type layout in the guide. One response boundary must own the writer, and tests must be able to observe commitment order and write count without network access or sleeps.
+- The required formatter is not a streaming writer and does not promise unlimited response safety.
+- Do not prescribe function signatures, generated code, or a particular domain-error type layout in the guide.
+- One response boundary must own the writer, and tests must be able to observe commitment order and write count without network access or sleeps.
 
 ## 12. Design Questions Before Coding
 
@@ -131,6 +180,8 @@ The required formatter is not a streaming writer and does not promise unlimited 
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 - Verify successful `200`, `201`, and `202` responses have the exact success envelope, stable field presence, content type, selected status, and one body write.
 - Verify data values representing an object, array, string, number, boolean, and permitted null are encoded in the `data` field without an extra success field.
 - Verify a non-empty request ID appears in the envelope and response header, while an absent ID is omitted from both places as documented.
@@ -149,19 +200,33 @@ The required formatter is not a streaming writer and does not promise unlimited 
 
 ## 15. Common Mistakes to Watch For
 
-Writing the status before discovering that JSON encoding fails leaves clients with a misleading success response. Encoding directly to the real writer can leak a partial document. Calling `http.Error` after a JSON write produces mixed content and may append bytes after headers are committed. Letting each handler write its own error creates competing response owners.
+- Writing the status before discovering that JSON encoding fails leaves clients with a misleading success response.
+- Encoding directly to the real writer can leak a partial document.
+- Calling `http.Error` after a JSON write produces mixed content and may append bytes after headers are committed.
+- Letting each handler write its own error creates competing response owners.
 
-Returning `err.Error()` as the public message leaks implementation details and makes the API unstable. Mapping errors by string comparison breaks when causes are wrapped or wording changes. Logging a token, password, SQL path, or secret while trying to diagnose an unknown error defeats the boundary even if the client message is generic.
+- Returning `err.Error()` as the public message leaks implementation details and makes the API unstable.
+- Mapping errors by string comparison breaks when causes are wrapped or wording changes.
+- Logging a token, password, SQL path, or secret while trying to diagnose an unknown error defeats the boundary even if the client message is generic.
 
-Adding a JSON envelope to `204` violates its bodyless semantics. Treating `HEAD` as an unconditional `GET` can write or record a body that must not be sent. Forgetting the authentication challenge on a `401` makes the response incomplete for clients.
+- Adding a JSON envelope to `204` violates its bodyless semantics.
+- Treating `HEAD` as an unconditional `GET` can write or record a body that must not be sent.
+- Forgetting the authentication challenge on a `401` makes the response incomplete for clients.
 
-Assuming buffering is a response-size limit hides memory risk. Using a real clock or sleep to test encoding and commitment order makes failures timing-dependent. A recorder that only checks final bytes may miss a header mutation or a second write, so commitment-order tests need an instrumented boundary.
+- Assuming buffering is a response-size limit hides memory risk.
+- Using a real clock or sleep to test encoding and commitment order makes failures timing-dependent.
+- A recorder that only checks final bytes may miss a header mutation or a second write, so commitment-order tests need an instrumented boundary.
 
-Using a global request ID, logger, or response buffer allows concurrent requests to share state. Reusing a mutable envelope between requests can cause data races and cross-request leakage. Treating a successful race-detector run as proof that the public contract is correct misses status and non-leakage failures.
+- Using a global request ID, logger, or response buffer allows concurrent requests to share state.
+- Reusing a mutable envelope between requests can cause data races and cross-request leakage.
+- Treating a successful race-detector run as proof that the public contract is correct misses status and non-leakage failures.
 
 ## 16. Topics and References for Study
 
-Study the official documentation for `encoding/json`, `bytes.Buffer`, `net/http.ResponseWriter`, `net/http/httptest`, `errors.Is` and `errors.As`, and the standard structured logging package `log/slog`. Read HTTP semantics for response commitment, `204 No Content`, `HEAD`, `401` challenges, and content types. Search for JSON envelope design, typed domain errors, error classification across wrapping, response-writer instrumentation, buffering trade-offs, and safe public error messages. Review the route and request-ID boundaries from Project 048.
+- Study the official documentation for `encoding/json`, `bytes.Buffer`, `net/http.ResponseWriter`, `net/http/httptest`, `errors.Is` and `errors.As`, and the standard structured logging package `log/slog`.
+- Read HTTP semantics for response commitment, `204 No Content`, `HEAD`, `401` challenges, and content types.
+- Search for JSON envelope design, typed domain errors, error classification across wrapping, response-writer instrumentation, buffering trade-offs, and safe public error messages.
+- Review the route and request-ID boundaries from Project 048.
 
 ## 17. Self-Assessment Questions
 
@@ -178,17 +243,35 @@ Study the official documentation for `encoding/json`, `bytes.Buffer`, `net/http.
 
 ## 18. Definition of Completion
 
-- Success and error envelopes have exactly the documented fields, stable presence rules, public messages, and optional request-ID behavior.
-- Every mapped category and unknown failure produces the pinned status, code, message, content type, and challenge behavior.
-- Unknown causes, encoding failures, stack traces, private paths, credentials, tokens, and secrets never appear in client output.
-- Complete envelopes are buffered before commitment; a pre-commit encoding failure becomes one clean generic `500` response.
-- Headers and status are set once and body-bearing responses write once. No JSON response is followed by `http.Error` or a second response.
-- `204` and endpoint-controlled `HEAD` behavior are bodyless and tested.
-- Internal causes are logged at the application boundary with request ID without making logs a client-side leak.
-- Tests prove commitment order, write count, mapping, non-leakage, logging, and concurrent safety using deterministic in-memory boundaries.
-- The documented buffering scope is honest, and the implementation uses only standard-library facilities.
+- [ ] Success and error envelopes have exactly the documented fields, stable presence rules, public messages, and optional request-ID behavior.
+- [ ] Every mapped category and unknown failure produces the pinned status, code, message, content type, and challenge behavior.
+- [ ] Unknown causes, encoding failures, stack traces, private paths, credentials, tokens, and secrets never appear in client output.
+- [ ] Complete envelopes are buffered before commitment; a pre-commit encoding failure becomes one clean generic `500` response.
+- [ ] Headers and status are set once and body-bearing responses write once. No JSON response is followed by `http.Error` or a second response.
+- [ ] `204` and endpoint-controlled `HEAD` behavior are bodyless and tested.
+- [ ] Internal causes are logged at the application boundary with request ID without making logs a client-side leak.
+- [ ] Tests prove commitment order, write count, mapping, non-leakage, logging, and concurrent safety using deterministic in-memory boundaries.
+- [ ] The documented buffering scope is honest, and the implementation uses only standard-library facilities.
 
 ## 19. Optional Extensions
 
-1. Add an explicit maximum serialized-response size that fails before commitment, with tests distinguishing it from the formatter's existing memory-buffer behavior.
-2. Add content negotiation for one additional JSON-compatible media type while preserving the same envelope and error contracts.
+- Add an explicit maximum serialized-response size that fails before commitment, with tests distinguishing it from the formatter's existing memory-buffer behavior.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 048 — Custom Router and Middleware](../../04-apis-and-services/048_custom_router_middleware/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** consistent envelopes, typed error mapping, wrapped errors, buffered response commitment, no-content and HEAD rules, and non-leaking public messages.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

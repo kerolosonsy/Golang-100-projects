@@ -1,41 +1,85 @@
 # Project 066 — Database Transaction Manager
 
 ## 1. Project Name and Number
-Project 066, db_transaction_manager. This README is a learning guide only. You will create every source, schema, Compose, and test file yourself in `05-databases/066_db_transaction_manager/`. This guide contains no implementation code, signatures, snippets, pseudocode, SQL, or solution commands.
+
+- Project 066, db_transaction_manager.
+- This README is a learning guide only.
+- You will create every source, schema, Compose, and test file yourself in `05-databases/066_db_transaction_manager/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, SQL, or solution commands.
 
 ## 2. Project Idea
+
 Build an atomic PostgreSQL money-transfer service. A client supplies two distinct positive account IDs, a positive amount in integer cents, and a unique request ID. One transaction establishes idempotency, locks both accounts in deterministic ID order, validates existence and funds, debits one account, credits the other, records a terminal outcome, and commits.
 
 ## 3. Why This Project Now?
-Project 066 follows Project 065 in the catalog and builds on its consistency concerns, moving from cache consistency around committed data to database-enforced atomicity, transaction serialization, idempotent requests, and retry boundaries. Projects 061 and 041 provide the required database and service foundations for this step.
+
+- Project 066 follows Project 065 in the catalog and builds on its consistency concerns, moving from cache consistency around committed data to database-enforced atomicity, transaction serialization, idempotent requests, and retry boundaries.
+- Projects 061 and 041 provide the required database and service foundations for this step.
 
 ## 4. Prerequisites
-Required prerequisites: Projects 065, 061, and 041. Optional review: none. The normal unit gate must need no Docker, PostgreSQL, network, or environment variables. PostgreSQL integration is separate and opt-in.
+
+- Required prerequisites: Projects 065, 061, and 041.
+- Optional review: none.
+- The normal unit gate must need no Docker, PostgreSQL, network, or environment variables.
+- PostgreSQL integration is separate and opt-in.
 
 ## 5. What You Must Know Before Starting
-Know contexts, typed errors, signed 64-bit integer arithmetic, transactions, isolation, row locks, unique constraints, injected clocks, and test doubles. Review PostgreSQL Serializable isolation and SQLSTATE classification through pgx error types.
+
+- Know contexts, typed errors, signed 64-bit integer arithmetic, transactions, isolation, row locks, unique constraints, injected clocks, and test doubles.
+- Review PostgreSQL Serializable isolation and SQLSTATE classification through pgx error types.
 
 ## 6. Explanation of New Concepts
-Atomic transfer means debit, credit, and transfer outcome become visible together or not at all. Balances and amounts use signed 64-bit integer cents; floating-point money is forbidden. Validate positive distinct account IDs and a positive amount, prevent negative balances, detect debit and credit overflow, and preserve total cents.
 
-Idempotency is anchored by a unique request row. Its conceptual ledger shape contains request ID, exact source ID, destination ID, amount, status/result, transfer ID when successful, and one recorded-at UTC timestamp from an injected clock. Same request ID and same payload replays the original terminal result, including its stored recorded-at value, without moving money again. Same request ID with different payload is a typed conflict.
+### Concepts
 
-Success and deterministic business rejections are terminal and replayable. Missing source, missing destination, and insufficient funds are committed with no balance movement. A business rejection reads the injected clock exactly once and stores that UTC value as the ledger recorded-at timestamp. A successful transfer also reads the clock exactly once and uses that one UTC value for both the completed transfer's created-at timestamp and the request ledger's recorded-at timestamp. Validation failures that occur before transaction work are typed invalid input and make no database call. Internal, database, and context failures roll back and are not terminal business results. Rollback must leave no pending request row.
+- Atomic transfer means debit, credit, and transfer outcome become visible together or not at all.
+- Balances and amounts use signed 64-bit integer cents; floating-point money is forbidden.
+- Validate positive distinct account IDs and a positive amount, prevent negative balances, detect debit and credit overflow, and preserve total cents.
 
-After locking the rows in ascending ID order, validate business rejection precedence in this exact order: missing source first, then missing destination, then insufficient funds. When both accounts are absent in the same attempt this pinning fixes the result to missing source. No retry is performed on any of these terminal outcomes regardless of which one is reached.
+- Idempotency is anchored by a unique request row.
+- Its conceptual ledger shape contains request ID, exact source ID, destination ID, amount, status/result, transfer ID when successful, and one recorded-at UTC timestamp from an injected clock.
+- Same request ID and same payload replays the original terminal result, including its stored recorded-at value, without moving money again.
+- Same request ID with different payload is a typed conflict.
 
-Use Serializable isolation. Within each attempt, create-or-observe the unique request ledger row inside the transaction and lock or serialize access to the matching row before comparing payload. A concurrent unique collision is not automatically a payload conflict. After the competing transaction resolves, inspect the stored payload and stored result, or retry on a recognized serialization abort, to decide replay versus conflict. A pending row is never exposed to callers.
+- Success and deterministic business rejections are terminal and replayable.
+- Missing source, missing destination, and insufficient funds are committed with no balance movement.
+- A business rejection reads the injected clock exactly once and stores that UTC value as the ledger recorded-at timestamp.
+- A successful transfer also reads the clock exactly once and uses that one UTC value for both the completed transfer's created-at timestamp and the request ledger's recorded-at timestamp.
+- Validation failures that occur before transaction work are typed invalid input and make no database call.
+- Internal, database, and context failures roll back and are not terminal business results.
+- Rollback must leave no pending request row.
 
-The unique request row plus transaction serialization make concurrent identical requests safe: the second arrival blocks behind the first via the same unique request row, sees the committed terminal ledger on its next observation, and replays it without moving money.
+- After locking the rows in ascending ID order, validate business rejection precedence in this exact order: missing source first, then missing destination, then insufficient funds.
+- When both accounts are absent in the same attempt this pinning fixes the result to missing source.
+- No retry is performed on any of these terminal outcomes regardless of which one is reached.
 
-Retry only the recognized aborted-transaction outcomes: typed pgx SQLSTATE serialization failure (40001) reported by a statement or by Commit, and typed pgx SQLSTATE deadlock detected (40P01) reported by an attempt. Never parse error text. Allow at most three total attempts, each with a fresh transaction, identical request ID, and identical payload. Backoff is small, bounded, context-aware, and injected so unit tests signal retries without sleeping. Validation, business rejection, conflict, and insufficient-funds outcomes are never retried.
+- Use Serializable isolation.
+- Within each attempt, create-or-observe the unique request ledger row inside the transaction and lock or serialize access to the matching row before comparing payload.
+- A concurrent unique collision is not automatically a payload conflict.
+- After the competing transaction resolves, inspect the stored payload and stored result, or retry on a recognized serialization abort, to decide replay versus conflict.
+- A pending row is never exposed to callers.
 
-A typed pgx 40001 reported by Commit proves the transaction did not commit and is one of the recognized retryable outcomes. A typed pgx 40P01 from an attempt is also retryable. Any other commit-time failure that is not classified as one of those recognized aborted-transaction outcomes is an unknown outcome: the server may have committed even though confirmation failed. Unknown outcomes are not auto-retried. Surface the uncertainty so the caller may safely retry the same request ID and payload; idempotency resolves a completed outcome when visible. Do not blindly retry unknown outcomes under a new request ID.
+- The unique request row plus transaction serialization make concurrent identical requests safe: the second arrival blocks behind the first via the same unique request row, sees the committed terminal ledger on its next observation, and replays it without moving money.
+
+- Retry only the recognized aborted-transaction outcomes: typed pgx SQLSTATE serialization failure (40001) reported by a statement or by Commit, and typed pgx SQLSTATE deadlock detected (40P01) reported by an attempt.
+- Never parse error text.
+- Allow at most three total attempts, each with a fresh transaction, identical request ID, and identical payload.
+- Backoff is small, bounded, context-aware, and injected so unit tests signal retries without sleeping.
+- Validation, business rejection, conflict, and insufficient-funds outcomes are never retried.
+
+- A typed pgx 40001 reported by Commit proves the transaction did not commit and is one of the recognized retryable outcomes.
+- A typed pgx 40P01 from an attempt is also retryable.
+- Any other commit-time failure that is not classified as one of those recognized aborted-transaction outcomes is an unknown outcome: the server may have committed even though confirmation failed.
+- Unknown outcomes are not auto-retried.
+- Surface the uncertainty so the caller may safely retry the same request ID and payload; idempotency resolves a completed outcome when visible.
+- Do not blindly retry unknown outcomes under a new request ID.
 
 ## 7. Learning Objective
-Define exact transaction, idempotency, retry, arithmetic, and failure contracts so atomic transfers remain safe under replay, concurrency, rollback, cancellation, serialization failures, deadlocks, and uncertain commits.
+
+- Define exact transaction, idempotency, retry, arithmetic, and failure contracts so atomic transfers remain safe under replay, concurrency, rollback, cancellation, serialization failures, deadlocks, and uncertain commits.
 
 ## 8. Functional Requirements
+
 1. Use `github.com/jackc/pgx/v5` exactly at `v5.10.0` through its `stdlib` adapter with `database/sql`.
 2. Inputs are context, unique non-empty client request ID, positive source account ID, positive destination account ID distinct from source, and positive signed 64-bit amount in cents.
 3. Invalid input is rejected before beginning a transaction.
@@ -57,20 +101,53 @@ Define exact transaction, idempotency, retry, arithmetic, and failure contracts 
 19. Schema constraints serve as defense in depth for positive account IDs, nonnegative signed 64-bit balances, nonempty unique request IDs, positive amount, distinct accounts, valid terminal status or result values, and exact stored payload. The README does not provide SQL.
 
 ## 9. Inputs and Outputs
-Input consists of context, client request ID, source account ID, destination account ID, and amount in cents. Outcomes are completed transfer with transfer ID and resulting stored result, replay of that same result, typed invalid input, typed request conflict, typed missing account, typed insufficient funds, context failure, internal/database failure, or unknown commit outcome. Terminal outcomes include exact payload and the stored recorded-at UTC timestamp; successful transfer data also includes its created-at timestamp from the same clock read.
 
-Example behavior: a transfer of 250 cents from account 10 with 1,000 cents to account 20 with 300 cents completes with balances 750 and 550. Repeating the same request and payload returns the original transfer result with balances unchanged. Reusing that request ID for 251 cents conflicts.
+### Interface Contract
+
+- Input consists of context, client request ID, source account ID, destination account ID, and amount in cents.
+- Outcomes are completed transfer with transfer ID and resulting stored result, replay of that same result, typed invalid input, typed request conflict, typed missing account, typed insufficient funds, context failure, internal/database failure, or unknown commit outcome.
+- Terminal outcomes include exact payload and the stored recorded-at UTC timestamp; successful transfer data also includes its created-at timestamp from the same clock read.
+
+- Example behavior: a transfer of 250 cents from account 10 with 1,000 cents to account 20 with 300 cents completes with balances 750 and 550.
+- Repeating the same request and payload returns the original transfer result with balances unchanged.
+- Reusing that request ID for 251 cents conflicts.
 
 ## 10. Rules and Edge Cases
-Never use floats. Reject zero or negative IDs, equal account IDs, empty request IDs, and nonpositive amounts. Detect source subtraction and destination addition overflow before mutation. Lock by sorted ID, not source-first. Keep request payload unchanged across attempts. Commit deterministic business rejection; roll back infrastructure failure. After locking both rows, evaluate business rejections in fixed order: missing source, missing destination, insufficient funds. A typed pgx 40001 from a statement or from Commit is retryable; a typed pgx 40P01 from an attempt is retryable. Any unclassified commit failure is unknown outcome and is not auto-retried. Never classify retryability from message text. A pending row is never exposed to callers.
+
+- Never use floats.
+- Reject zero or negative IDs, equal account IDs, empty request IDs, and nonpositive amounts.
+- Detect source subtraction and destination addition overflow before mutation.
+- Lock by sorted ID, not source-first.
+- Keep request payload unchanged across attempts.
+- Commit deterministic business rejection; roll back infrastructure failure.
+- After locking both rows, evaluate business rejections in fixed order: missing source, missing destination, insufficient funds.
+- A typed pgx 40001 from a statement or from Commit is retryable; a typed pgx 40P01 from an attempt is retryable.
+- Any unclassified commit failure is unknown outcome and is not auto-retried.
+- Never classify retryability from message text.
+- A pending row is never exposed to callers.
 
 ## 11. Project Constraints
-README only supplies behavior contracts. No ORM, distributed transaction, external queue, automatic write retry under a new request ID, or shared integration database. Normal tests require no Docker. Integration files use the `integration` build tag. No test logs credentials. No cleanup may target data outside a uniquely created disposable test scope.
+
+- README only supplies behavior contracts.
+- No ORM, distributed transaction, external queue, automatic write retry under a new request ID, or shared integration database.
+- Normal tests require no Docker.
+- Integration files use the `integration` build tag.
+- No test logs credentials.
+- No cleanup may target data outside a uniquely created disposable test scope.
 
 ## 12. Design Questions Before Coding
-Where is the exact payload persisted before account mutation? How is a concurrent request distinguished as replay versus conflict when the unique request row collides? How are account locks ordered? Which failures become committed terminal outcomes and in what precedence? How are overflow and conservation checked? How is a typed pgx 40001 from a statement distinguished from a typed pgx 40001 from Commit, and how is each distinguished from an unclassified commit failure? How does an unknown commit differ from rollback? How can retry tests avoid sleeping?
+
+- Where is the exact payload persisted before account mutation?
+- How is a concurrent request distinguished as replay versus conflict when the unique request row collides?
+- How are account locks ordered?
+- Which failures become committed terminal outcomes and in what precedence?
+- How are overflow and conservation checked?
+- How is a typed pgx 40001 from a statement distinguished from a typed pgx 40001 from Commit, and how is each distinguished from an unclassified commit failure?
+- How does an unknown commit differ from rollback?
+- How can retry tests avoid sleeping?
 
 ## 13. Implementation Milestones
+
 1. Define account, transfer request, ledger result, typed outcome, UTC clock, transaction boundary, retry-classifier, and schema-constraint contracts.
 2. Add strict input and signed-integer arithmetic validation.
 3. Build one-attempt orchestration with Serializable isolation, create-or-observe of the unique request row, locked payload comparison, and ascending-ID row locks.
@@ -82,6 +159,9 @@ Where is the exact payload persisted before account mutation? How is a concurren
 9. Complete unit tests, then separately add guarded tagged PostgreSQL integration tests.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 Unit tests without Docker:
 - Reject every invalid request before transaction begin.
 - Transfer exact integer cents, conserve total, and prevent negative balances.
@@ -113,15 +193,30 @@ Opt-in PostgreSQL integration tests:
 - Verify context cancellation and resource cleanup.
 
 ## 15. Common Mistakes to Watch For
-Using floating point, locking source first, inserting an uncommitted pending row outside the transaction, exposing a pending row to a caller, recording infrastructure errors as terminal business results, retrying every error, parsing SQLSTATE from text, reusing a transaction after failure, exceeding three attempts, changing request IDs, ignoring overflow, treating every commit failure as unknown outcome or refusing to retry typed 40001 from Commit, auto-retrying unclassified commit failures, applying the wrong business-rejection precedence, or cleaning shared integration data.
+
+- Using floating point, locking source first, inserting an uncommitted pending row outside the transaction, exposing a pending row to a caller, recording infrastructure errors as terminal business results, retrying every error, parsing SQLSTATE from text, reusing a transaction after failure, exceeding three attempts, changing request IDs, ignoring overflow, treating every commit failure as unknown outcome or refusing to retry typed 40001 from Commit, auto-retrying unclassified commit failures, applying the wrong business-rejection precedence, or cleaning shared integration data.
 
 ## 16. Topics and References for Study
-Study PostgreSQL documentation for Serializable isolation, explicit row locking, transaction rollback, unique constraints, SQLSTATE serialization failure, and deadlock detection. Study Go `database/sql` transaction lifecycle, context cancellation, signed integer limits, and error wrapping. Study `github.com/jackc/pgx/v5` `v5.10.0`, its `stdlib` adapter, and exported PostgreSQL error type. Study idempotency-key and transactional outbox distinctions; this project implements only transactional request-result idempotency.
+
+- Study PostgreSQL documentation for Serializable isolation, explicit row locking, transaction rollback, unique constraints, SQLSTATE serialization failure, and deadlock detection.
+- Study Go `database/sql` transaction lifecycle, context cancellation, signed integer limits, and error wrapping.
+- Study `github.com/jackc/pgx/v5` `v5.10.0`, its `stdlib` adapter, and exported PostgreSQL error type.
+- Study idempotency-key and transactional outbox distinctions; this project implements only transactional request-result idempotency.
 
 ## 17. Self-Assessment Questions
-Why are missing account and insufficient funds committed while driver failure is rolled back, and in what fixed precedence? Why must both accounts be locked in ID order? Why is a unique request row enough to serialize identical concurrent requests? Why is a concurrent unique collision not auto-conflict, and what is checked after the competing transaction resolves? Why can a commit error be uncertain, and why is a typed pgx 40001 reported by Commit still recognized as aborted? Why must safe caller retry reuse the same ID and payload? Which aborted-transaction outcomes are retryable, and how are they detected through the pgx error type? How is total-cent conservation proven? What schema constraints enforce the documented invariants as defense in depth?
+
+1. Why are missing account and insufficient funds committed while driver failure is rolled back, and in what fixed precedence?
+2. Why must both accounts be locked in ID order?
+3. Why is a unique request row enough to serialize identical concurrent requests?
+4. Why is a concurrent unique collision not auto-conflict, and what is checked after the competing transaction resolves?
+5. Why can a commit error be uncertain, and why is a typed pgx 40001 reported by Commit still recognized as aborted?
+6. Why must safe caller retry reuse the same ID and payload?
+7. Which aborted-transaction outcomes are retryable, and how are they detected through the pgx error type?
+8. How is total-cent conservation proven?
+9. What schema constraints enforce the documented invariants as defense in depth?
 
 ## 18. Definition of Completion
+
 - [ ] Exactly defined transfer, ledger, terminal outcome, business-rejection precedence, and clock contracts are implemented.
 - [ ] Serializable isolation, deterministic locks, three total attempts, and fresh transaction per attempt are tested.
 - [ ] Same-request replay and different-payload conflict are tested under concurrency and distinguished from in-flight unique collisions.
@@ -135,4 +230,26 @@ Why are missing account and insufficient funds committed while driver failure is
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, SQL, Compose content, or solution commands.
 
 ## 19. Optional Extensions
-Add a separately specified account statement read model derived from completed transfers. Add metrics for attempt counts and terminal outcome categories without changing transaction semantics.
+
+- Add a separately specified account statement read model derived from completed transfers.
+- Add metrics for attempt counts and terminal outcome categories without changing transaction semantics.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 065 — Redis Caching Layer](../../05-databases/065_redis_caching_layer/README.md#20-prerequisite-based-documentation-guide), [Project 061 — SQLite CRUD](../../05-databases/061_sqlite_crud/README.md#20-prerequisite-based-documentation-guide), [Project 041 — Context Timeout Example](../../03-concurrency/041_context_timeout_example/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`github.com/jackc/pgx/v5`](https://pkg.go.dev/github.com/jackc/pgx/v5).
+- **Standards and concept references:** [PostgreSQL transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html), [PostgreSQL explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html).
+
+### Project-specific learning focus
+
+- **Learn now:** transaction lifecycle, serializable retries, deadlock classification, row locking order, integer-safe balance updates, idempotency keys, rollback, and cancellation.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

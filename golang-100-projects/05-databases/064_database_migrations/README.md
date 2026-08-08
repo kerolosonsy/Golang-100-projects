@@ -1,43 +1,78 @@
 # Project 064 — Database Migrations
 
 ## 1. Project Name and Number
-Project 064, database_migrations. This README is a learning guide only. You will create every Go source file, every embedded migration pair, and every test file yourself in `05-databases/064_database_migrations/`. The guide does not provide implementation code.
+
+- Project 064, database_migrations.
+- This README is a learning guide only.
+- You will create every Go source file, every embedded migration pair, and every test file yourself in `05-databases/064_database_migrations/`.
+- The guide does not provide implementation code.
 
 ## 2. Project Idea
+
 Build a small, single-process migration runner on top of `database/sql` for ordered, embedded migration pairs (Up and Down). Each pair has a unique monotonically increasing positive version, a name, and a SHA-256 checksum. A schema-migrations metadata table records what has been applied, when, and with which checksum. SQLite temp files are the deterministic test target.
 
 ## 3. Why This Project Now?
-This follows Projects 063 (gorm_orm_basics) and 061 (sqlite_crud) and replaces the auto-bootstrap habit of 063 with disciplined, transactional migrations. Context handling follows Project 041. No other project is formally required.
+
+- This follows Projects 063 (gorm_orm_basics) and 061 (sqlite_crud) and replaces the auto-bootstrap habit of 063 with disciplined, transactional migrations.
+- Context handling follows Project 041.
+- No other project is formally required.
 
 ## 4. Prerequisites
-Projects 063, 061, and 041 are required. No other project is formally required. The regular unit gate is `go test ./...`, which must pass with no Docker, no PostgreSQL, no Redis, no network, and no environment variables.
+
+- Projects 063, 061, and 041 are required.
+- No other project is formally required.
+- The regular unit gate is `go test ./...`, which must pass with no Docker, no PostgreSQL, no Redis, no network, and no environment variables.
 
 ## 5. What You Must Know Before Starting
-You should be comfortable with `database/sql` transactions and how they interact with the SQLite driver, the documented SQLite behavior for transactional DDL, Go's `embed` package for migration files, and integrity checks via SHA-256.
+
+- You should be comfortable with `database/sql` transactions and how they interact with the SQLite driver, the documented SQLite behavior for transactional DDL, Go's `embed` package for migration files, and integrity checks via SHA-256.
 
 ## 6. Explanation of New Concepts
-Embedded source discovery: the migration source is a directory tree embedded at compile time via `embed.FS`. Each migration is a pair of files. The runner reads the directory, validates the names, orders them by version, and exposes the bytes to the rest of the system.
 
-Pair validation: every `.up.sql` has a matching `.down.sql` with the same version and name. Mismatched pairs are rejected before any database side effect.
+### Concepts
 
-Metadata ledger: the schema-migrations table records, for each applied version, the version number, the name, the checksum of the pair, and the time it was applied in UTC RFC3339Nano. The ledger is the source of truth for what has been applied.
+- Embedded source discovery: the migration source is a directory tree embedded at compile time via `embed.FS`.
+- Each migration is a pair of files.
+- The runner reads the directory, validates the names, orders them by version, and exposes the bytes to the rest of the system.
 
-Checksum and drift: a checksum hashes a precise framing of (version, name, Up bytes, Down bytes). If Up or Down bytes change after a migration is applied, the stored checksum no longer matches the computed checksum and the system reports drift. Drift is an error, never a silent overwrite.
+- Pair validation: every `.up.sql` has a matching `.down.sql` with the same version and name.
+- Mismatched pairs are rejected before any database side effect.
 
-Per-migration transaction boundaries: each pending Up runs in its own transaction. The migration SQL and the metadata insert share that single transaction. A failure rolls back the migration's data and its version row.
+- Metadata ledger: the schema-migrations table records, for each applied version, the version number, the name, the checksum of the pair, and the time it was applied in UTC RFC3339Nano.
+- The ledger is the source of truth for what has been applied.
 
-Up: from the current state and the source, validate the entire source and the metadata, then apply pending versions in ascending order. At the latest applied version, Up is a no-op and does not rewrite timestamps.
+- Checksum and drift: a checksum hashes a precise framing of (version, name, Up bytes, Down bytes).
+- If Up or Down bytes change after a migration is applied, the stored checksum no longer matches the computed checksum and the system reports drift.
+- Drift is an error, never a silent overwrite.
 
-Down-one and Down-all: Down-one reverts only the latest applied known version. Down-all repeats Down-one in reverse order until either no applied versions remain or an error occurs. Down-all on empty is a no-op; Down-one on empty is a typed no-migrations outcome.
+- Per-migration transaction boundaries: each pending Up runs in its own transaction.
+- The migration SQL and the metadata insert share that single transaction.
+- A failure rolls back the migration's data and its version row.
 
-SQLite-specific DDL guarantees: SQLite supports transactional DDL for most statements; this project pins its guarantees to SQLite only. Other databases have different rules and are out of scope.
+- Up: from the current state and the source, validate the entire source and the metadata, then apply pending versions in ascending order.
+- At the latest applied version, Up is a no-op and does not rewrite timestamps.
 
-Missing cross-process lock: the runner is a single-process component. It does not claim safety under concurrent runners. Two runners racing on the same database can corrupt state, and this README must not promise otherwise. Within a single process, one `Runner` instance owns a mutex that serializes Up, Down-one, and Down-all operations; concurrent calls on that same instance are race-free and cannot double-apply. Two different `Runner` instances or two processes targeting the same database are outside the guarantee because there is no database-side or advisory lock.
+- Down-one and Down-all: Down-one reverts only the latest applied known version.
+- Down-all repeats Down-one in reverse order until either no applied versions remain or an error occurs.
+- Down-all on empty is a no-op; Down-one on empty is a typed no-migrations outcome.
+
+- SQLite-specific DDL guarantees: SQLite supports transactional DDL for most statements; this project pins its guarantees to SQLite only.
+- Other databases have different rules and are out of scope.
+
+- Missing cross-process lock: the runner is a single-process component.
+- It does not claim safety under concurrent runners.
+- Two runners racing on the same database can corrupt state, and this README must not promise otherwise.
+- Within a single process, one `Runner` instance owns a mutex that serializes Up, Down-one, and Down-all operations; concurrent calls on that same instance are race-free and cannot double-apply.
+- Two different `Runner` instances or two processes targeting the same database are outside the guarantee because there is no database-side or advisory lock.
 
 ## 7. Learning Objective
-Implement a transparent migration runner whose behavior is verifiable from the source, the metadata ledger, and the schema and data of the test database. Make every failure mode honest and observable. State the single-process limitation explicitly.
+
+- Implement a transparent migration runner whose behavior is verifiable from the source, the metadata ledger, and the schema and data of the test database.
+- Make every failure mode honest and observable.
+- State the single-process limitation explicitly.
 
 ## 8. Functional Requirements
+
 1. Standard library plus the already introduced `modernc.org/sqlite` `v1.55.0`. No third-party migration framework.
 2. The runner core accepts an existing `*sql.DB` and an embedded migration source. It does not start a database by itself.
 3. Migration filenames follow exactly: four decimal digits (the version), an underscore, a lowercase snake-case name starting with a letter, and the literal lowercase suffix `.up.sql` or `.down.sql`. Examples: `0001_create_users.up.sql`, `0001_create_users.down.sql`. Files with non-matching forms are rejected.
@@ -57,18 +92,46 @@ Implement a transparent migration runner whose behavior is verifiable from the s
 17. The runner does not claim cross-process or advisory-lock safety. DDL transactional guarantees are pinned to SQLite only.
 
 ## 9. Inputs and Outputs
-Up inputs: context, `*sql.DB`, embedded migration source, injected clock. Up outputs: applied versions, a typed outcome (applied, no-op, drift, unknown, duplicate, malformed, cancelled, error), and exact metadata assertions. Down-one inputs: context, `*sql.DB`, embedded migration source. Down-one outputs: typed outcome (reverted, no-migrations, drift, unknown, cancelled, error). Down-all inputs: same as Down-one. Down-all outputs: typed outcome (reverted-all, no-op, partial-with-error, error).
+
+### Interface Contract
+
+- Up inputs: context, `*sql.DB`, embedded migration source, injected clock.
+- Up outputs: applied versions, a typed outcome (applied, no-op, drift, unknown, duplicate, malformed, cancelled, error), and exact metadata assertions.
+- Down-one inputs: context, `*sql.DB`, embedded migration source.
+- Down-one outputs: typed outcome (reverted, no-migrations, drift, unknown, cancelled, error).
+- Down-all inputs: same as Down-one.
+- Down-all outputs: typed outcome (reverted-all, no-op, partial-with-error, error).
 
 ## 10. Rules and Edge Cases
-Drift is an error, never a silent overwrite. Missing Down file is a typed failure before mutation. Stepwise and full Down must never go below zero applied versions. Cancellations before and between migrations are handled honestly. Re-running Up at latest is a no-op and does not rewrite timestamps. Empty migration bodies are rejected. The runner does not promise cross-process safety.
+
+- Drift is an error, never a silent overwrite.
+- Missing Down file is a typed failure before mutation.
+- Stepwise and full Down must never go below zero applied versions.
+- Cancellations before and between migrations are handled honestly.
+- Re-running Up at latest is a no-op and does not rewrite timestamps.
+- Empty migration bodies are rejected.
+- The runner does not promise cross-process safety.
 
 ## 11. Project Constraints
-Single-process runner only. No third-party migration framework. Do not use `IF NOT EXISTS` in migration bodies except inside the metadata ledger bootstrap. Do not silently advance timestamps. State honest semantics about data and schema state after any failure.
+
+- Single-process runner only.
+- No third-party migration framework.
+- Do not use `IF NOT EXISTS` in migration bodies except inside the metadata ledger bootstrap.
+- Do not silently advance timestamps.
+- State honest semantics about data and schema state after any failure.
 
 ## 12. Design Questions Before Coding
-What is the exact checksum framing? How are duplicate and out-of-order versions detected before any mutation? How are malformed names and suffixes detected? How does the runner distinguish "no migrations to apply" from "applied version unknown"? How is a Down failure distinguished from a partial commit? How is context cancellation between migrations handled? How is cross-process safety explicitly disclaimed?
+
+- What is the exact checksum framing?
+- How are duplicate and out-of-order versions detected before any mutation?
+- How are malformed names and suffixes detected?
+- How does the runner distinguish "no migrations to apply" from "applied version unknown"?
+- How is a Down failure distinguished from a partial commit?
+- How is context cancellation between migrations handled?
+- How is cross-process safety explicitly disclaimed?
 
 ## 13. Implementation Milestones
+
 1. Define the source abstraction, the metadata ledger, the typed outcomes, and the in-process mutex that serializes Up, Down-one, and Down-all.
 2. Implement filename validation, pair validation, ordering, gap tolerance, and the canonical base-10 version parsing used by the checksum framing.
 3. Implement the checksum framing and a known-value test fixture, including a test that parses valid filename version `0001` to numeric version 1 and proves the checksum uses canonical field `1`; do not accept a one-digit migration filename.
@@ -80,6 +143,9 @@ What is the exact checksum framing? How are duplicate and out-of-order versions 
 9. Run the unit gate and the race detector.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Full-source prevalidation rejects malformed names (wrong length, non-digit version, bad suffix, non-letter first character of name, uppercase, wrong extension) and exits before any database side effect.
 - Prevalidation rejects version zero, duplicate versions, and non-increasing source order without touching the database.
 - Prevalidation rejects a missing pair (Up without Down or vice versa) without touching the database.
@@ -117,15 +183,42 @@ What is the exact checksum framing? How are duplicate and out-of-order versions 
 - No third-party migration framework is introduced.
 
 ## 15. Common Mistakes to Watch For
-Hiding drift with `IF NOT EXISTS` inside migration bodies. Hashing only Up bytes or only Down bytes. Computing the checksum over a different framing and producing collisions. Including leading-zero version text as part of the checksum framing. Mixing SQL and metadata writes across transactions. Allowing Down below zero. Claiming cross-process safety. Inventing timestamps. Skipping prevalidation and bootstrapping the ledger on a malformed source. Reusing the same UTC applied-at across multiple migrations. Using `CREATE TABLE IF NOT EXISTS` inside migration bodies. Confusing "out-of-order applied versions" with the actual invariant (the applied set must be a prefix of the ordered source).
+
+- Hiding drift with `IF NOT EXISTS` inside migration bodies.
+- Hashing only Up bytes or only Down bytes.
+- Computing the checksum over a different framing and producing collisions.
+- Including leading-zero version text as part of the checksum framing.
+- Mixing SQL and metadata writes across transactions.
+- Allowing Down below zero.
+- Claiming cross-process safety.
+- Inventing timestamps.
+- Skipping prevalidation and bootstrapping the ledger on a malformed source.
+- Reusing the same UTC applied-at across multiple migrations.
+- Using `CREATE TABLE IF NOT EXISTS` inside migration bodies.
+- Confusing "out-of-order applied versions" with the actual invariant (the applied set must be a prefix of the ordered source).
 
 ## 16. Topics and References for Study
-Go `embed.FS` documentation. SQLite documentation on transactional DDL and the documented limits where DDL is not transactional. `database/sql` transaction handling and error mapping. SHA-256 framing patterns and the importance of length prefixes. UTC RFC3339Nano formatting. Single-process correctness versus distributed coordination.
+
+- Go `embed.FS` documentation.
+- SQLite documentation on transactional DDL and the documented limits where DDL is not transactional. `database/sql` transaction handling and error mapping.
+- SHA-256 framing patterns and the importance of length prefixes.
+- UTC RFC3339Nano formatting.
+- Single-process correctness versus distributed coordination.
 
 ## 17. Self-Assessment Questions
-What does the checksum cover and why? Why is the framing length-prefixed rather than delimiter-separated? Why is the version field in the framing canonical base-10 with no leading zeros, and why is a filename-padding test required? Why is the metadata ledger bootstrap allowed to be idempotent but migration bodies are not? What is honest about transactional DDL on SQLite? What is honest about partial progress in Down-all? Why is cross-process safety explicitly disclaimed while single-process in-instance concurrency is serialized by a mutex? Why is the meaningful invariant a "prefix of the ordered source" rather than a row-order check? How does cancellation before starting a migration differ from cancellation during an open transaction?
+
+1. What does the checksum cover and why?
+2. Why is the framing length-prefixed rather than delimiter-separated?
+3. Why is the version field in the framing canonical base-10 with no leading zeros, and why is a filename-padding test required?
+4. Why is the metadata ledger bootstrap allowed to be idempotent but migration bodies are not?
+5. What is honest about transactional DDL on SQLite?
+6. What is honest about partial progress in Down-all?
+7. Why is cross-process safety explicitly disclaimed while single-process in-instance concurrency is serialized by a mutex?
+8. Why is the meaningful invariant a "prefix of the ordered source" rather than a row-order check?
+9. How does cancellation before starting a migration differ from cancellation during an open transaction?
 
 ## 18. Definition of Completion
+
 - [ ] `go test ./...` passes with no Docker, network, PostgreSQL, Redis, or environment variables.
 - [ ] `go test -race ./...` passes.
 - [ ] Full-source prevalidation rejects malformed names, missing pairs, empty bodies, version zero, duplicates, and out-of-order versions without touching the database.
@@ -140,4 +233,26 @@ What does the checksum cover and why? Why is the framing length-prefixed rather 
 - [ ] No third-party migration framework is introduced.
 
 ## 19. Optional Extensions
-Add a separately documented dry-run listing planned Up operations without applying them. Add a separately tagged experiment that records a per-migration timing trace, without weakening the unit gate.
+
+- Add a separately documented dry-run listing planned Up operations without applying them.
+- Add a separately tagged experiment that records a per-migration timing trace, without weakening the unit gate.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 063 — GORM ORM Basics](../../05-databases/063_gorm_orm_basics/README.md#20-prerequisite-based-documentation-guide), [Project 061 — SQLite CRUD](../../05-databases/061_sqlite_crud/README.md#20-prerequisite-based-documentation-guide), [Project 041 — Context Timeout Example](../../03-concurrency/041_context_timeout_example/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`embed`](https://pkg.go.dev/embed).
+- **Standards and concept references:** [SQLite transaction documentation](https://www.sqlite.org/lang_transaction.html).
+
+### Project-specific learning focus
+
+- **Learn now:** ordered migration discovery, version tables, checksums with unambiguous framing, transactional DDL limits, up and down policy, dirty states, and single-process coordination.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

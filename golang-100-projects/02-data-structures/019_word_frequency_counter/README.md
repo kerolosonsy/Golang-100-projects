@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project **019** — `019_word_frequency_counter`. The directory name and number must match exactly. This project reads a stream of text, counts the words, and emits a deterministic frequency report.
+- Project **019** — `019_word_frequency_counter`.
+- The directory name and number must match exactly.
+- This project reads a stream of text, counts the words, and emits a deterministic frequency report.
 
 ## 2. Project Idea
 
@@ -16,11 +18,16 @@ The project's semantic token limit is `1 MiB` (1,048,576 bytes). A token at that
 
 ## 3. Why This Project Now?
 
-Projects 016 through 018 built small domains with stable ordering and on-disk storage. Project 019 introduces a different kind of input: a long, unstructured stream of text whose structure must be inferred from Unicode rules. The discipline of pinning one token rule, pinning one lowercasing rule, and pinning one tie-breaking rule is the same discipline as in 016 (stable IDs) and 018 (lexicographic category order): deterministic output from a deterministic rule.
+- Projects 016 through 018 built small domains with stable ordering and on-disk storage.
+- Project 019 introduces a different kind of input: a long, unstructured stream of text whose structure must be inferred from Unicode rules.
+- The discipline of pinning one token rule, pinning one lowercasing rule, and pinning one tie-breaking rule is the same discipline as in 016 (stable IDs) and 018 (lexicographic category order): deterministic output from a deterministic rule.
 
-The project also introduces the discipline of streaming with a buffer that respects a fixed token-size limit. A naive `bufio.Scanner` with the default buffer size stops scanning when a token exceeds the configured maximum and surfaces a `bufio.ErrTooLong` through `Scanner.Err`. The README pins the limit and the failure mode so the test can pin both.
+- The project also introduces the discipline of streaming with a buffer that respects a fixed token-size limit.
+- A naive `bufio.Scanner` with the default buffer size stops scanning when a token exceeds the configured maximum and surfaces a `bufio.ErrTooLong` through `Scanner.Err`.
+- The README pins the limit and the failure mode so the test can pin both.
 
-Finally, the project establishes that "what counts as a word" is a definition, not a fact. Two readers will disagree on whether a hyphenated phrase is one word or two; the README pins one rule and the test enforces it.
+- Finally, the project establishes that "what counts as a word" is a definition, not a fact.
+- Two readers will disagree on whether a hyphenated phrase is one word or two; the README pins one rule and the test enforces it.
 
 ## 4. Prerequisites
 
@@ -41,35 +48,60 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### A pinned token rule
+### Concepts
 
-A word is a maximal run of Unicode letters or Unicode digits. Punctuation, symbols, and whitespace are separators. Hyphens split a phrase: `well-known` is two tokens (`well`, `known`), not one. Apostrophes split a contraction: `don't` is two tokens (`don`, `t`), not one. The rule is simple to state and simple to test: every rune in a token satisfies `unicode.IsLetter(r) || unicode.IsDigit(r)`, and a separator is every other rune.
+#### A pinned token rule
 
-The token rule is the learner's responsibility to enforce. The recommended way is to configure the scanner with a `Split` function that emits one token per maximal run of letter-or-digit runes. The test in section 14 pins the rule across the project's edge cases.
+- A word is a maximal run of Unicode letters or Unicode digits.
+- Punctuation, symbols, and whitespace are separators.
+- Hyphens split a phrase: `well-known` is two tokens (`well`, `known`), not one.
+- Apostrophes split a contraction: `don't` is two tokens (`don`, `t`), not one.
+- The rule is simple to state and simple to test: every rune in a token satisfies `unicode.IsLetter(r) || unicode.IsDigit(r)`, and a separator is every other rune.
 
-### Unicode lowercasing, not full case folding or normalization
+- The token rule is the learner's responsibility to enforce.
+- The recommended way is to configure the scanner with a `Split` function that emits one token per maximal run of letter-or-digit runes.
+- The test in section 14 pins the rule across the project's edge cases.
 
-`unicode.ToLower` lowers the case of a rune using Unicode lowercasing rules. ASCII letters lower predictably; non-ASCII letters lower according to Unicode's tables. The project uses the standard library's lowercasing and does not perform Unicode normalization. Two strings that are visually identical but differ in precomposed vs decomposed form — for example, `é` written as a single codepoint versus as `e` followed by a combining acute accent — are not guaranteed to merge into the same count. The standard library's lowercasing is also not the same as locale-specific full Unicode case folding (for example, Turkish dotless-I rules), which is not applied here. The README documents this caveat; the test does not assert on it.
+#### Unicode lowercasing, not full case folding or normalization
 
-### A bounded buffer for long tokens
+- `unicode.ToLower` lowers the case of a rune using Unicode lowercasing rules.
+- ASCII letters lower predictably; non-ASCII letters lower according to Unicode's tables.
+- The project uses the standard library's lowercasing and does not perform Unicode normalization.
+- Two strings that are visually identical but differ in precomposed vs decomposed form — for example, `é` written as a single codepoint versus as `e` followed by a combining acute accent — are not guaranteed to merge into the same count.
+- The standard library's lowercasing is also not the same as locale-specific full Unicode case folding (for example, Turkish dotless-I rules), which is not applied here.
+- The README documents this caveat; the test does not assert on it.
 
-The default `bufio.Scanner` buffer is too small for this project's largest supported token. The project accepts a token up to and including `1 MiB`, while configuring the scanner before its first scan with a larger finite internal maximum, such as `2 MiB`. The extra capacity is framing headroom so the scanner can see the separator or EOF after an exactly `1 MiB` token; it does not raise the project's accepted token limit.
+#### A bounded buffer for long tokens
 
-A token above the semantic `1 MiB` limit is rejected with a clear error and is never added to the counts. If input exceeds the scanner's larger internal maximum before a token can be emitted, scanning stops and `Scanner.Err` reports the scanner error. Neither path returns or counts a partial token.
+- The default `bufio.Scanner` buffer is too small for this project's largest supported token.
+- The project accepts a token up to and including `1 MiB`, while configuring the scanner before its first scan with a larger finite internal maximum, such as `2 MiB`.
+- The extra capacity is framing headroom so the scanner can see the separator or EOF after an exactly `1 MiB` token; it does not raise the project's accepted token limit.
 
-The maximum is measured in bytes, not runes. A token composed of multi-byte UTF-8 runes can use several bytes per character, so the rune budget is smaller than the byte budget. The README documents the byte unit so the test pins it correctly.
+- A token above the semantic `1 MiB` limit is rejected with a clear error and is never added to the counts.
+- If input exceeds the scanner's larger internal maximum before a token can be emitted, scanning stops and `Scanner.Err` reports the scanner error.
+- Neither path returns or counts a partial token.
 
-### Deterministic ordering
+- The maximum is measured in bytes, not runes.
+- A token composed of multi-byte UTF-8 runes can use several bytes per character, so the rune budget is smaller than the byte budget.
+- The README documents the byte unit so the test pins it correctly.
 
-The report orders tokens by descending count, then ascending token. Two runs against the same input produce identical output. The discipline is: never iterate a map to produce output; sort the keys first; the comparator handles the compound key.
+#### Deterministic ordering
 
-### Streaming
+- The report orders tokens by descending count, then ascending token.
+- Two runs against the same input produce identical output.
+- The discipline is: never iterate a map to produce output; sort the keys first; the comparator handles the compound key.
 
-The program reads the input through an `io.Reader`. It does not load the whole text into a buffer before counting. A test with a large generated input confirms correctness across multiple `Read` calls; the implementation's record-by-record processing establishes the streaming design.
+#### Streaming
 
-### Empty and punctuation-only inputs
+- The program reads the input through an `io.Reader`.
+- It does not load the whole text into a buffer before counting.
+- A test with a large generated input confirms correctness across multiple `Read` calls; the implementation's record-by-record processing establishes the streaming design.
 
-Empty input (zero bytes) produces an empty report: zero output rows and zero output bytes. Input that contains only separators — whitespace, punctuation, symbols, no letters or digits at all — also produces an empty report. The test pins both cases as "empty output".
+#### Empty and punctuation-only inputs
+
+- Empty input (zero bytes) produces an empty report: zero output rows and zero output bytes.
+- Input that contains only separators — whitespace, punctuation, symbols, no letters or digits at all — also produces an empty report.
+- The test pins both cases as "empty output".
 
 ## 7. Learning Objective
 
@@ -98,15 +130,17 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A stream of text through an `io.Reader`. The text can be ASCII, non-ASCII, or a mix. The text can contain punctuation, symbols, whitespace, and any combination of letters and digits.
 
-### Outputs
+#### Outputs
 
 - A deterministic report. Each non-empty line contains a token and its count. Tokens are sorted by descending count and ascending token for ties. The report is empty (zero output rows and zero output bytes) when there are no tokens to count.
 
-### Example text-only success run
+#### Example text-only success run
 
 ```
 $ wordfreq text.txt
@@ -126,7 +160,7 @@ dog              1
 
 The sum of counts (`6 + 4 + 3 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = 23`) equals the number of tokens read.
 
-### Example text-only empty-output cases
+#### Example text-only empty-output cases
 
 ```
 $ wordfreq empty.txt
@@ -185,9 +219,11 @@ Both invocations produce zero output rows and zero output bytes. There is no hea
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. The tokenizer is driven through a `strings.Reader` or a `bytes.Reader` for small inputs and through a custom incremental `io.Reader` for the large-input case. The program's command-line integration is a thin wrapper that opens the file. No test depends on real time, sleeps, or one-record-per-second pacing.
 
-### Token rule
+#### Token rule
 
 - The input `"hello world"` produces two tokens: `hello` and `world`. The sum of counts is `2`.
 - The input `"hello, world!"` produces the same two tokens; the comma and the exclamation mark are separators. The sum of counts is `2`.
@@ -199,41 +235,41 @@ Each case is described in natural language. The tokenizer is driven through a `s
 - A non-ASCII letter, for example the Latin small letter `é`, counts as a letter and is part of a token.
 - A non-ASCII digit, for example the Arabic-Indic digit `٤`, counts as a digit and is part of a token.
 
-### Lowercasing
+#### Lowercasing
 
 - The input `"The the THE"` produces one token (`the`) with count `3`.
 - The input `"Ångström"` and the input `"ångström"` both produce the token `ångström` after lowercasing; mixing them produces one token with the combined count.
 
-### Ordering
+#### Ordering
 
 - A test runs the tokenizer against an input whose tokens have varying counts. The report is sorted by descending count and ascending token for ties. Two runs produce byte-identical output.
 - A test runs the tokenizer against an input with a tie: three tokens each appearing once. The report lists them in ascending lexicographic order.
 
-### Edge cases
+#### Edge cases
 
 - Empty input (zero bytes) produces an empty report: zero output rows and zero output bytes.
 - Input containing only punctuation (for example, `"!!! ???"`) produces an empty report.
 - Input containing only whitespace (for example, spaces, tabs, newlines) produces an empty report.
 - Input containing one token yields a report with one row whose count is `1`.
 
-### Sum invariant
+#### Sum invariant
 
 - For every test that drives the tokenizer through a known input, the test asserts that the sum of every count in the report equals the number of tokens read.
 
-### Streaming
+#### Streaming
 
 - A test constructs a large input and drives the tokenizer through a custom `io.Reader` that yields the input across multiple `Read` calls (for example, one token per `Read` or several tokens per `Read`). The test asserts that the report's counts are correct, that the sum of counts equals the number of tokens, and that two runs of the same test produce byte-identical output. The test does not rely on `time.Sleep`, wall-clock pacing, or timing.
 
-### Oversized token
+#### Oversized token
 
 - A test drives an input whose single token is longer than `1 MiB` (1,048,576 bytes). The test asserts that the program reports an oversized-token error, that no partial counting is reflected in the report, and that the failure is surfaced to the caller.
 - A test drives an input whose token is exactly at the `1 MiB` boundary. The test asserts that the token is counted correctly and is not reported as an error.
 
-### Determinism
+#### Determinism
 
 - A test runs the tokenizer twice against the same input and confirms the two outputs are byte-identical.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary against a temporary file with valid data and confirms the exit code is zero and the report is on standard output.
 - An integration test runs the compiled binary against an empty file and confirms the report is empty (zero output bytes) and the exit code is zero.
@@ -276,21 +312,39 @@ Each case is described in natural language. The tokenizer is driven through a `s
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- The tokenizer uses a custom `Split` function that emits one token per maximal run of letter-or-digit runes.
-- The scanner is configured before scanning with a finite internal maximum larger than the accepted `1 MiB` token limit.
-- An oversized token surfaces a clear error, and no partial counting is reflected in the report.
-- The sum of every count in the report equals the number of tokens read.
-- The empty report is zero output rows and zero output bytes.
-- The report's output ordering is deterministic across runs on the same machine.
-- The package documentation states the token rule, the lowercasing rule, the `1 MiB` byte maximum, the oversized-token policy, and the distinction between Unicode lowercasing, full Unicode case folding, and Unicode normalization.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] The tokenizer uses a custom `Split` function that emits one token per maximal run of letter-or-digit runes.
+- [ ] The scanner is configured before scanning with a finite internal maximum larger than the accepted `1 MiB` token limit.
+- [ ] An oversized token surfaces a clear error, and no partial counting is reflected in the report.
+- [ ] The sum of every count in the report equals the number of tokens read.
+- [ ] The empty report is zero output rows and zero output bytes.
+- [ ] The report's output ordering is deterministic across runs on the same machine.
+- [ ] The package documentation states the token rule, the lowercasing rule, the `1 MiB` byte maximum, the oversized-token policy, and the distinction between Unicode lowercasing, full Unicode case folding, and Unicode normalization.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Top-N report.** Accept a flag that limits the report to the top-N tokens by count. Tokens outside the top-N are omitted. The ordering rule is unchanged. Do not add filtering by token length or by token regex.
-- **Total count and unique count.** Add a single line at the bottom of the report showing the total token count and the number of distinct tokens. The line is omitted on the empty report, which remains zero output bytes. Do not add per-token statistics beyond count.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 018 — CSV Data Parser](../../02-data-structures/018_csv_data_parser/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** streaming tokenization, scanner size limits, Unicode case handling and normalization, frequency maps, and stable tie-breaking.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

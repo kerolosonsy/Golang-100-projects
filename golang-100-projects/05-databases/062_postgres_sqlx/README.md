@@ -1,41 +1,71 @@
 # Project 062 — PostgreSQL sqlx
 
 ## 1. Project Name and Number
-Project 062, postgres_sqlx. This README is a learning guide only. You will create every Go source file, the SQL schema, the Compose definitions, and every test file yourself in `05-databases/062_postgres_sqlx/`. The guide does not provide implementation code.
+
+- Project 062, postgres_sqlx.
+- This README is a learning guide only.
+- You will create every Go source file, the SQL schema, the Compose definitions, and every test file yourself in `05-databases/062_postgres_sqlx/`.
+- The guide does not provide implementation code.
 
 ## 2. Project Idea
+
 Port the Project 061 User repository to PostgreSQL using `github.com/jmoiron/sqlx` at `v1.4.0` and `github.com/jackc/pgx/v5` at `v5.10.0`, using pgx's stdlib adapter through `database/sql`. Pin both versions exactly. Use explicit column lists and a single coherent named-parameter path: expand named parameters into positional arguments, then call `db.Rebind` exactly once to produce PostgreSQL placeholders, then send that query and arguments through the executor. Do not also call a helper that automatically rebinds an already-rebound query. Some sqlx helpers rebind internally; this project deliberately uses the explicit path so the executor boundary is observable and testable. Keep unit tests Docker-free by writing through a narrow repository-facing executor boundary. Tag integration tests behind both a build tag and an explicit safety guard, and never connect to a developer or shared database.
 
 ## 3. Why This Project Now?
-This follows Project 061 (sqlite_crud) and transfers a tested repository contract to a server database. Context propagation follows Project 041. No other project is formally required.
+
+- This follows Project 061 (sqlite_crud) and transfers a tested repository contract to a server database.
+- Context propagation follows Project 041.
+- No other project is formally required.
 
 ## 4. Prerequisites
-Projects 061 and 041 are required. No other project is formally required. The regular unit gate is `go test ./...`, which must pass with no Docker, no PostgreSQL, no Redis, no network, and no environment variables.
+
+- Projects 061 and 041 are required.
+- No other project is formally required.
+- The regular unit gate is `go test ./...`, which must pass with no Docker, no PostgreSQL, no Redis, no network, and no environment variables.
 
 ## 5. What You Must Know Before Starting
-You should know the exact Project 061 User contract (fields, normalization, ordering, clock behavior, typed outcomes). You should be comfortable with `database/sql` contexts and rows, basic PostgreSQL constraints and SQLSTATE, sqlx named arguments and `Rebind`, pool configuration including `SetMaxOpenConns`, `SetMaxIdleConns`, `SetConnMaxLifetime`, and `SetConnMaxIdleTime`, Go build tags, and safe isolation between tests using transactions or unique data.
+
+- You should know the exact Project 061 User contract (fields, normalization, ordering, clock behavior, typed outcomes).
+- You should be comfortable with `database/sql` contexts and rows, basic PostgreSQL constraints and SQLSTATE, sqlx named arguments and `Rebind`, pool configuration including `SetMaxOpenConns`, `SetMaxIdleConns`, `SetConnMaxLifetime`, and `SetConnMaxIdleTime`, Go build tags, and safe isolation between tests using transactions or unique data.
 
 ## 6. Explanation of New Concepts
-sqlx adds three practical capabilities on top of `database/sql`: struct scanning by name, named parameter expansion in query text, and a small `Get`/`Select` helper. It does not change the underlying connection lifecycle or the requirement to close rows and check rows errors.
 
-pgx stdlib compatibility: pgx ships a `database/sql` driver and a standard `*sql.DB` adapter. When you register that driver and open a `*sql.DB`, every interaction still flows through `database/sql`, but pgx provides the driver implementation and its own error types. The pgx PostgreSQL error type is the recommended source of truth for SQLSTATE; you extract the SQLSTATE through type assertion, not by parsing message text.
+### Concepts
 
-Named parameters and `Rebind`: sqlx expands named arguments (for example, `:name` or `:email`) into a rewritten query and an `[]any` slice. PostgreSQL uses `$1`, `$2`, ... placeholders, so after expansion you must call `db.Rebind` to translate `?` placeholders to `$N` placeholders. Without `Rebind`, the database will reject the query.
+- sqlx adds three practical capabilities on top of `database/sql`: struct scanning by name, named parameter expansion in query text, and a small `Get`/`Select` helper.
+- It does not change the underlying connection lifecycle or the requirement to close rows and check rows errors.
 
-Struct tags and explicit columns: every column you select has a matching struct tag (for example, `db:"id"` or `db:"created_at"`). The query lists every column explicitly. `SELECT *` is forbidden.
+- pgx stdlib compatibility: pgx ships a `database/sql` driver and a standard `*sql.DB` adapter.
+- When you register that driver and open a `*sql.DB`, every interaction still flows through `database/sql`, but pgx provides the driver implementation and its own error types.
+- The pgx PostgreSQL error type is the recommended source of truth for SQLSTATE; you extract the SQLSTATE through type assertion, not by parsing message text.
 
-Pool configuration: PostgreSQL tolerates multiple connections, so `SetMaxOpenConns` and `SetMaxIdleConns` may be larger than one. Lifetimes and idle times recycle stale connections.
+- Named parameters and `Rebind`: sqlx expands named arguments (for example, `:name` or `:email`) into a rewritten query and an `[]any` slice.
+- PostgreSQL uses `$1`, `$2`, ... placeholders, so after expansion you must call `db.Rebind` to translate `?` placeholders to `$N` placeholders.
+- Without `Rebind`, the database will reject the query.
 
-SQLSTATE: PostgreSQL reports error class codes such as `23505` (unique violation). You read the code from the pgx PostgreSQL error type using type assertion, then map to a typed outcome.
+- Struct tags and explicit columns: every column you select has a matching struct tag (for example, `db:"id"` or `db:"created_at"`).
+- The query lists every column explicitly. `SELECT *` is forbidden.
 
-Unit boundary versus real integration: handwritten fakes at the executor boundary can assert that the right query was sent, with the right arguments, to the right scan target, and that scan failures propagate. They cannot validate PostgreSQL syntax, real constraint semantics, or pgx's behavior. Integration covers those.
+- Pool configuration: PostgreSQL tolerates multiple connections, so `SetMaxOpenConns` and `SetMaxIdleConns` may be larger than one.
+- Lifetimes and idle times recycle stale connections.
 
-DSN safety: integration must never silently connect to anything. You parse the DSN, require the database name to end in `_test`, and require a separate explicit opt-in guard before touching data.
+- SQLSTATE: PostgreSQL reports error class codes such as `23505` (unique violation).
+- You read the code from the pgx PostgreSQL error type using type assertion, then map to a typed outcome.
+
+- Unit boundary versus real integration: handwritten fakes at the executor boundary can assert that the right query was sent, with the right arguments, to the right scan target, and that scan failures propagate.
+- They cannot validate PostgreSQL syntax, real constraint semantics, or pgx's behavior.
+- Integration covers those.
+
+- DSN safety: integration must never silently connect to anything.
+- You parse the DSN, require the database name to end in `_test`, and require a separate explicit opt-in guard before touching data.
 
 ## 7. Learning Objective
-Build a PostgreSQL repository with the same User semantics as Project 061 while clearly separating Docker-free unit confidence from opt-in integration confidence. Make every typed outcome, every pool decision, and every placeholder choice an explicit, tested decision.
+
+- Build a PostgreSQL repository with the same User semantics as Project 061 while clearly separating Docker-free unit confidence from opt-in integration confidence.
+- Make every typed outcome, every pool decision, and every placeholder choice an explicit, tested decision.
 
 ## 8. Functional Requirements
+
 1. The User representation matches Project 061 exactly: positive 64-bit ID, trimmed non-empty name, normalized email, UTC RFC3339Nano created-at and updated-at.
 2. Dependencies are pinned exactly: `github.com/jmoiron/sqlx` `v1.4.0` and `github.com/jackc/pgx/v5` `v5.10.0`. pgx is consumed via its stdlib adapter through `database/sql`. `lib/pq` is not used.
 3. The PostgreSQL schema enforces the same semantic checks as the 061 SQLite schema for positive ID, non-empty trimmed name, email equal to its trimmed lowercase form, unique email, and non-empty timestamps.
@@ -53,18 +83,52 @@ Build a PostgreSQL repository with the same User semantics as Project 061 while 
 15. The repository never defaults to a developer or shared database.
 
 ## 9. Inputs and Outputs
-Create: context, name, email. Output: user with PostgreSQL-generated ID and the two UTC timestamps from a single clock read, or typed invalid input or duplicate. Get: context, ID. Output: user or typed not-found. List: context. Output: non-nil slice in ascending ID order. Update: context, ID, new name, new email. Output: updated user with ID and created-at preserved and updated-at from one clock read, or typed not-found, invalid input, or duplicate. Delete: context, ID. Output: typed not-found or success.
+
+### Interface Contract
+
+- Create: context, name, email.
+- Output: user with PostgreSQL-generated ID and the two UTC timestamps from a single clock read, or typed invalid input or duplicate.
+- Get: context, ID.
+- Output: user or typed not-found.
+- List: context.
+- Output: non-nil slice in ascending ID order.
+- Update: context, ID, new name, new email.
+- Output: updated user with ID and created-at preserved and updated-at from one clock read, or typed not-found, invalid input, or duplicate.
+- Delete: context, ID.
+- Output: typed not-found or success.
 
 ## 10. Rules and Edge Cases
-Reject nonpositive IDs on Get/Update/Delete. Reject blank or invalid names and emails as in Project 061. Map SQLSTATE `23505` from the pgx PostgreSQL error type, not from message text. Treat no rows as typed not-found. Cancelled context returns the context error before any repository work. There is no distinct pool-exhaustion error from `database/sql`: when all 8 connections are busy, another operation waits until a connection is available or its context is cancelled or its deadline expires; the wait ends with the context error. With integration tests compiled, skip only when both runtime activation values are absent; any partially supplied or invalid activation fails closed.
+
+- Reject nonpositive IDs on Get/Update/Delete.
+- Reject blank or invalid names and emails as in Project 061.
+- Map SQLSTATE `23505` from the pgx PostgreSQL error type, not from message text.
+- Treat no rows as typed not-found.
+- Cancelled context returns the context error before any repository work.
+- There is no distinct pool-exhaustion error from `database/sql`: when all 8 connections are busy, another operation waits until a connection is available or its context is cancelled or its deadline expires; the wait ends with the context error.
+- With integration tests compiled, skip only when both runtime activation values are absent; any partially supplied or invalid activation fails closed.
 
 ## 11. Project Constraints
-Pin exactly sqlx `v1.4.0` and pgx `v5.10.0` as direct dependencies. Never use `SELECT *`. No mocking dependency. No required transaction feature. No ORM. No HTTP layer. Compose material is conceptual only; this README contains no commands or YAML. Integration is opt-in and never run by the regular unit gate.
+
+- Pin exactly sqlx `v1.4.0` and pgx `v5.10.0` as direct dependencies.
+- Never use `SELECT *`.
+- No mocking dependency.
+- No required transaction feature.
+- No ORM.
+- No HTTP layer.
+- Compose material is conceptual only; this README contains no commands or YAML.
+- Integration is opt-in and never run by the regular unit gate.
 
 ## 12. Design Questions Before Coding
-What is the minimum executor surface that still lets unit tests cover every repository operation? How will SQLSTATE be extracted via type assertion without message matching? Where is `Rebind` called for every named-parameter execution? How are DSN credentials kept out of test logs? How will rollback isolation prove that ordinary tests do not leak data? How will the concurrent-create case avoid pretending one transaction is pool concurrency?
+
+- What is the minimum executor surface that still lets unit tests cover every repository operation?
+- How will SQLSTATE be extracted via type assertion without message matching?
+- Where is `Rebind` called for every named-parameter execution?
+- How are DSN credentials kept out of test logs?
+- How will rollback isolation prove that ordinary tests do not leak data?
+- How will the concurrent-create case avoid pretending one transaction is pool concurrency?
 
 ## 13. Implementation Milestones
+
 1. Define the executor boundary, the typed outcomes, and the user struct that mirrors Project 061.
 2. Wire sqlx on top of pgx's stdlib adapter and configure the pool with the pinned numbers.
 3. Implement the schema bootstrap with explicit columns and required constraints.
@@ -76,6 +140,9 @@ What is the minimum executor surface that still lets unit tests cover every repo
 9. Verify the unit gate and the race detector.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 Unit tests:
 - Successful Create issues the documented query text and bound arguments and returns a user with a positive ID and UTC timestamps equal to the single clock read.
 - Create with blank or whitespace-only name returns typed invalid input.
@@ -113,15 +180,44 @@ Tagged integration tests:
 - `Close` is called in a defer.
 
 ## 15. Common Mistakes to Watch For
-Using `lib/pq`. Forgetting `Rebind` and seeing `$1` interpolation errors. Using `SELECT *`. Matching error messages by string. Forgetting `rows.Close` or `rows.Err`. Treating `RowsAffected` of zero on Update as success. Reusing a shared database name across developers. Running unit tests against a real PostgreSQL. Pretending one transaction demonstrates pool concurrency. Printing the DSN or credentials in test logs. Catching `context.Canceled` and remapping it as a generic internal error. Using `db.Unsafe()` to bypass sqlx safety without a documented reason.
+
+- Using `lib/pq`.
+- Forgetting `Rebind` and seeing `$1` interpolation errors.
+- Using `SELECT *`.
+- Matching error messages by string.
+- Forgetting `rows.Close` or `rows.Err`.
+- Treating `RowsAffected` of zero on Update as success.
+- Reusing a shared database name across developers.
+- Running unit tests against a real PostgreSQL.
+- Pretending one transaction demonstrates pool concurrency.
+- Printing the DSN or credentials in test logs.
+- Catching `context.Canceled` and remapping it as a generic internal error.
+- Using `db.Unsafe()` to bypass sqlx safety without a documented reason.
 
 ## 16. Topics and References for Study
-The sqlx documentation on `Get`, `Select`, `NamedExec`, `NamedQuery`, `In`, and `Rebind`. The pgx `v5.10.0` documentation on its stdlib adapter and the PostgreSQL error type. PostgreSQL documentation on `SERIAL`/`BIGSERIAL` versus sequences, `CHECK` constraints, unique indexes, and SQLSTATE classes. Go `database/sql` pool configuration and `DBStats`. Go build tags. Safe DSN parsing and the rule that test database names must end in `_test`.
+
+- The sqlx documentation on `Get`, `Select`, `NamedExec`, `NamedQuery`, `In`, and `Rebind`.
+- The pgx `v5.10.0` documentation on its stdlib adapter and the PostgreSQL error type.
+- PostgreSQL documentation on `SERIAL`/`BIGSERIAL` versus sequences, `CHECK` constraints, unique indexes, and SQLSTATE classes.
+- Go `database/sql` pool configuration and `DBStats`.
+- Go build tags.
+- Safe DSN parsing and the rule that test database names must end in `_test`.
 
 ## 17. Self-Assessment Questions
-Why is `Rebind` necessary after named expansion? Why is `Rebind` called exactly once and not layered with an auto-rebind helper? Why is the pgx PostgreSQL error type preferred over message matching? What can a handwritten fake prove, and what can it not prove? Why must the database name end in `_test`? Why does the opt-in guard exist? Why is a single transaction insufficient for proving pool concurrency? Why is `SELECT *` rejected even when convenient? What is the difference between a missing-row outcome and a `RowsAffected` zero outcome? Why does pool exhaustion end with a context error rather than a distinct exhaustion error?
+
+1. Why is `Rebind` necessary after named expansion?
+2. Why is `Rebind` called exactly once and not layered with an auto-rebind helper?
+3. Why is the pgx PostgreSQL error type preferred over message matching?
+4. What can a handwritten fake prove, and what can it not prove?
+5. Why must the database name end in `_test`?
+6. Why does the opt-in guard exist?
+7. Why is a single transaction insufficient for proving pool concurrency?
+8. Why is `SELECT *` rejected even when convenient?
+9. What is the difference between a missing-row outcome and a `RowsAffected` zero outcome?
+10. Why does pool exhaustion end with a context error rather than a distinct exhaustion error?
 
 ## 18. Definition of Completion
+
 - [ ] `go test ./...` passes with no Docker, network, PostgreSQL, Redis, or environment variables.
 - [ ] `go test -race ./...` passes.
 - [ ] Exactly-once `Rebind` is proven by an injected or recording query-preparation boundary or by bounded static review of the single preparation helper.
@@ -134,4 +230,26 @@ Why is `Rebind` necessary after named expansion? Why is `Rebind` called exactly 
 - [ ] No third-party mocking dependency is introduced.
 
 ## 19. Optional Extensions
-Add a separately documented cursor-style pagination experiment that proves stable boundary behavior. Add a separately tagged pool-observability integration that records `DBStats` before and after a burst, without weakening the unit gate.
+
+- Add a separately documented cursor-style pagination experiment that proves stable boundary behavior.
+- Add a separately tagged pool-observability integration that records `DBStats` before and after a burst, without weakening the unit gate.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 061 — SQLite CRUD](../../05-databases/061_sqlite_crud/README.md#20-prerequisite-based-documentation-guide), [Project 041 — Context Timeout Example](../../03-concurrency/041_context_timeout_example/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`github.com/jmoiron/sqlx`](https://pkg.go.dev/github.com/jmoiron/sqlx), [`github.com/jackc/pgx/v5/stdlib`](https://pkg.go.dev/github.com/jackc/pgx/v5/stdlib).
+- **Standards and concept references:** [PostgreSQL documentation](https://www.postgresql.org/docs/current/).
+
+### Project-specific learning focus
+
+- **Learn now:** named queries, placeholder rebinding, SQLSTATE classification, constraints and sequences, stable pagination, pool statistics, safe DSNs, and guarded integration tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

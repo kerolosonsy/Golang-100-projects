@@ -2,7 +2,12 @@
 
 ## 1. Project Name and Number
 
-Project **026** — `026_matrix_operations`. The directory name and number must match exactly. The project works with rectangular `float64` matrices and supports addition, multiplication, and transpose. Inputs and outputs are two-dimensional `float64` slices. Operations return independent results, never mutate or alias the input rows, and never panic on invalid dimensions. Every invalid input is rejected with a contextual error.
+- Project **026** — `026_matrix_operations`.
+- The directory name and number must match exactly.
+- The project works with rectangular `float64` matrices and supports addition, multiplication, and transpose.
+- Inputs and outputs are two-dimensional `float64` slices.
+- Operations return independent results, never mutate or alias the input rows, and never panic on invalid dimensions.
+- Every invalid input is rejected with a contextual error.
 
 ## 2. Project Idea
 
@@ -10,9 +15,13 @@ The package models a matrix as a rectangular `[][]float64`: a slice of rows, eac
 
 ## 3. Why This Project Now?
 
-Projects 001–025 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, and hashing. None of them required structured numeric work with shape discipline. Project 026 introduces the first project in which the layout of a slice-of-slices is part of the contract. The learner must treat a matrix as a typed shape with rows and columns, not as "a slice of slices of numbers that happens to exist".
+- Projects 001–025 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, and hashing.
+- None of them required structured numeric work with shape discipline.
+- Project 026 introduces the first project in which the layout of a slice-of-slices is part of the contract.
+- The learner must treat a matrix as a typed shape with rows and columns, not as "a slice of slices of numbers that happens to exist".
 
-This is also the first project that forces the learner to be honest about shape: a ragged slice is not "a column count that happens to be zero", and an empty outer slice is not "a matrix with zero rows". Project 026 pins the rejection rule that subsequent projects in the path rely on.
+- This is also the first project that forces the learner to be honest about shape: a ragged slice is not "a column count that happens to be zero", and an empty outer slice is not "a matrix with zero rows".
+- Project 026 pins the rejection rule that subsequent projects in the path rely on.
 
 ## 4. Prerequisites
 
@@ -33,41 +42,76 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Rectangular matrix as a shape, not a bag of rows
+### Concepts
 
-A matrix is a `[][]float64` whose rows all have the same length and whose row count is well-defined. The pair `(row count, column count)` is the shape. Every operation in this project is defined on shapes, not on slices: the result of adding two matrices exists only when the two shapes match exactly. The project pins shape as a contract so a later caller cannot rely on "it worked because the rows happened to line up".
+#### Rectangular matrix as a shape, not a bag of rows
 
-### Empty matrices: zero rows and zero columns
+- A matrix is a `[][]float64` whose rows all have the same length and whose row count is well-defined.
+- The pair `(row count, column count)` is the shape.
+- Every operation in this project is defined on shapes, not on slices: the result of adding two matrices exists only when the two shapes match exactly.
+- The project pins shape as a contract so a later caller cannot rely on "it worked because the rows happened to line up".
 
-A matrix is empty when it has zero rows, when every row has zero columns, or both. Both states are rejected with an "empty matrix" error. The project does not treat zero rows as "a matrix with zero rows and some known column count" — there is no usable column count to recover. The project does not treat every row having zero columns as a usable matrix either — a zero-column row cannot be added to, transposed, or multiplied against without inventing shape. Both states are empty; the error identifies "empty matrix" and names the offending operand.
+#### Empty matrices: zero rows and zero columns
 
-### Rejecting ragged matrices
+- A matrix is empty when it has zero rows, when every row has zero columns, or both.
+- Both states are rejected with an "empty matrix" error.
+- The project does not treat zero rows as "a matrix with zero rows and some known column count" — there is no usable column count to recover.
+- The project does not treat every row having zero columns as a usable matrix either — a zero-column row cannot be added to, transposed, or multiplied against without inventing shape.
+- Both states are empty; the error identifies "empty matrix" and names the offending operand.
 
-A ragged matrix is one whose rows have differing positive lengths, or whose rows mix zero and non-zero lengths. Ragged means "row lengths differ". A matrix whose rows are all length `0` is not ragged; it is empty. A matrix whose rows are all length `4` is not ragged. A matrix whose first row has length `4` and second row has length `3` is ragged and is rejected with an error that identifies "ragged matrix" and names the offending row index and the row length that differs.
+#### Rejecting ragged matrices
 
-### Adding two matrices
+- A ragged matrix is one whose rows have differing positive lengths, or whose rows mix zero and non-zero lengths.
+- Ragged means "row lengths differ".
+- A matrix whose rows are all length `0` is not ragged; it is empty.
+- A matrix whose rows are all length `4` is not ragged.
+- A matrix whose first row has length `4` and second row has length `3` is ragged and is rejected with an error that identifies "ragged matrix" and names the offending row index and the row length that differs.
 
-Two matrices can be added element-wise when their shapes are equal. The result has the same shape and contains element-wise sums. Inputs are not mutated; the result rows are independent slices. Shape mismatch produces a contextual error without reading any element.
+#### Adding two matrices
 
-### Multiplying two matrices
+- Two matrices can be added element-wise when their shapes are equal.
+- The result has the same shape and contains element-wise sums.
+- Inputs are not mutated; the result rows are independent slices.
+- Shape mismatch produces a contextual error without reading any element.
 
-Two matrices can be multiplied when the left column count equals the right row count. The result has `left rows` rows and `right columns` columns. Each result element is the sum of the products of the left row and the right column at that position. Inputs are not mutated; the result rows are independent slices. Shape mismatch produces a contextual error without reading any element.
+#### Multiplying two matrices
 
-### Transposing a matrix
+- Two matrices can be multiplied when the left column count equals the right row count.
+- The result has `left rows` rows and `right columns` columns.
+- Each result element is the sum of the products of the left row and the right column at that position.
+- Inputs are not mutated; the result rows are independent slices.
+- Shape mismatch produces a contextual error without reading any element.
 
-Transposing swaps rows and columns. A matrix with `r` rows and `c` columns becomes a matrix with `c` rows and `r` columns. The element at `(i, j)` in the result is the element at `(j, i)` in the input. The result rows are independent slices; the original input is not mutated. Transposing twice returns a matrix with the original shape and the original values, element-for-element.
+#### Transposing a matrix
 
-### Independent results, never aliases
+- Transposing swaps rows and columns.
+- A matrix with `r` rows and `c` columns becomes a matrix with `c` rows and `r` columns.
+- The element at `(i, j)` in the result is the element at `(j, i)` in the input.
+- The result rows are independent slices; the original input is not mutated.
+- Transposing twice returns a matrix with the original shape and the original values, element-for-element.
 
-Every operation returns a fresh matrix whose rows are independent slices. The contract is verified behaviorally, not by inspecting internals. A test mutates a result cell and then re-reads the corresponding input cell: the input cell is unchanged. A test mutates a result cell in one row and then re-reads a different result row: the other row is unchanged. A test mutates an input cell and then re-reads a previously returned result: the result is unchanged. The behavioral test pins independence without depending on any particular memory layout, reflection trick, or pointer-identity expression.
+#### Independent results, never aliases
 
-### 1×1, row vector, column vector, and mixed-sign or decimal values
+- Every operation returns a fresh matrix whose rows are independent slices.
+- The contract is verified behaviorally, not by inspecting internals.
+- A test mutates a result cell and then re-reads the corresponding input cell: the input cell is unchanged.
+- A test mutates a result cell in one row and then re-reads a different result row: the other row is unchanged.
+- A test mutates an input cell and then re-reads a previously returned result: the result is unchanged.
+- The behavioral test pins independence without depending on any particular memory layout, reflection trick, or pointer-identity expression.
 
-A 1×1 matrix is a single number; it transposes to itself and adds or multiplies with any other 1×1. A row vector (1×N) transposes to a column vector (N×1); the two have different shapes. A column vector (N×1) transposes to a row vector (1×N); the two have different shapes. Negative and decimal `float64` values are valid inputs and outputs. Tests must include negative values, decimals, and zeros in both inputs and expected results.
+#### 1×1, row vector, column vector, and mixed-sign or decimal values
 
-### Floating-point tolerance vs exact dimensions
+- A 1×1 matrix is a single number; it transposes to itself and adds or multiplies with any other 1×1.
+- A row vector (1×N) transposes to a column vector (N×1); the two have different shapes.
+- A column vector (N×1) transposes to a row vector (1×N); the two have different shapes.
+- Negative and decimal `float64` values are valid inputs and outputs.
+- Tests must include negative values, decimals, and zeros in both inputs and expected results.
 
-Tests assert dimensions with exact equality and values with a fixed tolerance. The tolerance is a single number pinned by the project (for example an absolute tolerance appropriate for the operations). The tolerance is applied to every expected value, including negative, decimal, zero, and very-large or very-small results.
+#### Floating-point tolerance vs exact dimensions
+
+- Tests assert dimensions with exact equality and values with a fixed tolerance.
+- The tolerance is a single number pinned by the project (for example an absolute tolerance appropriate for the operations).
+- The tolerance is applied to every expected value, including negative, decimal, zero, and very-large or very-small results.
 
 ## 7. Learning Objective
 
@@ -101,50 +145,57 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - Two `[][]float64` matrices for add and multiply. Each input is a slice of rows, each row a slice of columns. All rows in a single input must have the same length for the input to be valid.
 - One `[][]float64` matrix for transpose. Same validity rule as above.
 - Floating-point values may be negative, zero, positive, decimal, integer-valued, very large, or very small.
 
-### Outputs
+#### Outputs
 
 - A fresh `[][]float64` matrix. Result rows are independent slices and are not aliased to any input row or to each other.
 - An `error`. A successful operation returns a `nil` error. An invalid input returns a contextual error that names the offending operand, the row index (for ragged inputs), and the compared shapes.
 
-### Example text-only success runs
+#### Example text-only success runs
 
 Input A:
+
 ```
 1 2
 3 4
 ```
 
 Input B:
+
 ```
 5 6
 7 8
 ```
 
 Add result:
+
 ```
  6  8
 10 12
 ```
 
 Multiply result (A × B):
+
 ```
 19 22
 43 50
 ```
 
 Transpose of A:
+
 ```
 1 3
 2 4
 ```
 
-### Example text-only error runs
+#### Example text-only error runs
 
 ```
 Add: error: empty matrix: left operand has 0 rows.
@@ -211,9 +262,11 @@ Transpose: error: ragged matrix: row 0 has length 3, row 1 has length 4.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests use in-memory matrices and assert dimensions exactly and values within the project's pinned tolerance.
 
-### Shape validation
+#### Shape validation
 
 - Add accepts two matrices of the same shape.
 - Add rejects a left operand that is empty (zero rows) with an error naming the operand and identifying "empty matrix".
@@ -233,7 +286,7 @@ Each case is described in natural language. Tests use in-memory matrices and ass
 - Transpose rejects a matrix that is empty (zero rows or all-zero-column rows) with an error naming the operand.
 - Transpose rejects a matrix that is ragged with an error naming the offending row index and length.
 
-### Value correctness
+#### Value correctness
 
 - Add produces the element-wise sum within tolerance.
 - Multiply produces the dot-product result within tolerance, for at least one non-trivial pair (for example 2×3 times 3×2).
@@ -242,14 +295,14 @@ Each case is described in natural language. Tests use in-memory matrices and ass
 - Multiply is consistent with add: A × (B + C) equals A × B + A × C within tolerance, for matrices where the shapes allow.
 - Multiply is not commutative in general: A × B does not necessarily equal B × A, and the test pins this with concrete matrices.
 
-### Identity and zero matrices
+#### Identity and zero matrices
 
 - Multiplying an N×N matrix by the N×N identity matrix returns the original within tolerance.
 - Multiplying the N×N identity matrix by an N×N matrix returns the original within tolerance.
 - Multiplying a zero matrix of compatible shape by another matrix returns a zero matrix of the resulting shape within tolerance.
 - Adding a zero matrix of the same shape to another matrix returns that matrix within tolerance.
 
-### 1×1, row vector, column vector
+#### 1×1, row vector, column vector
 
 - A 1×1 matrix adds with another 1×1 to produce a 1×1 result within tolerance.
 - A 1×1 matrix multiplies with another 1×1 to produce a 1×1 result within tolerance.
@@ -257,7 +310,7 @@ Each case is described in natural language. Tests use in-memory matrices and ass
 - Transpose of a row vector (1×N) is a column vector (N×1).
 - Transpose of a column vector (N×1) is a row vector (1×N).
 
-### Negative, decimal, zero, very large, very small
+#### Negative, decimal, zero, very large, very small
 
 - Add handles negative values correctly within tolerance.
 - Multiply handles negative values correctly within tolerance.
@@ -267,26 +320,26 @@ Each case is described in natural language. Tests use in-memory matrices and ass
 - Operations handle very large values correctly within tolerance.
 - Operations handle very small (close to zero) values correctly within tolerance.
 
-### Transpose twice
+#### Transpose twice
 
 - Transpose twice returns a matrix with the original shape.
 - Transpose twice returns the original values, element-for-element, within tolerance.
 
-### Non-mutation
+#### Non-mutation
 
 - After add, the inputs are unchanged (lengths and values).
 - After multiply, the inputs are unchanged.
 - After transpose, the input is unchanged.
 - Mutating a result row's element does not change the corresponding input row's element.
 
-### Row-independence checks (behavioral)
+#### Row-independence checks (behavioral)
 
 - Mutate a result cell at position `(i, j)`. Re-read the corresponding input cell at position `(i, j)`. The input cell is unchanged. Run this for both add and multiply with non-trivial inputs and for transpose with a non-square input.
 - Mutate a result cell in one result row. Re-read a different result row from the same operation. The other row is unchanged.
 - Mutate an input cell at position `(i, j)`. Re-read a previously returned result cell at the corresponding position. The result cell is unchanged.
 - Run the same behavioral checks for multiply and transpose.
 
-### Process
+#### Process
 
 - A test runs the driver against a small fixture and confirms the printed output matches the expected text-only form.
 - A test runs the driver against invalid input and confirms the error message names the offending operand and the row index (when applicable).
@@ -333,22 +386,40 @@ Each case is described in natural language. Tests use in-memory matrices and ass
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- Empty and ragged matrices are rejected with a contextual error that names the offending operand and (for ragged inputs) the row index. "Empty matrix" covers zero rows, every row having zero columns, and zero rows with every row having zero columns. "Ragged matrix" covers rows of differing positive lengths and rows mixing zero and non-zero lengths.
-- Shape mismatches in add and multiply are rejected before any element is read, with errors that name the compared shapes.
-- Result rows are independent of input rows and of each other. Behavioral independence tests confirm it: mutating a result cell does not change an input cell, mutating an input cell does not change a previously returned result cell, and mutating one result row does not change another result row.
-- 1×1, row vector, column vector, identity, zero, negative, decimal, very large, and very small inputs produce correct outputs within the pinned tolerance.
-- Transpose twice returns the original shape and values within tolerance.
-- Tests assert dimensions exactly and values within the pinned tolerance.
-- The package never panics on invalid input. Every invalid path is an `error` return.
-- The package documentation states the shape rules, the empty-matrix rejection rule (zero rows, every row zero columns, both), the ragged-matrix rejection rule, the row-independence rule, and the tolerance rule.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] Empty and ragged matrices are rejected with a contextual error that names the offending operand and (for ragged inputs) the row index. "Empty matrix" covers zero rows, every row having zero columns, and zero rows with every row having zero columns. "Ragged matrix" covers rows of differing positive lengths and rows mixing zero and non-zero lengths.
+- [ ] Shape mismatches in add and multiply are rejected before any element is read, with errors that name the compared shapes.
+- [ ] Result rows are independent of input rows and of each other. Behavioral independence tests confirm it: mutating a result cell does not change an input cell, mutating an input cell does not change a previously returned result cell, and mutating one result row does not change another result row.
+- [ ] 1×1, row vector, column vector, identity, zero, negative, decimal, very large, and very small inputs produce correct outputs within the pinned tolerance.
+- [ ] Transpose twice returns the original shape and values within tolerance.
+- [ ] Tests assert dimensions exactly and values within the pinned tolerance.
+- [ ] The package never panics on invalid input. Every invalid path is an `error` return.
+- [ ] The package documentation states the shape rules, the empty-matrix rejection rule (zero rows, every row zero columns, both), the ragged-matrix rejection rule, the row-independence rule, and the tolerance rule.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Scalar multiply.** Add a scalar-multiply operation that multiplies every element of a matrix by a `float64`. The result has the same shape. Negative, decimal, zero, very large, and very small scalars work. Result rows are independent slices. No panic on empty or ragged inputs. Do not add matrix-by-scalar and scalar-by-matrix as separate operations; one operation with the scalar on the right is enough.
-- **Frobenius norm.** Add a function that returns the square root of the sum of squares of every element of a matrix as a `float64`. The function returns an error for empty or ragged inputs. Tests use the tolerance rule. Do not add other norms (1-norm, infinity-norm) and do not change the existing operations.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 025 — File Duplicate Finder](../../02-data-structures/025_file_duplicate_finder/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [A Tour of Go: slices](https://go.dev/tour/moretypes/7).
+
+### Project-specific learning focus
+
+- **Learn now:** rectangular-shape validation, independent row storage, matrix dimension rules, floating-point tolerances, and useful algebraic invariants.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

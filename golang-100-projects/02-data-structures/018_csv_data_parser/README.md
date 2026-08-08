@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project **018** — `018_csv_data_parser`. The directory name and number must match exactly. This project reads a small CSV file and produces a deterministic statistical report.
+- Project **018** — `018_csv_data_parser`.
+- The directory name and number must match exactly.
+- This project reads a small CSV file and produces a deterministic statistical report.
 
 ## 2. Project Idea
 
@@ -14,11 +16,18 @@ Malformed rows — wrong header, wrong field count, empty trimmed category, non-
 
 ## 3. Why This Project Now?
 
-Projects 016 and 017 introduced structured collections and on-disk JSON. Project 018 introduces a different input format: a streaming, tabular, comma-separated format produced by tools that are not Go. The CSV format is deceptively simple — commas inside quoted fields, escaped quotes, line endings — and the discipline of using `encoding/csv` instead of `strings.Split` is exactly the discipline this project introduces.
+- Projects 016 and 017 introduced structured collections and on-disk JSON.
+- Project 018 introduces a different input format: a streaming, tabular, comma-separated format produced by tools that are not Go.
+- The CSV format is deceptively simple — commas inside quoted fields, escaped quotes, line endings — and the discipline of using `encoding/csv` instead of `strings.Split` is exactly the discipline this project introduces.
 
-The project also introduces deterministic reporting. Two runs against the same input must produce identical output, including the order of category rows. Without an explicit ordering rule, the output depends on Go's map iteration order and is not reproducible. The README pins lexicographic order on categories, which is the simplest rule that produces a stable report.
+- The project also introduces deterministic reporting.
+- Two runs against the same input must produce identical output, including the order of category rows.
+- Without an explicit ordering rule, the output depends on Go's map iteration order and is not reproducible.
+- The README pins lexicographic order on categories, which is the simplest rule that produces a stable report.
 
-Finally, the project establishes a clear malformed-input policy. The program either produces a complete report or reports an error; it does not produce a partial report and pretend the run succeeded. That policy is the foundation that the log analyzer in project 021 builds on.
+- Finally, the project establishes a clear malformed-input policy.
+- The program either produces a complete report or reports an error; it does not produce a partial report and pretend the run succeeded.
+- That policy is the foundation that the log analyzer in project 021 builds on.
 
 ## 4. Prerequisites
 
@@ -40,11 +49,13 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Why use `encoding/csv` instead of `strings.Split`
+### Concepts
+
+#### Why use `encoding/csv` instead of `strings.Split`
 
 A CSV field can contain a comma if it is quoted. `"a, b", 1` is a two-field row, not a three-field row. Hand-splitting on commas will treat `"a, b"` as the start of a quoted region and produce wrong results; it also does not handle escaped quotes (`""` inside a quoted field). `encoding/csv` handles both correctly. The discipline of the project is: never hand-split CSV; always go through `encoding/csv`.
 
-### A pinned schema
+#### A pinned schema
 
 The schema is small enough to remember and rich enough to support useful statistics:
 
@@ -53,19 +64,19 @@ The schema is small enough to remember and rich enough to support useful statist
 - The first field is the category. The category is normalized by trimming leading and trailing Unicode whitespace. The trimmed value must be non-empty. Internal spaces are preserved. The normalized category is the key under which per-category aggregates are stored and is the value emitted in the report.
 - The second field is the value. It must parse to a finite `float64`. NaN and infinities are rejected; non-numeric text is rejected.
 
-### Streaming over buffering
+#### Streaming over buffering
 
 The CSV reader streams records. The program reads one record at a time and updates aggregate state (count, sum, per-category count, per-category sum). It never builds a slice of every row. The benefit is that the program handles a large generated input without holding it in memory; the verification case in section 14 uses a large generated input through an `io.Reader` to confirm correctness across many rows.
 
-### Deterministic category ordering
+#### Deterministic category ordering
 
 The per-category rows in the report are sorted lexicographically by the normalized category. Two runs against the same input produce the same output. The discipline is: never iterate a map directly when producing deterministic output; always sort the keys first.
 
-### Malformed-input policy
+#### Malformed-input policy
 
 The program either produces a complete report and exits with code zero, or reports a single error identifying the offending CSV record and exits with a non-zero code. It does not produce a partial report. The error message includes enough information for the user to locate the problem: the record number (1-based, where the header is record 1) and, when a field can be identified, the field name (`category` or `value`). When the parser cannot identify a field — for example, on a quoting error that has no field context — the program preserves and wraps the underlying `encoding/csv` error.
 
-### Numeric syntax and tolerance
+#### Numeric syntax and tolerance
 
 The value field accepts every finite syntax that `strconv.ParseFloat` accepts at the program's selected bit size, including exponent notation. NaN and infinities are rejected explicitly because `strconv.ParseFloat` returns them as valid `float64` values.
 
@@ -101,15 +112,17 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A CSV file with a header `category,value` and zero or more data rows. Categories can contain spaces, punctuation, or commas if quoted. Values are decimal numbers in any finite syntax accepted by `strconv.ParseFloat`, including exponent notation.
 
-### Outputs
+#### Outputs
 
 - A deterministic report containing the grand statistics and one row per normalized category. The exact layout is the learner's choice; the test pins the wording of the header and the order of the rows.
 
-### Example text-only success run
+#### Example text-only success run
 
 ```
 $ csvreport input.csv
@@ -121,7 +134,7 @@ Category report:
   food, count=3, sum=15, average=5
 ```
 
-### Example text-only failure runs
+#### Example text-only failure runs
 
 ```
 $ csvreport empty.csv
@@ -191,9 +204,11 @@ When the parser cannot identify a field — for example, on an unterminated quot
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. The parser is driven through an `io.Reader`; the file system is only used for the program's command-line integration test. No test depends on real time, sleeps, or one-record-per-second pacing.
 
-### Header
+#### Header
 
 - An input whose first record is `category,value` is accepted.
 - An input whose first record is `Category,Value` (different case) is rejected with a clear error.
@@ -203,7 +218,7 @@ Each case is described in natural language. The parser is driven through an `io.
 - An input whose first record is `category,category` (duplicate field names) is rejected.
 - An empty input (zero records) is rejected with a clear error that names the missing header.
 
-### Data rows
+#### Data rows
 
 - An input with one data row produces a report with one category, count `1`, sum equal to the row's value (within the documented tolerance), average equal to that value.
 - An input with five rows across two categories produces the correct grand count, grand sum (within tolerance), grand average (within tolerance), and correct per-category counts, sums, and averages.
@@ -218,25 +233,25 @@ Each case is described in natural language. The parser is driven through an `io.
 - A row with the literal text `Inf` or `+Inf` or `-Inf` is rejected with a clear "non-finite value" error.
 - A row whose value field uses exponent notation (for example, `1e3`) is accepted.
 
-### Order
+#### Order
 
 - A test runs the parser against an input whose categories appear in a non-alphabetic order. The report's category rows are sorted lexicographically by normalized category. Two runs of the same test produce byte-identical output.
 
-### Edge cases
+#### Edge cases
 
 - A header-only input produces a report with grand count `0`, grand sum `0`, grand average `0`, and no category rows. The exit code is zero.
 - An empty input is rejected with a clear error and a non-zero exit code.
 
-### Large input and streaming boundary
+#### Large input and streaming boundary
 
 - A test constructs an input of 100,000 rows, each with a distinct or shared category. The test drives the parser through a custom `io.Reader` that yields the input across multiple `Read` calls (for example, one record per `Read`). The test asserts that the report's grand count is `100,000` and that the grand sum equals the expected sum within the documented tolerance. The test does not rely on `time.Sleep`, wall-clock pacing, or timing.
 
-### Tolerance
+#### Tolerance
 
 - A test asserts counts and order exactly. A test asserts sums and averages within the documented tolerance (small relative or absolute epsilon).
 - A test runs the parser twice against the same input and confirms the two outputs are byte-identical.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary against a temporary file with valid data and confirms the exit code is zero and standard output contains the report.
 - An integration test runs the compiled binary against a temporary file with malformed data and confirms the exit code is non-zero and standard error contains the record number.
@@ -281,18 +296,37 @@ Each case is described in natural language. The parser is driven through an `io.
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- The parser is driven through an `io.Reader`; the program's command-line integration is a thin wrapper that opens the file and prints the report.
-- The report's output ordering is deterministic across runs on the same machine.
-- Counts and order compare exactly; sums and averages compare within the documented tolerance.
-- The package documentation states the schema, the empty-input policy, the header-only policy, the category normalization rule, the numeric syntax policy, the malformed-input policy, and the floating-point tolerance.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] The parser is driven through an `io.Reader`; the program's command-line integration is a thin wrapper that opens the file and prints the report.
+- [ ] The report's output ordering is deterministic across runs on the same machine.
+- [ ] Counts and order compare exactly; sums and averages compare within the documented tolerance.
+- [ ] The package documentation states the schema, the empty-input policy, the header-only policy, the category normalization rule, the numeric syntax policy, the malformed-input policy, and the floating-point tolerance.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Top-N categories.** Accept a flag that limits the report to the top-N categories by sum (with stable tie-breaking by category name). Out-of-top categories are aggregated into a single "other" row whose category name is fixed. Do not add filtering by value range or threshold.
-- **Value range filter.** Accept two flags that restrict the report to rows whose value falls within an inclusive range. Rows outside the range are excluded from the aggregates. Do not add category filters, regex filters, or transforms.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 017 — JSON Todo Persister](../../02-data-structures/017_json_todo_persister/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`encoding/csv`](https://pkg.go.dev/encoding/csv), [`sort`](https://pkg.go.dev/sort).
+- **Standards and concept references:** [RFC 4180: CSV format](https://www.rfc-editor.org/rfc/rfc4180.html).
+
+### Project-specific learning focus
+
+- **Learn now:** streaming records, quoted fields, strict headers, numeric rejection, deterministic aggregation, and spreadsheet-formula injection risks.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

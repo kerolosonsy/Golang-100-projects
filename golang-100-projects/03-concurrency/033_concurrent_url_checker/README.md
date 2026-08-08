@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project 033 — Concurrent URL Checker. Lives in `03-concurrency/033_concurrent_url_checker`.
+- Project 033 — Concurrent URL Checker.
+- Lives in `03-concurrency/033_concurrent_url_checker`.
 
 ## 2. Project Idea
 
@@ -10,35 +11,72 @@ Check a bounded list of URLs concurrently with HTTP HEAD using an injected `http
 
 ## 3. Why This Project Now?
 
-Project 031 gave you fan-out with cancellation, and Project 032 fixed channel ownership at small scale. This project scales the same primitives to real HTTP requests and replaces the manual signals with the `http.Client`. The next project, 034, tightens the same fan-out into a fixed worker pool; this project uses a goroutine-per-URL shape that the worker-pool project will refine. Now that you have cancellation habits, channel ownership, and a result-boundary habit, you can apply them to a real package boundary and watch what the `net/http` package does to the design.
+- Project 031 gave you fan-out with cancellation, and Project 032 fixed channel ownership at small scale.
+- This project scales the same primitives to real HTTP requests and replaces the manual signals with the `http.Client`.
+- The next project, 034, tightens the same fan-out into a fixed worker pool; this project uses a goroutine-per-URL shape that the worker-pool project will refine.
+- Now that you have cancellation habits, channel ownership, and a result-boundary habit, you can apply them to a real package boundary and watch what the `net/http` package does to the design.
 
 ## 4. Prerequisites
 
-The curriculum map's stated dependencies for this project: Projects 031 and 032. You must be comfortable launching goroutines, fanning out with per-item indexed ownership, channel ownership and close rules for transcript-style channels, and `context` cancellation. Familiarity with the `net/http` and `httptest` packages is required.
+- The curriculum map's stated dependencies for this project: Projects 031 and 032.
+- You must be comfortable launching goroutines, fanning out with per-item indexed ownership, channel ownership and close rules for transcript-style channels, and `context` cancellation.
+- Familiarity with the `net/http` and `httptest` packages is required.
 
 ## 5. What You Must Know Before Starting
 
-That `http.Client` is the unit of configuration for timeouts, transport, and proxy policy. That `http.Client.CheckRedirect`, when set, controls redirect behavior; an unset function falls back to the Go default which follows redirects. That `http.NewRequest` paired with `client.Do` is the entry point for HEAD. That `http.Response.Body` is an `io.ReadCloser` that must be closed in every code path, including non-2xx responses and HEAD responses. That the `httptest` package exposes `httptest.NewServer` and how URLs are composed against it. That `context.WithTimeout` produces a context that cancels at the deadline and exposes `Done`. That `errors.Is` compares wrapped errors against a sentinel. That `url.Parse` validates structure but not reachability, and that an unparseable URL is a per-item error that does not abort the rest. That this project defines a hard input bound of 64 URL entries per call. That this project defines a valid URL as a string that parses as an absolute URL whose scheme is `http` or `https` and whose host is non-empty.
+- That `http.Client` is the unit of configuration for timeouts, transport, and proxy policy.
+- That `http.Client.CheckRedirect`, when set, controls redirect behavior; an unset function falls back to the Go default which follows redirects.
+- That `http.NewRequest` paired with `client.Do` is the entry point for HEAD.
+- That `http.Response.Body` is an `io.ReadCloser` that must be closed in every code path, including non-2xx responses and HEAD responses.
+- That the `httptest` package exposes `httptest.NewServer` and how URLs are composed against it.
+- That `context.WithTimeout` produces a context that cancels at the deadline and exposes `Done`.
+- That `errors.Is` compares wrapped errors against a sentinel.
+- That `url.Parse` validates structure but not reachability, and that an unparseable URL is a per-item error that does not abort the rest.
+- That this project defines a hard input bound of 64 URL entries per call.
+- That this project defines a valid URL as a string that parses as an absolute URL whose scheme is `http` or `https` and whose host is non-empty.
 
 ## 6. Explanation of New Concepts
 
-A "concurrent URL checker" walks a list and returns, for each entry, a small categorical verdict. Five categories are pinned by this project: reachable for 2xx and 3xx, HTTP error status for 4xx and 5xx, malformed URL for entries that fail URL validation, transport error for failures to connect or read at the transport level, and context cancelled for entries cancelled through the supplied request context.
+### Concepts
 
-Input bound. The checker accepts at most 64 URL entries per call. Inputs longer than 64 entries are rejected at the call-level preflight step with no goroutines launched. Empty input is valid and short-circuits to an empty slice with no goroutines launched. The bound is the input ceiling that the worker-pool project will replace with a fixed worker count.
+- A "concurrent URL checker" walks a list and returns, for each entry, a small categorical verdict.
+- Five categories are pinned by this project: reachable for 2xx and 3xx, HTTP error status for 4xx and 5xx, malformed URL for entries that fail URL validation, transport error for failures to connect or read at the transport level, and context cancelled for entries cancelled through the supplied request context.
 
-Valid URL. A valid URL is a string that parses as an absolute URL whose scheme is `http` or `https` and whose host is non-empty. Relative references, other schemes (for example `mailto` or `ftp`), missing-host URLs, and URLs that fail parsing are reported at their input positions with the malformed status, and the valid entries still run. The validation rule is per-item and synchronous so the result slice is in input order without surprises.
+- Input bound.
+- The checker accepts at most 64 URL entries per call.
+- Inputs longer than 64 entries are rejected at the call-level preflight step with no goroutines launched.
+- Empty input is valid and short-circuits to an empty slice with no goroutines launched.
+- The bound is the input ceiling that the worker-pool project will replace with a fixed worker count.
 
-Redirect policy. The checker does not automatically follow redirects. The injected or derived client uses Go's standard no-follow behavior that returns the first redirect response to the caller without turning that response into a redirect error. The first 3xx response is classified as reachable, and its body is closed. Tests pin this policy with the standard `http.ErrUseLastResponse` sentinel rather than an arbitrary redirect error, because an arbitrary error would change the outcome into a client error instead of a reachable 3xx response.
+- Valid URL.
+- A valid URL is a string that parses as an absolute URL whose scheme is `http` or `https` and whose host is non-empty.
+- Relative references, other schemes (for example `mailto` or `ftp`), missing-host URLs, and URLs that fail parsing are reported at their input positions with the malformed status, and the valid entries still run.
+- The validation rule is per-item and synchronous so the result slice is in input order without surprises.
 
-Caller-context cancellation versus transport timeout. Cancellation through the supplied request context — `ctx.Done()` fires, or `ctx.Err()` reports cancelled or deadline exceeded — is reported as cancelled. A client-level timeout or any other transport-level timeout that fires while the caller's context is still active is reported as transport error, not as cancelled. The distinction is observable: the test asserts on the result category together with the request context's `Err()`.
+- Redirect policy.
+- The checker does not automatically follow redirects.
+- The injected or derived client uses Go's standard no-follow behavior that returns the first redirect response to the caller without turning that response into a redirect error.
+- The first 3xx response is classified as reachable, and its body is closed.
+- Tests pin this policy with the standard `http.ErrUseLastResponse` sentinel rather than an arbitrary redirect error, because an arbitrary error would change the outcome into a client error instead of a reachable 3xx response.
 
-Because the result slice is indexed by input position and each entry is written by exactly one goroutine, there is no shared mutable cell. Each goroutine writes to its own slot under indexed ownership, which is what makes the slice race-free even without locks.
+- Caller-context cancellation versus transport timeout.
+- Cancellation through the supplied request context — `ctx.Done()` fires, or `ctx.Err()` reports cancelled or deadline exceeded — is reported as cancelled.
+- A client-level timeout or any other transport-level timeout that fires while the caller's context is still active is reported as transport error, not as cancelled.
+- The distinction is observable: the test asserts on the result category together with the request context's `Err()`.
 
-The scope boundary between this project and the worker-pool project is that 033 uses a goroutine per URL, which is fine for the bounded input size that this project assumes. The worker-pool project trades the goroutine-per-URL shape for a fixed number of workers when the input is unbounded.
+- Because the result slice is indexed by input position and each entry is written by exactly one goroutine, there is no shared mutable cell.
+- Each goroutine writes to its own slot under indexed ownership, which is what makes the slice race-free even without locks.
+
+- The scope boundary between this project and the worker-pool project is that 033 uses a goroutine per URL, which is fine for the bounded input size that this project assumes.
+- The worker-pool project trades the goroutine-per-URL shape for a fixed number of workers when the input is unbounded.
 
 ## 7. Learning Objective
 
-After this project you can configure an injected `http.Client` with explicit timeouts and a no-follow redirect policy, and you can verify that response bodies are closed on every code path. You can apply a fixed categorical health policy to a fan-out of HTTP requests, including the cancel-versus-transport-timeout distinction. You can pre-validate the input without preventing the valid entries from running, and you can enforce the 64-entry input bound. You can decide between "goroutine per work item" and "fixed worker pool" and state when each is appropriate. You can prove overlap among requests without using `time.Sleep`.
+- After this project you can configure an injected `http.Client` with explicit timeouts and a no-follow redirect policy, and you can verify that response bodies are closed on every code path.
+- You can apply a fixed categorical health policy to a fan-out of HTTP requests, including the cancel-versus-transport-timeout distinction.
+- You can pre-validate the input without preventing the valid entries from running, and you can enforce the 64-entry input bound.
+- You can decide between "goroutine per work item" and "fixed worker pool" and state when each is appropriate.
+- You can prove overlap among requests without using `time.Sleep`.
 
 ## 8. Functional Requirements
 
@@ -56,27 +94,59 @@ After this project you can configure an injected `http.Client` with explicit tim
 
 ## 9. Inputs and Outputs
 
-**Input** is a slice of URL strings and a context. The slice length must be at most 64; longer slices are rejected at preflight.
+### Interface Contract
 
-**Output** is a slice of length equal to the input. Each entry carries the input index, the URL string as supplied, and one of five pinned statuses: reachable, HTTP error, malformed URL, transport error, or cancelled. The slice is in input order.
+- **Input** is a slice of URL strings and a context.
+- The slice length must be at most 64; longer slices are rejected at preflight.
 
-**Behaviour example (text only).** With input `["http://a", ":/broken", "http://b", "http://a"]` of length four, the result slice has four entries in that order. The middle entry is malformed URL. The other three entries are reachable, HTTP error, or transport error depending on what the test server returned, each at the correct position.
+- **Output** is a slice of length equal to the input.
+- Each entry carries the input index, the URL string as supplied, and one of five pinned statuses: reachable, HTTP error, malformed URL, transport error, or cancelled.
+- The slice is in input order.
 
-**Behaviour example (text only).** With input `[]`, the result slice is empty and no goroutines are launched.
+- **Behaviour example (text only).** With input `["http://a", ":/broken", "http://b", "http://a"]` of length four, the result slice has four entries in that order.
+- The middle entry is malformed URL.
+- The other three entries are reachable, HTTP error, or transport error depending on what the test server returned, each at the correct position.
 
-**Behaviour example (text only).** With input of length 65 — exceeding the input bound — the call is rejected at preflight, no goroutines are launched, and no requests are made.
+- **Behaviour example (text only).** With input `[]`, the result slice is empty and no goroutines are launched.
+
+- **Behaviour example (text only).** With input of length 65 — exceeding the input bound — the call is rejected at preflight, no goroutines are launched, and no requests are made.
 
 ## 10. Rules and Edge Cases
 
-Hard input bound: a call with more than 64 entries is rejected at preflight with no goroutines launched. Empty input is valid and returns an empty slice with no goroutines launched. Duplicate URLs are independent; their results are at their input positions. Malformed URLs are detected synchronously in preflight and do not prevent valid entries from running. The HTTP method is HEAD; the body is closed in every code path. A response status in the 4xx or 5xx range is an HTTP error status, not a transport error. A connection refused, DNS failure, or read error is a transport error. Context cancellation that arrives before a request begins produces cancelled. Context cancellation that arrives while a request is in flight unblocks the in-flight request and produces cancelled for that entry. A client-level or transport-level timeout while the caller's context is still active is reported as transport error, not as cancelled. The first 3xx response is reachable under the no-follow redirect policy. Two entries that fail in different categories are reported in their respective categories; categories are never merged.
+- Hard input bound: a call with more than 64 entries is rejected at preflight with no goroutines launched.
+- Empty input is valid and returns an empty slice with no goroutines launched.
+- Duplicate URLs are independent; their results are at their input positions.
+- Malformed URLs are detected synchronously in preflight and do not prevent valid entries from running.
+- The HTTP method is HEAD; the body is closed in every code path.
+- A response status in the 4xx or 5xx range is an HTTP error status, not a transport error.
+- A connection refused, DNS failure, or read error is a transport error.
+- Context cancellation that arrives before a request begins produces cancelled.
+- Context cancellation that arrives while a request is in flight unblocks the in-flight request and produces cancelled for that entry.
+- A client-level or transport-level timeout while the caller's context is still active is reported as transport error, not as cancelled.
+- The first 3xx response is reachable under the no-follow redirect policy.
+- Two entries that fail in different categories are reported in their respective categories; categories are never merged.
 
 ## 11. Project Constraints
 
-Standard library only. Tests use `httptest.Server` only; no public internet. The injected `http.Client` is the only client configuration the checker depends on; no global default client and no default redirect policy. Every response body is closed, including for HEAD and for any reachable 3xx response and for error status. The result slice is race-free; each entry is written by exactly one goroutine under indexed ownership. No goroutine leak on the cancellation path. The package context is propagated as a parameter into the request and used to cancel the round-trip. The input size is bounded by the caller at 64 entries per call; the worker-pool project assumes a larger or unbounded input. The race detector must report nothing under `-race`.
+- Standard library only.
+- Tests use `httptest.Server` only; no public internet.
+- The injected `http.Client` is the only client configuration the checker depends on; no global default client and no default redirect policy.
+- Every response body is closed, including for HEAD and for any reachable 3xx response and for error status.
+- The result slice is race-free; each entry is written by exactly one goroutine under indexed ownership.
+- No goroutine leak on the cancellation path.
+- The package context is propagated as a parameter into the request and used to cancel the round-trip.
+- The input size is bounded by the caller at 64 entries per call; the worker-pool project assumes a larger or unbounded input.
+- The race detector must report nothing under `-race`.
 
 ## 12. Design Questions Before Coding
 
-How is the categorical status represented so that all five cases are distinct at the type level? How does the checker encode a malformed URL versus a transport-level failure versus an HTTP error status, when the runtime cannot tell them apart from a single error string alone? Where does the injected `http.Client` live, and how does the test substitute its own client and own `CheckRedirect`? How is the result slice race-free when many goroutines each write to their own slot, and what synchronization, if any, is required to coordinate the collector? How does the request context cancellation reach the in-flight HTTP round-trip without being confused with a transport-level timeout? When the test server returns 5xx, what counts as HTTP error rather than transport error? Where does the 64-entry input bound live in the call, and how is the rejection path kept without goroutines?
+- How is the categorical status represented so that all five cases are distinct at the type level?
+- How does the checker encode a malformed URL versus a transport-level failure versus an HTTP error status, when the runtime cannot tell them apart from a single error string alone?
+- Where does the injected `http.Client` live, and how does the test substitute its own client and own `CheckRedirect`?
+- How is the result slice race-free when many goroutines each write to their own slot, and what synchronization, if any, is required to coordinate the collector?
+- How does the request context cancellation reach the in-flight HTTP round-trip without being confused with a transport-level timeout?
+- When the test server returns 5xx, what counts as HTTP error rather than transport error?
+- Where does the 64-entry input bound live in the call, and how is the rejection path kept without goroutines?
 
 ## 13. Implementation Milestones
 
@@ -94,24 +164,91 @@ How is the categorical status represented so that all five cases are distinct at
 
 ## 14. Verification Cases the Learner Must Write
 
-Empty input returns an empty slice and launches no goroutines. Input of length 65 is rejected at preflight with no goroutines launched. All-reachable input against `httptest.NewServer` returns one reachable entry per URL. Mixed-status input returns reachable entries for 2xx and reachable entries for an un-followed 3xx, and HTTP error entries for 4xx and 5xx, in input order. Malformed URL entries — including relative references, non-http(s) schemes, and missing-host URLs — are reported as malformed URL at their positions while the rest of the slice still runs. A test server that closes the connection mid-HEAD returns transport error at the affected input position. A test with a controllable caller-context deadline that fires before some requests complete returns cancelled at the affected positions and reachable at the others. A test with the caller's context still active but the client timing out returns transport error at the affected positions, not cancelled. Duplicate URLs in the input produce duplicate result entries at their respective positions. The no-follow redirect policy uses the standard sentinel that returns the first response without a redirect error; the first 3xx is reported as reachable and its body is closed. Running under `-race` produces no race report. The handler is registered with synchronization channels or barriers that prove the requests overlapped, without `time.Sleep`. The injected client is honoured: a custom client configuration propagates to the requests.
+### Required Cases
+
+- Empty input returns an empty slice and launches no goroutines.
+- Input of length 65 is rejected at preflight with no goroutines launched.
+- All-reachable input against `httptest.NewServer` returns one reachable entry per URL.
+- Mixed-status input returns reachable entries for 2xx and reachable entries for an un-followed 3xx, and HTTP error entries for 4xx and 5xx, in input order.
+- Malformed URL entries — including relative references, non-http(s) schemes, and missing-host URLs — are reported as malformed URL at their positions while the rest of the slice still runs.
+- A test server that closes the connection mid-HEAD returns transport error at the affected input position.
+- A test with a controllable caller-context deadline that fires before some requests complete returns cancelled at the affected positions and reachable at the others.
+- A test with the caller's context still active but the client timing out returns transport error at the affected positions, not cancelled.
+- Duplicate URLs in the input produce duplicate result entries at their respective positions.
+- The no-follow redirect policy uses the standard sentinel that returns the first response without a redirect error; the first 3xx is reported as reachable and its body is closed.
+- Running under `-race` produces no race report.
+- The handler is registered with synchronization channels or barriers that prove the requests overlapped, without `time.Sleep`.
+- The injected client is honoured: a custom client configuration propagates to the requests.
 
 ## 15. Common Mistakes to Watch For
 
-Forgetting to close the response body on non-2xx status and on the un-followed 3xx. The `defer` only runs at the function exit, and an early return on a "non-2xx" branch can leak. Confusing HEAD with GET; GET forces a body to be drained, which this project does not use. Treating 4xx as transport error rather than as HTTP error status. Letting two goroutines write to the same result slot under "first wins"; indexed ownership is mandatory. Classifying a transport-level timeout as cancelled because the request context's `Err()` happened to read as a deadline; the category is caller-context cancellation only, while the caller's `Err()` remains nil. Letting the test client follow redirects by relying on the Go default redirect policy. The project pins a no-follow policy for test and production clients; the first 3xx is reachable. Treating the input as unbounded or as larger than 64 entries. Using `http.DefaultClient` in production, which has no timeout and uses the default redirect policy. Failing to register a `CheckRedirect` whose behaviour the test pins.
+- Forgetting to close the response body on non-2xx status and on the un-followed 3xx.
+- The `defer` only runs at the function exit, and an early return on a "non-2xx" branch can leak.
+- Confusing HEAD with GET; GET forces a body to be drained, which this project does not use.
+- Treating 4xx as transport error rather than as HTTP error status.
+- Letting two goroutines write to the same result slot under "first wins"; indexed ownership is mandatory.
+- Classifying a transport-level timeout as cancelled because the request context's `Err()` happened to read as a deadline; the category is caller-context cancellation only, while the caller's `Err()` remains nil.
+- Letting the test client follow redirects by relying on the Go default redirect policy.
+- The project pins a no-follow policy for test and production clients; the first 3xx is reachable.
+- Treating the input as unbounded or as larger than 64 entries.
+- Using `http.DefaultClient` in production, which has no timeout and uses the default redirect policy.
+- Failing to register a `CheckRedirect` whose behaviour the test pins.
 
 ## 16. Topics and References for Study
 
-The `net/http` package documentation, especially `Client`, `Request`, `Response`, `CheckRedirect`, and `Transport`. The `httptest` package documentation, especially `httptest.NewServer`, `httptest.NewRecorder`, and URL composition against the test server. The `context` package documentation, especially `context.WithTimeout`, `context.WithCancel`, and how requests carry a context. The Effective Go notes on HTTP clients. The blog post on the complete guide to `net/http` timeouts for the distinction between transport, request, and response-header timeouts, and the relationship between client timeout and the request context.
+- The `net/http` package documentation, especially `Client`, `Request`, `Response`, `CheckRedirect`, and `Transport`.
+- The `httptest` package documentation, especially `httptest.NewServer`, `httptest.NewRecorder`, and URL composition against the test server.
+- The `context` package documentation, especially `context.WithTimeout`, `context.WithCancel`, and how requests carry a context.
+- The Effective Go notes on HTTP clients.
+- The blog post on the complete guide to `net/http` timeouts for the distinction between transport, request, and response-header timeouts, and the relationship between client timeout and the request context.
 
 ## 17. Self-Assessment Questions
 
-What is the difference between HEAD and GET in this project, and which paths is it easy to forget to close a body on? What is the difference between transport error and HTTP error status, and how does the test distinguish them? What is the difference between caller-context cancellation and a transport-level timeout, and how does the test prove the distinction? Why is malformed URL a per-item preflight check rather than a runtime check, and why does it not block the rest of the slice? How does the no-follow redirect policy affect the classification of a 3xx response, and what proves the policy is in place? How does the result slice stay race-free under many concurrent writes? Why is `time.Sleep` disallowed in the overlap proof, and what primitive is used instead? When the caller context is cancelled mid-request, what does the cancelled status mean for an entry whose handler already produced 200? What is the role of the 64-entry input bound, and where in the call does the preflight reject larger inputs? Why is the worker-pool project the right next step, rather than reusing the goroutine-per-URL shape here?
+1. What is the difference between HEAD and GET in this project, and which paths is it easy to forget to close a body on?
+2. What is the difference between transport error and HTTP error status, and how does the test distinguish them?
+3. What is the difference between caller-context cancellation and a transport-level timeout, and how does the test prove the distinction?
+4. Why is malformed URL a per-item preflight check rather than a runtime check, and why does it not block the rest of the slice?
+5. How does the no-follow redirect policy affect the classification of a 3xx response, and what proves the policy is in place?
+6. How does the result slice stay race-free under many concurrent writes?
+7. Why is `time.Sleep` disallowed in the overlap proof, and what primitive is used instead?
+8. When the caller context is cancelled mid-request, what does the cancelled status mean for an entry whose handler already produced 200?
+9. What is the role of the 64-entry input bound, and where in the call does the preflight reject larger inputs?
+10. Why is the worker-pool project the right next step, rather than reusing the goroutine-per-URL shape here?
 
 ## 18. Definition of Completion
 
-Every Functional Requirement is implemented and exercised by a passing test. The Behaviour Examples in this README hold. Tests run with `-race` produce no race report. No public internet is touched in any test. The result slice is always exactly as long as the input and always in input order. The injected `http.Client` is the only client configuration the checker depends on, and the no-follow redirect policy is pinned by the test. Every code path closes the response body, including for non-2xx HEAD responses and for un-followed 3xx reachable responses. The cancellation path unblocks in-flight requests and reports cancelled at the affected positions; transport-level timeouts on an active caller context are reported as transport error. Empty input returns an empty slice with no goroutines launched. Input above 64 entries is rejected at preflight with no goroutines launched. You can answer every Self-Assessment Question without consulting the README.
+- [ ] Every Functional Requirement is implemented and exercised by a passing test.
+- [ ] The Behaviour Examples in this README hold.
+- [ ] Tests run with `-race` produce no race report.
+- [ ] No public internet is touched in any test.
+- [ ] The result slice is always exactly as long as the input and always in input order.
+- [ ] The injected `http.Client` is the only client configuration the checker depends on, and the no-follow redirect policy is pinned by the test.
+- [ ] Every code path closes the response body, including for non-2xx HEAD responses and for un-followed 3xx reachable responses.
+- [ ] The cancellation path unblocks in-flight requests and reports cancelled at the affected positions; transport-level timeouts on an active caller context are reported as transport error.
+- [ ] Empty input returns an empty slice with no goroutines launched.
+- [ ] Input above 64 entries is rejected at preflight with no goroutines launched.
+- [ ] You can answer every Self-Assessment Question without consulting the README.
 
 ## 19. Optional Extensions
 
-Add a connectivity-type breakdown (TCP, TLS, certificate name mismatch) that the checker surfaces as a sub-category alongside the top-level status, with tests against `httptest.NewTLSServer` and against a deliberately misnamed certificate. Add a per-host concurrent slot limit so a single host with many URLs does not monopolize the fan-out, with a test that proves the slot count never exceeds the limit and that the slots above the limit report transport error or any category the design pins.
+- Add a connectivity-type breakdown (TCP, TLS, certificate name mismatch) that the checker surfaces as a sub-category alongside the top-level status, with tests against `httptest.NewTLSServer` and against a deliberately misnamed certificate.
+- Add a per-host concurrent slot limit so a single host with many URLs does not monopolize the fan-out, with a test that proves the slot count never exceeds the limit and that the slots above the limit report transport error or any category the design pins.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 032 — Ping-Pong Channels](../../03-concurrency/032_ping_pong_channels/README.md#20-prerequisite-based-documentation-guide), [Project 031 — Concurrent Timer](../../03-concurrency/031_concurrent_timer/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`net/http`](https://pkg.go.dev/net/http), [`net/http/httptest`](https://pkg.go.dev/net/http/httptest).
+
+### Project-specific learning focus
+
+- **Learn now:** bounded fan-out, total versus request timeouts, response-body closure, redirect policy, typed transport failures, and local-server tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

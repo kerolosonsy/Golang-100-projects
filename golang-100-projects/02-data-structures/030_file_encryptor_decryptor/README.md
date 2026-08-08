@@ -2,7 +2,15 @@
 
 ## 1. Project Name and Number
 
-Project **030** — `030_file_encryptor_decryptor`. The directory name and number must match exactly. The project encrypts and decrypts bounded-size files with AES-GCM using a caller-supplied raw AES key of exactly 16, 24, or 32 bytes. Passwords are not accepted. Key derivation is not performed. The project uses a small versioned binary container, authenticates the header as associated data, and replaces the destination file only after the full operation succeeds. Decryption validates format, version, and length before opening the AEAD, authenticates before releasing plaintext, and returns a generic authentication failure for wrong key or tampering. Empty files are supported. True large-file chunk framing is outside required scope.
+- Project **030** — `030_file_encryptor_decryptor`.
+- The directory name and number must match exactly.
+- The project encrypts and decrypts bounded-size files with AES-GCM using a caller-supplied raw AES key of exactly 16, 24, or 32 bytes.
+- Passwords are not accepted.
+- Key derivation is not performed.
+- The project uses a small versioned binary container, authenticates the header as associated data, and replaces the destination file only after the full operation succeeds.
+- Decryption validates format, version, and length before opening the AEAD, authenticates before releasing plaintext, and returns a generic authentication failure for wrong key or tampering.
+- Empty files are supported.
+- True large-file chunk framing is outside required scope.
 
 ## 2. Project Idea
 
@@ -16,11 +24,17 @@ The destination file is written through a temporary file in the destination's di
 
 ## 3. Why This Project Now?
 
-Projects 001–029 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, shape-validated matrices, generic zero-value containers, a comparator-driven BST, and a pointer-linked list. None of them used authenticated encryption or worked with binary containers. Project 030 is the project's first encounter with AEAD, binary framing, deterministic randomness injection for testing, and the discipline of writing through a temporary file before replacing the destination.
+- Projects 001–029 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, shape-validated matrices, generic zero-value containers, a comparator-driven BST, and a pointer-linked list.
+- None of them used authenticated encryption or worked with binary containers.
+- Project 030 is the project's first encounter with AEAD, binary framing, deterministic randomness injection for testing, and the discipline of writing through a temporary file before replacing the destination.
 
-The project also forces the learner to be honest about what AES-GCM is and is not. AES-GCM authenticates a complete message. It is not a streaming cipher. Treating it as a stream by encrypting chunks independently breaks the security model. The project pins the AEAD's actual semantics and bounds the input accordingly.
+- The project also forces the learner to be honest about what AES-GCM is and is not.
+- AES-GCM authenticates a complete message.
+- It is not a streaming cipher.
+- Treating it as a stream by encrypting chunks independently breaks the security model.
+- The project pins the AEAD's actual semantics and bounds the input accordingly.
 
-The temporary-file-then-replace discipline reuses the publication pattern from Project 017 — a discipline that the path's later projects (for example, the database-migration and event-driven projects) also rely on.
+- The temporary-file-then-replace discipline reuses the publication pattern from Project 017 — a discipline that the path's later projects (for example, the database-migration and event-driven projects) also rely on.
 
 ## 4. Prerequisites
 
@@ -48,29 +62,31 @@ No prior knowledge of HTTP, databases, or concurrency.
 
 ## 6. Explanation of New Concepts
 
-### AES-GCM as an AEAD, not a stream cipher
+### Concepts
+
+#### AES-GCM as an AEAD, not a stream cipher
 
 The standard library's `cipher.AEAD` interface seals an entire plaintext in one call and opens the entire ciphertext in one call. The interface takes a nonce and an optional associated-data buffer. The encryptor reads the entire bounded input, calls `Seal`, and writes the resulting ciphertext-plus-tag to the destination. The decryptor reads the entire container, calls `Open`, and writes the plaintext to the destination.
 
 The interface is not a streaming interface. A naive approach that reads chunks and seals each chunk independently produces ciphertexts that are not authenticatable as a whole: each chunk's tag authenticates only that chunk, not the others. A correct AEAD-based design either treats the input as one bounded message (the project's choice) or designs a chunking layer that maintains authentication across chunks. The latter is outside required scope.
 
-### Bounded input size
+#### Bounded input size
 
 The project imposes a maximum plaintext size of exactly **8 MiB** (8,388,608 bytes). The maximum is documented in the package, is consistent across encrypt and decrypt, and is small enough that the operation can hold the plaintext in memory and seal it in one AEAD call. The maximum is not a streaming limit; it is a "we read everything, then seal it" limit. The decryptor rejects any container whose declared plaintext length exceeds 8 MiB and any container whose total byte size exceeds 8 MiB plus the fixed documented overhead (magic, version, declared-length, nonce, and tag). True large-file support would require a chunked AEAD framing protocol that maintains authentication across chunks. That protocol is its own design problem and is outside required scope. Substituting a different AEAD construction does not solve the framing problem on its own; the framing is what has to be designed.
 
-### Caller-supplied raw key
+#### Caller-supplied raw key
 
 The caller supplies a raw AES key. The key must be exactly 16, 24, or 32 bytes. The project validates the key length and returns an error for any other length. The project does not accept passwords. The project does not run a key derivation function. The project does not stretch, hash, or transform the key.
 
-### Production nonces from `crypto/rand`
+#### Production nonces from `crypto/rand`
 
 Production nonces come from `crypto/rand`. The nonce length is whatever the AEAD reports as its required nonce size. Nonces are never deliberately reused with the same key. Reusing a nonce with the same key catastrophically breaks AES-GCM's security; the project pins the rule that each encryption uses a fresh nonce from `crypto/rand`.
 
-### Deterministic randomness for tests
+#### Deterministic randomness for tests
 
 Tests need to exercise specific nonce values, specific error paths, and specific tampered regions. A test that depends on `crypto/rand` cannot pin those values. The project exposes a randomness source that tests can replace. Production wires `crypto/rand`; tests wire a deterministic source that returns planned bytes. The test's behavior is observable through the bytes written into the nonce field of the container. Tests do not use "two random outputs differ" as a proof.
 
-### Versioned binary container (pinned contract)
+#### Versioned binary container (pinned contract)
 
 The container has a recognizable magic, a version, a declared plaintext length, a nonce, and the authenticated ciphertext-and-tag. The conceptual layout is:
 
@@ -84,11 +100,11 @@ The bytes `G30F`, the version byte `1`, and the eight declared-length bytes toge
 
 The README pins this contract without prescribing the exact byte-by-byte procedure. The learner's implementation follows the contract; tests pin it through round-trip and tamper-detection cases.
 
-### Header authentication as associated data
+#### Header authentication as associated data
 
 The header — `G30F`, the version byte, and the eight declared-length bytes — is the AEAD's associated data. The encryptor passes the header to `Seal` as associated data. The decryptor passes the header to `Open` as associated data. Tampering with the header bytes causes `Open` to fail authentication, not silently produce garbage plaintext.
 
-### Structural format errors vs authenticated-header tampering
+#### Structural format errors vs authenticated-header tampering
 
 These are two distinct categories and the tests distinguish them.
 
@@ -105,39 +121,39 @@ These are fail-fast errors: invalid input is rejected with a clear message befor
 
 **Authenticated-header tampering.** When the magic, version, and declared-length are all structurally valid but the declared-length bytes are then changed to another value within `[0, 8388608]`, the change is not a structural error — it is a change to authenticated associated data. The decryptor calls `Open` with the modified header and the AEAD fails authentication. The decryptor returns the same generic authentication failure it returns for wrong key, modified nonce, modified ciphertext, or modified tag. The decryptor does not distinguish "modified declared length" from "wrong key" from "tampered ciphertext".
 
-### Authentication before releasing plaintext
+#### Authentication before releasing plaintext
 
 The decryptor calls `Open` and inspects the error. A non-`nil` error from `Open` means the ciphertext was tampered with, the associated data was tampered with, or the key is wrong. The decryptor does not distinguish among these cases; it returns a generic authentication failure. The decryptor must not release any plaintext on authentication failure. The decryptor must not write partial plaintext to the destination.
 
-### Post-authentication length check
+#### Post-authentication length check
 
 After `Open` succeeds, the decryptor compares the number of plaintext bytes it produced against the declared plaintext length that was authenticated in the header. If the two differ, the decryptor returns a format/integrity error and publishes no plaintext. This check protects against a sealed plaintext whose length does not match the declared length, even though AEAD authentication passed.
 
-### Wrong key as generic authentication failure
+#### Wrong key as generic authentication failure
 
 A wrong key produces the same generic authentication failure as tampering. The decryptor does not distinguish "wrong key" from "tampered ciphertext" or "tampered authenticated header". This is honest: distinguishing the cases leaks information to an attacker.
 
-### All-or-nothing reader/writer decryption
+#### All-or-nothing reader/writer decryption
 
 For reader/writer decryption, the decryptor reads the container, validates the structural format, opens the AEAD with the header as associated data, calls `Open`, runs the post-authentication length check, and only then writes the plaintext to the destination. If any step fails, the destination receives no bytes. The first byte is written only after authentication and the post-authentication length check have both succeeded.
 
-### Temporary file then replace (file-level decryption)
+#### Temporary file then replace (file-level decryption)
 
 For file-level decryption, the decryptor creates a temporary file in the destination's directory, runs the all-or-nothing reader/writer decryption into that temporary file, and only after every write has succeeded and the temporary file has been closed does it rename the temporary file into place. If any step fails before the rename, the temporary file is removed and the destination is left unchanged. The input path is never overwritten in place.
 
-### Normal-operation atomic visibility and filesystem limits
+#### Normal-operation atomic visibility and filesystem limits
 
 During normal operation on a single process and a single filesystem, the destination either contains the full plaintext produced by the decryptor or it contains the pre-operation content. The project documents that the temporary-file-then-rename discipline provides this normal-operation atomic visibility. The project does not claim universal crash durability. `os.Rename` is atomic on most Unix-like systems and on Windows for files on the same volume. It is not atomic across volumes, across filesystems, or in the presence of certain failure modes (power loss between rename and sync, for example). The tests verify normal-operation behavior on a single process and a single filesystem.
 
-### Empty files
+#### Empty files
 
 Empty files are supported. The plaintext is zero bytes. The declared plaintext length is zero. The nonce is freshly generated. The container is written. On decryption, the container is read, the structural format is validated, the AEAD is opened with the empty plaintext, and an empty plaintext is written to the destination.
 
-### No partial output on failure
+#### No partial output on failure
 
 If any step fails (invalid key, oversized input, structural format error, randomness failure, generic authentication failure, post-authentication length mismatch), the decryptor does not write any partial plaintext to the destination. For reader/writer decryption, the destination receives no bytes. For file-level decryption, the temporary file is removed and the destination file is left unchanged.
 
-### No password prompts, KDF, compression, directory recursion, network transport, custom cryptography, or production key management
+#### No password prompts, KDF, compression, directory recursion, network transport, custom cryptography, or production key management
 
 The project does not prompt for passwords. The project does not run a key derivation function. The project does not compress. The project does not walk directory trees or recurse into subdirectories. The project does not transmit data over a network. The project does not implement a custom cipher. The project does not provide production-grade key management (key rotation, key escrow, key storage).
 
@@ -179,20 +195,22 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A source: an `io.Reader` or a file path containing the plaintext (for encrypt) or the container (for decrypt).
 - A destination: an `io.Writer` or a file path to receive the container (for encrypt) or the plaintext (for decrypt).
 - A raw key: exactly 16, 24, or 32 bytes.
 - A randomness source: injectable. Production uses `crypto/rand`. Tests use a deterministic source.
 
-### Outputs
+#### Outputs
 
 - For encrypt: the number of bytes written to the destination, or an error. Errors include invalid key length, oversized input, randomness failure, and write failure.
 - For decrypt: the number of bytes written to the destination, or an error. Errors include invalid key length, invalid format (missing magic, unknown version, truncated body, invalid nonce length), generic authentication failure (wrong key, tampering), and write failure.
 - The destination file is replaced only on successful operation. On failure, the destination is unchanged.
 
-### Example text-only round-trip
+#### Example text-only round-trip
 
 ```
 Source plaintext (UTF-8): "hello, world" (12 bytes)
@@ -217,7 +235,7 @@ Decrypt (declared length bytes changed to another in-range value):
   error: authentication failure.   (authenticated-header tampering, indistinguishable from wrong key)
 ```
 
-### Example text-only error cases
+#### Example text-only error cases
 
 ```
 Encrypt:
@@ -305,9 +323,11 @@ Decrypt — post-authentication length mismatch:
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests use reader/writer boundaries for core logic and temporary directories for file-level cases.
 
-### Round trip for all key sizes and content types
+#### Round trip for all key sizes and content types
 
 - Encrypt then decrypt a small plaintext with a 16-byte key. The decrypted plaintext equals the original byte-for-byte.
 - Encrypt then decrypt a small plaintext with a 24-byte key. The decrypted plaintext equals the original.
@@ -315,13 +335,13 @@ Each case is described in natural language. Tests use reader/writer boundaries f
 - Encrypt then decrypt binary content (every byte value from `0x00` to `0xFF`). The decrypted content equals the original.
 - Encrypt then decrypt a plaintext whose size equals the documented 8 MiB maximum. The decrypted plaintext equals the original.
 
-### Round trip for empty content
+#### Round trip for empty content
 
 - Encrypt an empty plaintext. The container is written with declared length `0` and empty ciphertext.
 - Decrypt that container. The decrypted plaintext is empty.
 - Round trip is exact for all three key sizes.
 
-### Plaintext maximum enforcement
+#### Plaintext maximum enforcement
 
 - Encrypt a plaintext whose size is exactly 8 MiB (8,388,608 bytes). The encrypt operation succeeds.
 - Encrypt a plaintext whose size is 8 MiB plus one byte. The encrypt operation returns an error naming the source and the maximum.
@@ -329,20 +349,20 @@ Each case is described in natural language. Tests use reader/writer boundaries f
 - Decrypt a container whose total byte size exceeds `8388608 + fixed overhead`. The decrypt operation returns a structural format error before `Open`.
 - Empty input is valid and is not rejected as oversized.
 
-### Deterministic known nonce through injection
+#### Deterministic known nonce through injection
 
 - The encrypt operation accepts an injected randomness source. A test wires a source that returns a fixed sequence of bytes. The nonce written into the container matches the planned bytes.
 - The decrypt operation does not depend on the randomness source. A test uses the same key and the container produced by the deterministic-nonce encryption. Decryption succeeds.
 - The test exercises a nonce-related error path by tampering with the nonce bytes. The decryptor returns the generic authentication failure.
 
-### Invalid keys
+#### Invalid keys
 
 - Encrypt with a 10-byte key returns an error naming the offending length and the valid lengths.
 - Encrypt with a 33-byte key returns an error naming the offending length and the valid lengths.
 - Decrypt with a 10-byte key returns an error naming the offending length and the valid lengths.
 - Decrypt with a 33-byte key returns an error naming the offending length and the valid lengths.
 
-### Structural format errors (rejected before AEAD Open)
+#### Structural format errors (rejected before AEAD Open)
 
 - Decrypt a container whose magic bytes are not `G30F`. The decryptor returns a structural format error naming "wrong magic" before `Open`. No plaintext is written.
 - Decrypt a container whose version byte is not `1`. The decryptor returns a structural format error naming "unsupported version" before `Open`. No plaintext is written.
@@ -350,51 +370,51 @@ Each case is described in natural language. Tests use reader/writer boundaries f
 - Decrypt a container whose total byte size exceeds `8388608 + fixed overhead`. The decryptor returns a structural format error naming "total size exceeds maximum plus overhead" before `Open`. No plaintext is written.
 - Decrypt a container whose body is shorter than `header + nonce + tag`. The decryptor returns a structural format error naming "truncated body" before `Open`. No plaintext is written.
 
-### Authenticated-header tampering (generic authentication failure)
+#### Authenticated-header tampering (generic authentication failure)
 
 - A test takes a valid container and changes the declared-length bytes to another in-range value within `[0, 8388608]`. The header is structurally valid; the modification is authenticated-header tampering. The decryptor returns the generic authentication failure. No plaintext is written.
 - The authenticated-header-tampering error message is the same as the wrong-key, modified-nonce, modified-ciphertext, and modified-tag error messages.
 
-### Other tamper regions
+#### Other tamper regions
 
 - A test takes a valid container and modifies one byte of the nonce. Decryption returns the generic authentication failure. No plaintext is written.
 - A test takes a valid container and modifies one byte of the ciphertext. Decryption returns the generic authentication failure. No plaintext is written.
 - A test takes a valid container and modifies one byte of the tag. Decryption returns the generic authentication failure. No plaintext is written.
 
-### Wrong key
+#### Wrong key
 
 - A test encrypts with one key and decrypts with a different key of the same length. Decryption returns the generic authentication failure. No plaintext is written.
 - The wrong-key error message is the same as the tamper error messages.
 
-### Post-authentication length mismatch
+#### Post-authentication length mismatch
 
 - A test constructs a container whose authenticated plaintext length differs from the declared length. `Open` succeeds; the post-authentication length check fails. The decryptor returns a format/integrity error. No plaintext is written.
 - The format/integrity error is distinct from the structural format errors and from the generic authentication failure.
 
-### No partial output
+#### No partial output
 
 - A test forces an authentication failure and confirms the destination file (or writer) has zero bytes written. For writer-based tests, the writer's content is unchanged. For file-based tests, the destination file's content is unchanged from before the operation.
 - A test forces a structural format error and confirms the destination receives no bytes.
 - A test forces a post-authentication length mismatch and confirms the destination receives no bytes.
 - A test forces an invalid-key error and confirms the destination receives no bytes.
 
-### Temp cleanup
+#### Temp cleanup
 
 - A test forces a failure during encryption and confirms the temporary file in the destination's directory is removed after the operation.
 - A test forces a failure during decryption (structural error, generic authentication failure, post-authentication length mismatch) and confirms the temporary file is removed.
 - A test confirms the destination directory does not accumulate temporary files across multiple failing operations.
 
-### Preservation of existing destination on failure
+#### Preservation of existing destination on failure
 
 - A test creates an existing destination file with known content. The test then runs a failing decrypt operation against the destination. After the failure, the destination file's content is unchanged.
 - A test confirms the destination file's modification time is unchanged after a failing operation.
 
-### File-level round trip
+#### File-level round trip
 
 - A test creates a temporary source file with known content. The test encrypts the source to a temporary destination. The test then decrypts the destination to another temporary destination. The final destination's content equals the original source's content byte-for-byte.
 - The test exercises all three key sizes through the file-level path.
 
-### Process
+#### Process
 
 - A test runs the driver against a small source file and confirms the round-trip succeeds.
 - A test runs the driver with a wrong key and confirms the driver exits with a non-zero status and the error message names the failure mode.
@@ -447,27 +467,46 @@ Each case is described in natural language. Tests use reader/writer boundaries f
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- Encrypt then decrypt is exact for all three key sizes and for empty, binary, and 8 MiB maximum-size content.
-- Empty files are supported. Encrypt produces a container with declared length `0` and empty ciphertext; decrypt produces an empty plaintext.
-- Keys of any length other than 16, 24, or 32 bytes are rejected with an error naming the offending length and the valid lengths.
-- Inputs larger than 8 MiB are rejected with an error naming the source and the maximum. Decryption also rejects containers whose declared length exceeds 8 MiB and containers whose total byte size exceeds `8388608 + fixed overhead`.
-- Structural format errors (wrong magic, unsupported version, declared length out of `[0, 8388608]`, total size above `8388608 + fixed overhead`, truncated body) are rejected with a clear structural error before `Open`. The tests distinguish structural errors from authenticated-header tampering.
-- Authenticated-header tampering (for example, changing the declared-length bytes to another in-range value) returns the same generic authentication failure as wrong key, modified nonce, modified ciphertext, and modified tag. No plaintext is written.
-- The post-authentication length check compares the plaintext produced by `Open` against the declared length. A mismatch returns a format/integrity error and writes no plaintext.
-- The decryptor does not write any partial plaintext to the destination on any failure. Reader/writer destinations receive no bytes. File destinations are unchanged.
-- Reader/writer decryption is all-or-nothing: the first plaintext byte is written only after structural validation, `Open`, and the post-authentication length check have all succeeded.
-- File-level writes use a temporary file in the destination's directory. The temporary file is closed before the rename. The destination is replaced only on success. On failure, the temporary file is removed and the destination is unchanged.
-- The input path is never overwritten in place.
-- Production nonces come from `crypto/rand`. Tests inject a deterministic source and observe the planned bytes through the container's nonce field.
-- The package documentation states the AES-GCM semantics, the 8 MiB maximum, the key-length validation, the container contract (`G30F` magic, version `1`, eight-byte big-endian declared length, AEAD-required nonce, ciphertext-and-tag), the header-as-associated-data rule, the structural-error-vs-authenticated-header-tampering distinction, the post-authentication length check, the no-distinguish rule, the all-or-nothing reader/writer rule, the temporary-file-then-replace discipline, the normal-operation atomic visibility rule, and the platform/filesystem limits.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] Encrypt then decrypt is exact for all three key sizes and for empty, binary, and 8 MiB maximum-size content.
+- [ ] Empty files are supported. Encrypt produces a container with declared length `0` and empty ciphertext; decrypt produces an empty plaintext.
+- [ ] Keys of any length other than 16, 24, or 32 bytes are rejected with an error naming the offending length and the valid lengths.
+- [ ] Inputs larger than 8 MiB are rejected with an error naming the source and the maximum. Decryption also rejects containers whose declared length exceeds 8 MiB and containers whose total byte size exceeds `8388608 + fixed overhead`.
+- [ ] Structural format errors (wrong magic, unsupported version, declared length out of `[0, 8388608]`, total size above `8388608 + fixed overhead`, truncated body) are rejected with a clear structural error before `Open`. The tests distinguish structural errors from authenticated-header tampering.
+- [ ] Authenticated-header tampering (for example, changing the declared-length bytes to another in-range value) returns the same generic authentication failure as wrong key, modified nonce, modified ciphertext, and modified tag. No plaintext is written.
+- [ ] The post-authentication length check compares the plaintext produced by `Open` against the declared length. A mismatch returns a format/integrity error and writes no plaintext.
+- [ ] The decryptor does not write any partial plaintext to the destination on any failure. Reader/writer destinations receive no bytes. File destinations are unchanged.
+- [ ] Reader/writer decryption is all-or-nothing: the first plaintext byte is written only after structural validation, `Open`, and the post-authentication length check have all succeeded.
+- [ ] File-level writes use a temporary file in the destination's directory. The temporary file is closed before the rename. The destination is replaced only on success. On failure, the temporary file is removed and the destination is unchanged.
+- [ ] The input path is never overwritten in place.
+- [ ] Production nonces come from `crypto/rand`. Tests inject a deterministic source and observe the planned bytes through the container's nonce field.
+- [ ] The package documentation states the AES-GCM semantics, the 8 MiB maximum, the key-length validation, the container contract (`G30F` magic, version `1`, eight-byte big-endian declared length, AEAD-required nonce, ciphertext-and-tag), the header-as-associated-data rule, the structural-error-vs-authenticated-header-tampering distinction, the post-authentication length check, the no-distinguish rule, the all-or-nothing reader/writer rule, the temporary-file-then-replace discipline, the normal-operation atomic visibility rule, and the platform/filesystem limits.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Streaming seal with chunk framing (design problem).** True large-file support requires a chunked AEAD framing protocol. The design problem is to maintain authentication across chunks while still bounding memory and still providing all-or-nothing release of plaintext. A correct design must define: how each chunk's nonce is derived; how chunks are ordered; how the chunk sequence is authenticated as part of associated data; how out-of-order, missing, or duplicate chunks are detected; and how partial decryption is handled when a chunk fails authentication. The extension is the framing problem, not the cipher choice. The required scope does not solve this problem.
-- **Overwrite destination on encrypt.** Allow the encrypt operation to overwrite the destination's existing content. The encrypt operation still uses a temporary file in the destination's directory and replaces the destination only on success. The "no partial output" rule for decrypt stays unchanged. Do not allow overwriting the input path in place; encrypt must always read from a source distinct from the destination. Do not add a `--force` flag or a confirmation prompt.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 029 — Linked List Implementation](../../02-data-structures/029_linked_list_impl/README.md#20-prerequisite-based-documentation-guide), [Project 017 — JSON Todo Persister](../../02-data-structures/017_json_todo_persister/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`crypto/aes`](https://pkg.go.dev/crypto/aes), [`crypto/cipher`](https://pkg.go.dev/crypto/cipher).
+- **Standards and concept references:** [Go security: cryptography](https://go.dev/doc/security/best-practices#crypto).
+
+### Project-specific learning focus
+
+- **Learn now:** authenticated encryption, nonce uniqueness, authenticated headers, tamper detection, atomic output publication, bounded input, and secret-safe errors.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

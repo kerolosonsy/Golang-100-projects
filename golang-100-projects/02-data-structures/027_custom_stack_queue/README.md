@@ -2,7 +2,13 @@
 
 ## 1. Project Name and Number
 
-Project **027** — `027_custom_stack_queue`. The directory name and number must match exactly. The project implements generic stack and FIFO queue containers whose zero values are usable immediately, with no constructor call required. The containers work for any element type the caller supplies. Empty reads and removals return an explicit not-found outcome and never panic or invent a value. The stack is LIFO; the queue is FIFO. Concurrency safety is out of scope.
+- Project **027** — `027_custom_stack_queue`.
+- The directory name and number must match exactly.
+- The project implements generic stack and FIFO queue containers whose zero values are usable immediately, with no constructor call required.
+- The containers work for any element type the caller supplies.
+- Empty reads and removals return an explicit not-found outcome and never panic or invent a value.
+- The stack is LIFO; the queue is FIFO.
+- Concurrency safety is out of scope.
 
 ## 2. Project Idea
 
@@ -14,11 +20,17 @@ The project is concurrency-unsafe by design. No locks, no channels, no atomics. 
 
 ## 3. Why This Project Now?
 
-Projects 001–026 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, and shape-validated matrices. None of them used type parameters. Project 027 is the project's first encounter with generics. The learner must reason about a single implementation that works across many element types and must design a zero-value-usable API rather than relying on a constructor to set up internal state.
+- Projects 001–026 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, and shape-validated matrices.
+- None of them used type parameters.
+- Project 027 is the project's first encounter with generics.
+- The learner must reason about a single implementation that works across many element types and must design a zero-value-usable API rather than relying on a constructor to set up internal state.
 
-The stack and queue are also the first containers the learner writes. They have to reason about what an empty read or removal should mean, what a peek should mean, how length transitions are observable, and what slice backing storage actually does when elements are added and removed. The queue's release-of-removed-elements discussion is the project's first explicit encounter with the gap between "I can read this element" and "I should retain this element".
+- The stack and queue are also the first containers the learner writes.
+- They have to reason about what an empty read or removal should mean, what a peek should mean, how length transitions are observable, and what slice backing storage actually does when elements are added and removed.
+- The queue's release-of-removed-elements discussion is the project's first explicit encounter with the gap between "I can read this element" and "I should retain this element".
 
-Project 027 is referenced by project 031 (concurrent timer uses channels but the container discipline is background) and by later projects whose data structures depend on understanding how a slice grows, shrinks, and holds references. The container discipline carries forward into project 028 (binary search tree) and project 029 (linked list), both of which build on the same "what does an empty read mean" pattern.
+- Project 027 is referenced by project 031 (concurrent timer uses channels but the container discipline is background) and by later projects whose data structures depend on understanding how a slice grows, shrinks, and holds references.
+- The container discipline carries forward into project 028 (binary search tree) and project 029 (linked list), both of which build on the same "what does an empty read mean" pattern.
 
 ## 4. Prerequisites
 
@@ -39,23 +51,25 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Zero-value usability
+### Concepts
+
+#### Zero-value usability
 
 The containers' zero values must work. A caller can declare a variable, use it immediately, and observe empty-state behavior on first use. No constructor, no `New()` call, no initialization step is required. The cost is that the internal fields must be valid as their zero values: a slice field that is `nil` works because `append` handles `nil` slices, and a length field that is `0` works because the container starts empty.
 
-### Not-found outcomes for empty operations
+#### Not-found outcomes for empty operations
 
 Reads and removals on an empty container return an explicit not-found outcome. The outcome is a clearly-named value the caller can check (for example an `ok` boolean, a sentinel error, or an `Optional`-style pair). The project does not panic, does not return a zero-valued element by pretending one was found, and does not invent a default value the caller did not ask for. A test that calls pop on an empty stack observes a not-found result, not a panic and not a returned zero value.
 
-### LIFO stack
+#### LIFO stack
 
 The stack is last-in, first-out. The most recently pushed element is the next popped or peeked element. Order across interleaved operations is preserved: if the caller pushes `a`, pushes `b`, pops one element, and then pushes `c`, the next pop returns `c`, the next pop returns `a`, and the stack is empty after that. The test pins this order directly.
 
-### FIFO queue
+#### FIFO queue
 
 The queue is first-in, first-out. The earliest enqueued element is the next dequeued or fronted element. Order across interleaved operations is preserved: if the caller enqueues `a`, enqueues `b`, dequeues one element, and then enqueues `c`, the next dequeue returns `b`, the next dequeue returns `c`, and the queue is empty after that. The test pins this order directly.
 
-### Backing storage and reference release
+#### Backing storage and reference release
 
 A slice is a header that points into a backing array. Two operations on the same slice can share the same backing array even when the slice header's length changes. Re-slicing only changes the header's length (and possibly its start offset); it does not touch the backing array's slots that are no longer covered by the header. As long as the backing array is reachable, the slots it covers still hold the values that were last written there. A reference in those slots is retained until the slot is overwritten or the backing array becomes unreachable.
 
@@ -71,15 +85,15 @@ The project does not allow a "we'll leave it for the GC" or "we accept the trade
 
 The implementation does not rely on the runtime's garbage collector, on finalizers, or on weak references to detect that a slot has been released. The release is explicit and structural. Tests verify it by inspecting the container's chosen representation directly (for example the slice header and the slots within its range, or the head/tail indices and the array's reachable range), not by waiting for the GC to run.
 
-### Length transitions
+#### Length transitions
 
 Length is observable. After a push, length grows by one. After a pop that succeeds, length shrinks by one. After a pop on an empty container, length stays at zero. The empty-state report (`empty` or `length == 0`) is consistent with the not-found outcome of a read or removal. Tests pin the transitions directly.
 
-### Element type diversity
+#### Element type diversity
 
 The containers work for many element types. Tests cover at least three distinct element types — for example `int`, `string`, and a small struct — to demonstrate that the implementation does not bake in a single type. Tests also cover pointer and interface element types where practical, observing that the container holds the values the caller enqueued, not copies or zero values.
 
-### Concurrency is out of scope
+#### Concurrency is out of scope
 
 The containers are not safe for concurrent use. Concurrent push, pop, enqueue, dequeue, peek, or length reads are undefined behavior. The required scope does not test concurrency, and the project does not claim to be safe. A package comment states the concurrency-unsafety rule so a future reader does not assume otherwise.
 
@@ -115,23 +129,26 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - Elements supplied by the caller through push (stack) or enqueue (queue). Elements may be of any type the call site chooses, including `int`, `string`, structs, pointers, and interfaces.
 - For length and empty-state queries, no element is supplied.
 - For peek and front, no element is supplied; the operation only reads.
 - For pop and dequeue, no element is supplied by the caller; the operation reads and removes.
 
-### Outputs
+#### Outputs
 
 - For push and enqueue, no result value is returned beyond the implicit container state. Length increases by one.
 - For pop and dequeue, the removed element and an outcome indicator. On success the indicator is "found" and the element is the most recently pushed (stack) or earliest enqueued (queue) value. On empty state the indicator is "not-found" and no real element is returned.
 - For peek and front, the top/front element and an outcome indicator. Same not-found contract as pop/dequeue.
 - For length, the current size. For empty-state, a true/false value indicating whether the container is empty.
 
-### Example text-only traces
+#### Example text-only traces
 
 Stack:
+
 ```
 push a → [a]            length=1
 push b → [a, b]         length=2
@@ -144,6 +161,7 @@ pop    → _, not-found   length=0
 ```
 
 Queue:
+
 ```
 enqueue a → [a]           length=1
 enqueue b → [a, b]        length=2
@@ -155,9 +173,10 @@ dequeue   → c, found      length=0
 dequeue   → _, not-found  length=0
 ```
 
-### Example text-only zero-value use
+#### Example text-only zero-value use
 
 Stack (int element type):
+
 ```
 declared with the zero value, no constructor
 peek    → _, not-found            length=0
@@ -219,9 +238,11 @@ peek    → 42, found               length=1
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests use only in-memory elements and direct API calls; no terminal, no real user directories.
 
-### Zero value usability
+#### Zero value usability
 
 - A freshly declared stack with the zero value has length zero.
 - A freshly declared stack with the zero value reports empty-state.
@@ -229,7 +250,7 @@ Each case is described in natural language. Tests use only in-memory elements an
 - A freshly declared queue with the zero value has length zero and returns the not-found outcome on front, dequeue, and equivalent read operations.
 - After the first push (stack) or enqueue (queue), the container has length one and is no longer empty.
 
-### Empty-state operations
+#### Empty-state operations
 
 - Pop on an empty stack returns the not-found outcome. Length is unchanged.
 - Peek on an empty stack returns the not-found outcome. Length is unchanged.
@@ -238,20 +259,20 @@ Each case is described in natural language. Tests use only in-memory elements an
 - Repeated empty-state operations on an empty container all return the not-found outcome. The container does not enter a corrupt state.
 - No empty-state operation panics.
 
-### Single and many elements
+#### Single and many elements
 
 - Push a single element, then pop it. The popped element equals the pushed element. The stack is empty afterward.
 - Enqueue a single element, then dequeue it. The dequeued element equals the enqueued element. The queue is empty afterward.
 - Push many elements, then pop them all. The order is the reverse of the push order.
 - Enqueue many elements, then dequeue them all. The order is the same as the enqueue order.
 
-### Interleaved operations
+#### Interleaved operations
 
 - Push `a`, push `b`, pop one (returns `b`), push `c`. Pop returns `c`. Pop returns `a`. Stack is empty.
 - Enqueue `a`, enqueue `b`, dequeue one (returns `a`), enqueue `c`. Dequeue returns `b`. Dequeue returns `c`. Queue is empty.
 - A test runs a longer interleaved script and asserts the exact order of returned elements.
 
-### Length transitions
+#### Length transitions
 
 - A test pushes N elements one by one and asserts length grows by one each time.
 - A test pops N elements one by one from a stack of size N and asserts length shrinks by one each time.
@@ -260,14 +281,14 @@ Each case is described in natural language. Tests use only in-memory elements an
 - After all elements are removed, length is zero and empty-state is true.
 - An empty-state operation on an empty container leaves length at zero.
 
-### Multiple element types
+#### Multiple element types
 
 - The same stack code works for `int`, `string`, and a small struct (for example a struct with two fields).
 - The same queue code works for `int`, `string`, and a small struct.
 - For each type, push and pop (or enqueue and dequeue) return values that compare equal to the originals.
 - For struct element types, push and pop preserve field values.
 
-### Reference release (required, structural)
+#### Reference release (required, structural)
 
 - The package documentation states the queue's bounded-reclamation policy and the stack's vacated-slot policy.
 - A same-package structural test for the queue confirms that after a sequence of enqueues and dequeues, the consumed prefix is not retained through the container's backing storage beyond the documented threshold. The test inspects the chosen representation directly (the slice header and the slots within its range, or the head/tail indices and the array's reachable range). The test does not rely on the GC to clean up.
@@ -275,21 +296,21 @@ Each case is described in natural language. Tests use only in-memory elements an
 - Tests use reference-typed elements (for example pointers, slices, or structs containing pointers) so the test can observe whether a reference is still reachable through the backing storage.
 - Tests do not use finalizers, weak references, runtime read barriers, or any GC-coupled mechanism. The release is explicit and verified directly.
 
-### Multiple element types (reaffirmation)
+#### Multiple element types (reaffirmation)
 
 - The same generic implementation works for `int`, `string`, and a small struct (for example a struct with two fields).
 - For struct element types that contain reference fields, the bounded-reclamation policy still applies. The test confirms that the backing storage does not retain references through struct fields after a pop or dequeue.
 
-### Not-found outcome
+#### Not-found outcome
 
 - The not-found outcome is exposed through a sentinel error matched with `errors.Is` or through a boolean paired with a zero-valued result. The test confirms the chosen mechanism.
 - The test confirms the not-found outcome is distinguishable from a real element of the same zero value (for example `0` for `int` or `""` for `string`) — that is, a caller can tell "I read an empty container" apart from "I read a real zero-valued element".
 
-### Concurrency-unsafety declaration
+#### Concurrency-unsafety declaration
 
 - The package documentation states that the container is not safe for concurrent use. The required scope does not test concurrency. The test does not run a concurrency check.
 
-### Process
+#### Process
 
 - A test runs the driver with a small script for each container and confirms the printed output matches the expected text-only trace.
 
@@ -339,24 +360,43 @@ Each case is described in natural language. Tests use only in-memory elements an
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- The stack and queue are generic type-parameterized types. The same implementation works for `int`, `string`, and a small struct without per-type code.
-- The zero value of each container is usable immediately, with no constructor call.
-- Empty reads and removals return an explicit not-found outcome through a sentinel error or a clearly-named boolean. The outcome is `errors.Is`-matchable or boolean-true on empty state.
-- LIFO and FIFO orders are preserved across interleaved operations. A test pins the order with a concrete script.
-- Length is consistent with the number of elements actually present after every operation.
-- Each container documents a bounded-reclamation policy in the package comment. A same-package structural test verifies the policy by inspecting the container's chosen representation directly. The implementation does not rely on the runtime's garbage collector, finalizers, or weak references.
-- The queue does not retain an unbounded consumed prefix. The test confirms this with reference-typed elements and a structural inspection of the backing storage's reachable range.
-- The stack does not retain a reference to a popped element through the vacated tail slot. The test confirms this by inspecting the slot directly.
-- No empty-state operation panics.
-- The package documentation states LIFO, FIFO, the empty-state outcome, each container's bounded-reclamation policy, and the concurrency-unsafety rule.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] The stack and queue are generic type-parameterized types. The same implementation works for `int`, `string`, and a small struct without per-type code.
+- [ ] The zero value of each container is usable immediately, with no constructor call.
+- [ ] Empty reads and removals return an explicit not-found outcome through a sentinel error or a clearly-named boolean. The outcome is `errors.Is`-matchable or boolean-true on empty state.
+- [ ] LIFO and FIFO orders are preserved across interleaved operations. A test pins the order with a concrete script.
+- [ ] Length is consistent with the number of elements actually present after every operation.
+- [ ] Each container documents a bounded-reclamation policy in the package comment. A same-package structural test verifies the policy by inspecting the container's chosen representation directly. The implementation does not rely on the runtime's garbage collector, finalizers, or weak references.
+- [ ] The queue does not retain an unbounded consumed prefix. The test confirms this with reference-typed elements and a structural inspection of the backing storage's reachable range.
+- [ ] The stack does not retain a reference to a popped element through the vacated tail slot. The test confirms this by inspecting the slot directly.
+- [ ] No empty-state operation panics.
+- [ ] The package documentation states LIFO, FIFO, the empty-state outcome, each container's bounded-reclamation policy, and the concurrency-unsafety rule.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Capacity hint.** Add an optional pre-allocation constructor that accepts an initial capacity hint and pre-allocates the backing slice to that capacity so the caller avoids early reallocations. The zero-value-usable contract is preserved: callers who do not use the hint still get a working container. Do not add a capacity query or a reallocate-on-demand method.
-- **Drain.** Add a method that empties the container in one call, returning all elements in order (LIFO reverse for the stack, FIFO order for the queue) and resetting length to zero. The method honors the container's bounded-reclamation policy for the elements it releases. Do not add a partial-drain or peek-and-skip operation.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 026 — Matrix Operations](../../02-data-structures/026_matrix_operations/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`slices`](https://pkg.go.dev/slices).
+- **Standards and concept references:** [Go generics tutorial](https://go.dev/doc/tutorial/generics), [Go specification: type constraints](https://go.dev/ref/spec#Type_constraints).
+
+### Project-specific learning focus
+
+- **Learn now:** zero-value-friendly generic containers, LIFO and FIFO contracts, backing-array retention, slot clearing, queue compaction, and amortized cost.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

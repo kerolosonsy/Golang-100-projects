@@ -1,18 +1,32 @@
 # Project 098 — Kafka Message Broker Client
 
 ## 1. Project Name and Number
-Project 098, `098_kafka_message_broker_client`. Build a small producer and consumer service against Kafka using the maintained Go client `github.com/twmb/franz-go`, with the broker held behind an interface so unit tests use a deterministic fake and integration tests run against an externally started broker and are gated by a build tag plus an environment flag. This README is a learning guide only. It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands. Text-only input and output examples are permitted.
+
+- Project 098, `098_kafka_message_broker_client`.
+- Build a small producer and consumer service against Kafka using the maintained Go client `github.com/twmb/franz-go`, with the broker held behind an interface so unit tests use a deterministic fake and integration tests run against an externally started broker and are gated by a build tag plus an environment flag.
+- This README is a learning guide only.
+- It contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+- Text-only input and output examples are permitted.
 
 ## 2. Project Idea
+
 A bounded task-event envelope flows through a Kafka topic. The producer chooses the pinned client `github.com/twmb/franz-go`, supplies the entity identifier as the message key so events for the same entity land on the same partition in send order, requests acknowledgement from all in-sync replicas, and keeps the client's idempotent producer behavior enabled. The consumer joins a consumer group, reads records in partition order within each assigned partition, validates schema and version, performs an idempotent side effect keyed by record identifier, and commits the offset only after the side effect succeeds or after the original record is durably written to the dead-letter topic. The broker boundary is held behind an interface so unit tests use a deterministic fake. The integration suite is opt-in. Cancellation, rebalance, retry, dead-letter, and shutdown are defined at the boundary, and the project is honest about being at-least-once with per-entity ordering rather than exactly once or globally ordered.
 
 ## 3. Why This Project Now?
-Projects 037, 041, and 095 are the formal prerequisites: Project 037 contributes producer-consumer fundamentals, Project 041 contributes context and cancellation discipline, and Project 095 contributes event-driven delivery. Project 097 is optional immediate-catalog-predecessor context, while Project 086 is optional prior review for at-least-once vocabulary.
+
+- Projects 037, 041, and 095 are the formal prerequisites: Project 037 contributes producer-consumer fundamentals, Project 041 contributes context and cancellation discipline, and Project 095 contributes event-driven delivery.
+- Project 097 is optional immediate-catalog-predecessor context, while Project 086 is optional prior review for at-least-once vocabulary.
 
 ## 4. Prerequisites
-Projects 037, 041, and 095 are the formal prerequisites. Project 037 provides producer-consumer fundamentals; Project 041 provides context and cancellation discipline; Project 095 provides event-driven delivery. Project 097 is optional immediate-catalog-predecessor context. Optional prior review includes Project 086 for at-least-once vocabulary. Be comfortable with typed outcomes, contexts, fake interfaces for the broker boundary, build tags, environment-flag gating, the difference between a unit test and an integration test, and the honesty discipline of pinning a single client and not promising global behavior.
+
+- Projects 037, 041, and 095 are the formal prerequisites.
+- Project 037 provides producer-consumer fundamentals; Project 041 provides context and cancellation discipline; Project 095 provides event-driven delivery.
+- Project 097 is optional immediate-catalog-predecessor context.
+- Optional prior review includes Project 086 for at-least-once vocabulary.
+- Be comfortable with typed outcomes, contexts, fake interfaces for the broker boundary, build tags, environment-flag gating, the difference between a unit test and an integration test, and the honesty discipline of pinning a single client and not promising global behavior.
 
 ## 5. What You Must Know Before Starting
+
 - A Kafka topic is split across one or more partitions. Records addressed to the same partition are read in send order by any consumer reading that partition. Records across partitions are not ordered relative to each other.
 - A consumer group is a set of consumers that share work on a topic. A rebalance reassigns partition ownership between consumers in the group; in-flight records on a moved partition may be redelivered to the new owner.
 - An offset is a per-partition position. Committing an offset after processing acknowledges that the records up to that offset have been processed; committing before processing risks losing work on a crash.
@@ -25,28 +39,75 @@ Projects 037, 041, and 095 are the formal prerequisites. Project 037 provides pr
 - A fake broker is a deterministic in-process implementation behind the same interface the real client uses. A fake records sends, returns the configured outcomes, and lets the test simulate broker failure, latency, and rebalance without network I/O.
 
 ## 6. Explanation of New Concepts
-The project draws a hard line between the broker adapter, the producer service, and the consumer service. The broker adapter is the only place where `github.com/twmb/franz-go` is constructed. Both the producer and the consumer depend on the adapter through an interface; in unit tests the interface is implemented by a deterministic fake and the real client is not imported into the unit test binary.
 
-The pinned envelope contract is compact UTF-8 JSON with no insignificant whitespace and no trailing newline. Its fields are in the fixed order `schema_version`, `event_id`, `entity_id`, `event_type`, `occurred_at`, then `payload`; schema version is exactly `1`. `event_id` and `entity_id` are 1-64 ASCII characters drawn from letters, digits, period, underscore, and hyphen. `event_type` is exactly `task.created`, `task.updated`, or `task.deleted`. `occurred_at` is caller-injected UTC RFC 3339 with exactly millisecond precision and the `Z` suffix. `payload` is embedded as valid JSON, not as a quoted JSON string, and its encoded value is 2 bytes through 16 KiB. The full serialized envelope is at most 20 KiB. `event_id` is the idempotency key. `entity_id` is the Kafka message key. The payload and the raw key never appear in any log path.
+### Concepts
 
-The producer returns a typed outcome drawn from exactly `Accepted`, `ValidationRejected`, and `BrokerError`. `Accepted` carries the topic, partition, and offset from the successful acknowledgement. `ValidationRejected` carries the validation class. `BrokerError` carries the available topic, partition, and offset, the full lowercase SHA-256 hex digest of the key, and the error class; it never carries the payload or the raw key.
+- The project draws a hard line between the broker adapter, the producer service, and the consumer service.
+- The broker adapter is the only place where `github.com/twmb/franz-go` is constructed.
+- Both the producer and the consumer depend on the adapter through an interface; in unit tests the interface is implemented by a deterministic fake and the real client is not imported into the unit test binary.
 
-The consumer joins a consumer group and processes records sequentially within each assigned partition. Different assigned partitions may run concurrently. Sequential processing within a partition prevents a later offset from being committed past an unfinished earlier record. The consumer commits the offset only after the side effect completes successfully or after the original record is durably written to the dead-letter topic.
+- The pinned envelope contract is compact UTF-8 JSON with no insignificant whitespace and no trailing newline.
+- Its fields are in the fixed order `schema_version`, `event_id`, `entity_id`, `event_type`, `occurred_at`, then `payload`;
+- Schema version is exactly `1`. `event_id` and `entity_id` are 1-64 ASCII characters drawn from letters, digits, period, underscore, and hyphen. `event_type` is exactly `task.created`, `task.updated`, or `task.deleted`. `occurred_at` is caller-injected UTC RFC 3339 with exactly millisecond precision and the `Z` suffix. `payload` is embedded as valid JSON, not as a quoted JSON string, and its encoded value is 2 bytes through 16 KiB.
+- The full serialized envelope is at most 20 KiB. `event_id` is the idempotency key. `entity_id` is the Kafka message key.
+- The payload and the raw key never appear in any log path.
 
-The retry and dead-letter policy is pinned. Transient processing failures get at most three total processing attempts using injected `100 ms` then `200 ms` backoff. Unit tests never sleep; the backoff is injected. Malformed, oversize, and unknown-version records are permanent and receive exactly one processing attempt. The dead-letter destination is exactly the source topic name with the suffix `.dlq`. The DLQ record retains the safe source topic, partition, and offset, the key digest, the event ID when valid, and the error class, and never retains the original payload. If the DLQ acknowledgement fails, the consumer does not commit the source offset and returns an error so the record can be redelivered.
+- The producer returns a typed outcome drawn from exactly `Accepted`, `ValidationRejected`, and `BrokerError`. `Accepted` carries the topic, partition, and offset from the successful acknowledgement. `ValidationRejected` carries the validation class. `BrokerError` carries the available topic, partition, and offset, the full lowercase SHA-256 hex digest of the key, and the error class;
+- It never carries the payload or the raw key.
 
-Cancellation and rebalance are exercised together. A cancel signal stops the consumer from fetching new records immediately. The consumer finishes the current owned record within a five-second grace. The consumer commits the current owned record only if processing or acknowledged DLQ completed while ownership remained. Otherwise the consumer does not commit and allows redelivery. On partition revocation the consumer does not begin new work and never commits work completed after ownership was revoked.
+- The consumer joins a consumer group and processes records sequentially within each assigned partition.
+- Different assigned partitions may run concurrently.
+- Sequential processing within a partition prevents a later offset from being committed past an unfinished earlier record.
+- The consumer commits the offset only after the side effect completes successfully or after the original record is durably written to the dead-letter topic.
 
-The idempotency ledger boundary records event IDs. The core learning implementation may be in-memory and guarantees duplicate no-op only for the process lifetime. State honestly that restart durability requires an external transactional store and is outside this project. This limitation is one reason there is no exactly-once claim.
+- The retry and dead-letter policy is pinned.
+- Transient processing failures get at most three total processing attempts using injected `100 ms` then `200 ms` backoff.
+- Unit tests never sleep; the backoff is injected.
+- Malformed, oversize, and unknown-version records are permanent and receive exactly one processing attempt.
+- The dead-letter destination is exactly the source topic name with the suffix `.dlq`.
+- The DLQ record retains the safe source topic, partition, and offset, the key digest, the event ID when valid, and the error class, and never retains the original payload.
+- If the DLQ acknowledgement fails, the consumer does not commit the source offset and returns an error so the record can be redelivered.
 
-Integration tests run against an externally started broker. The integration gate is the build tag `kafka_integration` plus the environment flag `KAFKA_INTEGRATION=1`. Broker addresses and a unique topic prefix are supplied by the test environment. The test creates isolated source and `.dlq` topics or refuses to run if isolation cannot be guaranteed. The test uses a unique consumer group. No setup commands appear in this guide.
+- Cancellation and rebalance are exercised together.
+- A cancel signal stops the consumer from fetching new records immediately.
+- The consumer finishes the current owned record within a five-second grace.
+- The consumer commits the current owned record only if processing or acknowledged DLQ completed while ownership remained.
+- Otherwise the consumer does not commit and allows redelivery.
+- On partition revocation the consumer does not begin new work and never commits work completed after ownership was revoked.
 
-Unit tests cover producer validation, producer acknowledgement failure, stable per-entity keying, same-key ordering assumptions inside one partition, consumer success then commit, consumer process failure without commit, idempotent side effect on duplicate delivery, retry to the pinned cap, dead-letter after the bound, malformed envelope rejection, unknown schema version rejection, cancellation, rebalance-safe shutdown, and redaction of payload and raw key.
+- The idempotency ledger boundary records event IDs.
+- The core learning implementation may be in-memory and guarantees duplicate no-op only for the process lifetime.
+- State honestly that restart durability requires an external transactional store and is outside this project.
+- This limitation is one reason there is no exactly-once claim.
+
+- Integration tests run against an externally started broker.
+- The integration gate is the build tag `kafka_integration` plus the environment flag `KAFKA_INTEGRATION=1`.
+- Broker addresses and a unique topic prefix are supplied by the test environment.
+- The test creates isolated source and `.dlq` topics or refuses to run if isolation cannot be guaranteed.
+- The test uses a unique consumer group.
+- No setup commands appear in this guide.
+
+- Unit tests cover producer validation, producer acknowledgement failure, stable per-entity keying, same-key ordering assumptions inside one partition, consumer success then commit, consumer process failure without commit, idempotent side effect on duplicate delivery, retry to the pinned cap, dead-letter after the bound, malformed envelope rejection, unknown schema version rejection, cancellation, rebalance-safe shutdown, and redaction of payload and raw key.
 
 ## 7. Learning Objective
-After completing this project you must be able to explain in your own words: why the client is pinned to `github.com/twmb/franz-go` and the acknowledgement class is pinned to all in-sync replicas; why the idempotent producer behavior remains enabled; why per-entity ordering depends on the message key and the broker's per-partition order; why processing must be idempotent under at-least-once delivery; why offset commit must happen after the side effect and not before; why sequential processing within a partition prevents a later offset from being committed past an unfinished earlier record; why a rebalance can cause redelivery; why a poison message must be moved aside after a bounded number of attempts and must never loop; why error messages carry contextual metadata but never the payload or the raw key; why the broker boundary is held behind an interface; why a unit test never imports the real broker client; why integration tests are gated by a build tag and an environment flag; why the idempotency ledger boundary is in-memory and why restart durability requires an external transactional store; and why this project does not promise exactly-once end-to-end behavior or global ordering.
+
+- After completing this project you must be able to explain in your own words: why the client is pinned to `github.com/twmb/franz-go` and the acknowledgement class is pinned to all in-sync replicas;
+- Why the idempotent producer behavior remains enabled;
+- Why per-entity ordering depends on the message key and the broker's per-partition order;
+- Why processing must be idempotent under at-least-once delivery;
+- Why offset commit must happen after the side effect and not before;
+- Why sequential processing within a partition prevents a later offset from being committed past an unfinished earlier record;
+- Why a rebalance can cause redelivery;
+- Why a poison message must be moved aside after a bounded number of attempts and must never loop;
+- Why error messages carry contextual metadata but never the payload or the raw key;
+- Why the broker boundary is held behind an interface;
+- Why a unit test never imports the real broker client;
+- Why integration tests are gated by a build tag and an environment flag;
+- Why the idempotency ledger boundary is in-memory and why restart durability requires an external transactional store;
+- And why this project does not promise exactly-once end-to-end behavior or global ordering.
 
 ## 8. Functional Requirements
+
 1. The project uses exactly one Kafka client: `github.com/twmb/franz-go`. The learner selects and pins a currently supported release in their own module. This guide does not invent a version.
 2. The broker is held behind an interface. Unit tests use a deterministic fake. The real client is imported only in the production code path and in the integration test files.
 3. The producer requests acknowledgement from all in-sync replicas and keeps the client's idempotent producer behavior enabled.
@@ -66,6 +127,9 @@ After completing this project you must be able to explain in your own words: why
 17. No secrets, payloads, raw keys, or environmental credentials appear in logs. Errors carry contextual metadata: topic, partition, offset, key digest, and an error class.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
+
 - Producer inputs are the bounded task-event envelope, the entity identifier used as the message key, and a context.
 - Producer outputs are a typed outcome drawn from exactly `Accepted`, `ValidationRejected`, and `BrokerError`, and the contextual metadata on the `BrokerError` path.
 - Consumer inputs are records from assigned partitions, each carrying a key, an offset, a partition, and a payload.
@@ -76,6 +140,7 @@ After completing this project you must be able to explain in your own words: why
 - Text-only behaviour example. Cancel the consumer mid-read while a record is owned and in progress. The current record finishes within the five-second grace. If processing or acknowledged DLQ completed while ownership remained, the record is committed. Otherwise the record is not committed and is redelivered.
 
 ## 10. Rules and Edge Cases
+
 - A producer validation failure is rejected before send. The broker never observes the envelope.
 - A broker error returns a typed outcome that carries topic, partition, offset, key digest, and error class. Payloads and raw keys never appear in error logs.
 - A consumer side-effect failure classified as transient retries with backoff up to the bound; at the bound the record is moved to the `.dlq` destination. The retry schedule is the injected `100 ms` then `200 ms` backoff and is never a wall-clock sleep in unit tests.
@@ -87,6 +152,7 @@ After completing this project you must be able to explain in your own words: why
 - A DLQ acknowledgement failure leaves the source offset uncommitted and returns an error so the record can be redelivered.
 
 ## 11. Project Constraints
+
 - The unit test binary does not import `github.com/twmb/franz-go`. The broker boundary is held behind an interface.
 - The Kafka client is exactly `github.com/twmb/franz-go`. The version is pinned in the learner's own module; this guide does not invent a version.
 - The acknowledgement class is all in-sync replicas. The idempotent producer behavior is enabled at all times.
@@ -95,6 +161,7 @@ After completing this project you must be able to explain in your own words: why
 - No shell setup commands or Compose files appear in this guide. The integration suite's environment is described; the learner wires the start command at their module boundary.
 
 ## 12. Design Questions Before Coding
+
 - Why is the Kafka client pinned to `github.com/twmb/franz-go` and the acknowledgement class pinned to all in-sync replicas?
 - Why is the idempotent producer behavior kept enabled at all times?
 - How is the broker boundary expressed as an interface so the unit test never imports the real client?
@@ -109,6 +176,7 @@ After completing this project you must be able to explain in your own words: why
 - Why does the project not promise exactly-once, and how does that non-claim appear in the documentation?
 
 ## 13. Implementation Milestones
+
 1. Pin the Kafka client to `github.com/twmb/franz-go`. Pin the acknowledgement class to all in-sync replicas and the idempotent producer behavior to enabled. Define the broker interface the producer and consumer depend on.
 2. Define the versioned task-event envelope with schema version `1`, the fixed field order, the field validation rules, and the size bounds. Implement validation before send.
 3. Implement the producer wrapper: entity-key message key, all in-sync-replica acknowledgement, idempotent producer behavior, typed outcomes, and contextual metadata on `BrokerError`.
@@ -122,6 +190,9 @@ After completing this project you must be able to explain in your own words: why
 11. Verify under the race detector and reproduce the honest at-least-once statement in the documentation.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Producer validation: drive the producer with a malformed envelope, an oversize envelope, an unknown `event_type`, an `event_id` or `entity_id` outside the pinned character set, and a payload outside the pinned JSON size bound; assert each results in `ValidationRejected` and the broker records zero sends.
 - Producer acknowledgement failure: configure the broker fake to return a leader-not-available class, send a record, and assert the typed outcome is `BrokerError` with the available topic, partition, offset, key digest, and error class. Assert the payload and raw key never appear in any log.
 - Stable keying: send two records for the same entity and assert the broker fake records them with the same partition assignment and in send order.
@@ -142,6 +213,7 @@ After completing this project you must be able to explain in your own words: why
 - Redaction: assert that error logs and structured error records never include the payload, a secret, a raw key, or an environmental credential.
 
 ## 15. Common Mistakes to Watch For
+
 - Importing `github.com/twmb/franz-go` from a unit test file. The unit test binary must remain free of the real client.
 - Treating processing as exactly once. The honest model is at-least-once with idempotent side effects, and the in-memory ledger guarantees duplicate no-op only for the process lifetime.
 - Committing the offset before the side effect. The side effect must author the commit.
@@ -158,6 +230,7 @@ After completing this project you must be able to explain in your own words: why
 - Letting the source offset commit when the DLQ acknowledgement fails. The source offset must remain uncommitted so the record can be redelivered.
 
 ## 16. Topics and References for Study
+
 - The `github.com/twmb/franz-go` documentation covering producer and consumer construction, idempotent producer configuration, all in-sync replica acknowledgement, partition assignment, rebalances, and offset commit semantics.
 - The Kafka documentation covering topics, partitions, message keys, consumer groups, offsets, and acknowledgement classes, treated as background.
 - The Kafka documentation covering producer idempotence, the producer epoch and sequence model, and the broker's de-duplication window. Idempotence is a producer-side property.
@@ -165,20 +238,55 @@ After completing this project you must be able to explain in your own words: why
 - Projects 037, 041, and 095 are the formal prerequisites: Project 037 for producer-consumer fundamentals, Project 041 for context and cancellation discipline, and Project 095 for event-driven delivery. Project 097 is optional immediate-catalog-predecessor context; Project 086 is optional study for at-least-once vocabulary.
 
 ## 17. Self-Assessment Questions
-- Why does per-entity ordering require a stable message key, and what ordering does Kafka not promise?
-- Why are the client, all-in-sync-replica acknowledgement, and idempotent-producer settings pinned?
-- Why must the side effect be idempotent by `event_id` under at-least-once delivery, and what is the restart limitation of the in-memory ledger?
-- Why does the offset commit happen only after the side effect or durable DLQ write?
-- Why does sequential processing per partition matter, and how can a rebalance cause redelivery?
-- How do transient and permanent failures differ in attempt count, backoff, and DLQ handling?
-- Why must poison messages be bounded rather than retried forever?
-- Why are payloads, raw keys, secrets, and environmental credentials excluded from errors and logs?
-- Why is the broker boundary an interface, and what exact build-tag, environment-flag, topic, and group isolation gates integration tests?
-- Why does the project make no exactly-once end-to-end or global-ordering claim?
+
+1. Why does per-entity ordering require a stable message key, and what ordering does Kafka not promise?
+2. Why are the client, all-in-sync-replica acknowledgement, and idempotent-producer settings pinned?
+3. Why must the side effect be idempotent by `event_id` under at-least-once delivery, and what is the restart limitation of the in-memory ledger?
+4. Why does the offset commit happen only after the side effect or durable DLQ write?
+5. Why does sequential processing per partition matter, and how can a rebalance cause redelivery?
+6. How do transient and permanent failures differ in attempt count, backoff, and DLQ handling?
+7. Why must poison messages be bounded rather than retried forever?
+8. Why are payloads, raw keys, secrets, and environmental credentials excluded from errors and logs?
+9. Why is the broker boundary an interface, and what exact build-tag, environment-flag, topic, and group isolation gates integration tests?
+10. Why does the project make no exactly-once end-to-end or global-ordering claim?
 
 ## 18. Definition of Completion
-The project is complete when `github.com/twmb/franz-go` is the pinned Kafka client and the version is chosen by the learner; when the broker boundary is held behind an interface so unit tests use a fake and the real client is not imported into the unit test binary; when the producer requests acknowledgement from all in-sync replicas, keeps the idempotent producer behavior enabled, validates the envelope before send, keys messages by `entity_id`, and returns a typed outcome drawn from exactly `Accepted`, `ValidationRejected`, and `BrokerError` with the contextual metadata pinned in this guide; when the consumer joins a group, processes records sequentially within each assigned partition, validates schema and version before any side effect, performs an idempotent side effect keyed by `event_id` through the in-memory ledger for the process lifetime, and commits offsets only after a successful side effect or after a durable write to the `.dlq` destination; when transient failures retry with the injected `100 ms` then `200 ms` backoff up to the bound, when permanent failures receive exactly one processing attempt and are written to the `.dlq` destination, and when the DLQ record retains the safe metadata and never retains the original payload; when a DLQ acknowledgement failure leaves the source offset uncommitted and returns an error for redelivery; when cancellation stops fetching immediately, finishes the current owned record within the five-second grace, commits only if processing or acknowledged DLQ completed while ownership remained, and otherwise does not commit and allows redelivery; when a rebalance is treated as a soft cancel on affected partitions and never commits a partial record or work completed after ownership was revoked; when errors carry contextual metadata only and never log the payload, raw key, secret, or environmental credential; when the integration suite is gated by the build tag `kafka_integration` and the environment flag `KAFKA_INTEGRATION=1`, uses isolated source and `.dlq` topic names and a unique consumer group identifier, refuses to run if isolation cannot be guaranteed, and runs against an externally started broker; when the unit tests pass with the broker fake and cover producer validation, acknowledgement failure, stable keying, same-key ordering, success-then-commit, transient failure without commit, duplicate idempotency, retry and dead-letter, DLQ record shape, DLQ acknowledgement failure, malformed envelope, unknown schema version, cancellation, rebalance-safe shutdown, sequential processing per partition, concurrent processing across partitions, and contextual metadata redaction; when the race detector is clean; when the project documentation reproduces the at-least-once statement, the per-entity ordering statement, the in-memory idempotency ledger limitation, and the explicit non-claims about exactly-once and global ordering; and when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
+
+- [ ] The project is complete when `github.com/twmb/franz-go` is the pinned Kafka client and the version is chosen by the learner;
+- [ ] When the broker boundary is held behind an interface so unit tests use a fake and the real client is not imported into the unit test binary;
+- [ ] When the producer requests acknowledgement from all in-sync replicas, keeps the idempotent producer behavior enabled, validates the envelope before send, keys messages by `entity_id`, and returns a typed outcome drawn from exactly `Accepted`, `ValidationRejected`, and `BrokerError` with the contextual metadata pinned in this guide;
+- [ ] When the consumer joins a group, processes records sequentially within each assigned partition, validates schema and version before any side effect, performs an idempotent side effect keyed by `event_id` through the in-memory ledger for the process lifetime, and commits offsets only after a successful side effect or after a durable write to the `.dlq` destination;
+- [ ] When transient failures retry with the injected `100 ms` then `200 ms` backoff up to the bound, when permanent failures receive exactly one processing attempt and are written to the `.dlq` destination, and when the DLQ record retains the safe metadata and never retains the original payload;
+- [ ] When a DLQ acknowledgement failure leaves the source offset uncommitted and returns an error for redelivery;
+- [ ] When cancellation stops fetching immediately, finishes the current owned record within the five-second grace, commits only if processing or acknowledged DLQ completed while ownership remained, and otherwise does not commit and allows redelivery;
+- [ ] When a rebalance is treated as a soft cancel on affected partitions and never commits a partial record or work completed after ownership was revoked;
+- [ ] When errors carry contextual metadata only and never log the payload, raw key, secret, or environmental credential;
+- [ ] When the integration suite is gated by the build tag `kafka_integration` and the environment flag `KAFKA_INTEGRATION=1`, uses isolated source and `.dlq` topic names and a unique consumer group identifier, refuses to run if isolation cannot be guaranteed, and runs against an externally started broker;
+- [ ] When the unit tests pass with the broker fake and cover producer validation, acknowledgement failure, stable keying, same-key ordering, success-then-commit, transient failure without commit, duplicate idempotency, retry and dead-letter, DLQ record shape, DLQ acknowledgement failure, malformed envelope, unknown schema version, cancellation, rebalance-safe shutdown, sequential processing per partition, concurrent processing across partitions, and contextual metadata redaction;
+- [ ] When the race detector is clean;
+- [ ] When the project documentation reproduces the at-least-once statement, the per-entity ordering statement, the in-memory idempotency ledger limitation, and the explicit non-claims about exactly-once and global ordering;
+- [ ] And when this guide contains no implementation code, signatures, starter snippets, solution snippets, pseudocode, or implementation shell commands.
 
 ## 19. Optional Extensions
+
 - A second bounded envelope event type sharing the same topic and consumer group, with the consumer dispatching on `event_type` only after schema-version validation, without changing the per-entity key or offset discipline.
-- A bounded consumer-side stats surface that records per-partition processed count, retry count, and dead-letter count, exposed through the same broker boundary, demonstrating how observability attaches to the producer and consumer without leaking into the broker adapter itself.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 037 — Producer Consumer](../../03-concurrency/037_producer_consumer/README.md#20-prerequisite-based-documentation-guide), [Project 041 — Context Timeout Example](../../03-concurrency/041_context_timeout_example/README.md#20-prerequisite-based-documentation-guide), [Project 095 — Microservice with Event-Driven Outbox](../../07-advanced-systems/095_microservice_event_driven/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`github.com/twmb/franz-go`](https://pkg.go.dev/github.com/twmb/franz-go).
+- **Standards and concept references:** [Apache Kafka design documentation](https://kafka.apache.org/documentation/#design), [Kafka producer configuration](https://kafka.apache.org/documentation/#producerconfigs), [Kafka consumer configuration](https://kafka.apache.org/documentation/#consumerconfigs).
+
+### Project-specific learning focus
+
+- **Learn now:** topics and partitions, keyed ordering, consumer groups and rebalances, manual offset commits, producer idempotence boundaries, retries, poison messages, dead letters, and observability.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

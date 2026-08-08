@@ -2,7 +2,7 @@
 
 ## 1. Project Name and Number
 
-Project 050 — JWT Auth Server, located in `050_jwt_auth_server`.
+- Project 050 — JWT Auth Server, located in `050_jwt_auth_server`.
 
 ## 2. Project Idea
 
@@ -10,13 +10,17 @@ Build a small authentication service with a JSON login endpoint and one protecte
 
 ## 3. Why This Project Now?
 
-Project 049 provides a stable JSON response and public-error boundary, while Project 048 provides route and middleware discipline. This project combines them at a security boundary where ambiguous parsing, leaked errors, weak secrets, and algorithm confusion have serious consequences. Project 046 remains the HTTP foundation. The result prepares the learner for later services that need to distinguish authentication from authorization without pretending that a signed token solves every security problem.
+- Project 049 provides a stable JSON response and public-error boundary, while Project 048 provides route and middleware discipline.
+- This project combines them at a security boundary where ambiguous parsing, leaked errors, weak secrets, and algorithm confusion have serious consequences.
+- Project 046 remains the HTTP foundation.
+- The result prepares the learner for later services that need to distinguish authentication from authorization without pretending that a signed token solves every security problem.
 
 ## 4. Prerequisites
 
-Complete Projects 049 and 046 before starting. Earlier projects may be useful review, but they are not required prerequisites.
+- Complete Projects 049 and 046 before starting.
+- Earlier projects may be useful review, but they are not required prerequisites.
 
-You should already understand strict JSON boundaries, response envelopes, `401` and `WWW-Authenticate`, request middleware and typed context values, injected clocks and IDs, concurrent `httptest` tests, and the difference between authentication and authorization.
+- You should already understand strict JSON boundaries, response envelopes, `401` and `WWW-Authenticate`, request middleware and typed context values, injected clocks and IDs, concurrent `httptest` tests, and the difference between authentication and authorization.
 
 ## 5. What You Must Know Before Starting
 
@@ -32,21 +36,38 @@ You should already understand strict JSON boundaries, response envelopes, `401` 
 
 ## 6. Explanation of New Concepts
 
-Bcrypt is a password-hashing scheme designed to make guessing expensive. The server stores a bcrypt hash and asks the package to compare a presented password with that hash. It never reconstructs or decrypts a password. For an unknown username, the credential boundary should still perform comparison work against a fixed dummy bcrypt hash so ordinary wrong-user and wrong-password paths do not expose account existence through an obvious shortcut. Timing equality is not claimed as absolute over a network.
+### Concepts
 
-A JWT compact token has a header, claims payload, and signature. HS256 uses one shared secret for signing and verification. The token proves that a holder of the secret signed the claims; it does not prove that the token is encrypted, fresh beyond its time claims, or unrevoked.
+- Bcrypt is a password-hashing scheme designed to make guessing expensive.
+- The server stores a bcrypt hash and asks the package to compare a presented password with that hash.
+- It never reconstructs or decrypts a password.
+- For an unknown username, the credential boundary should still perform comparison work against a fixed dummy bcrypt hash so ordinary wrong-user and wrong-password paths do not expose account existence through an obvious shortcut.
+- Timing equality is not claimed as absolute over a network.
 
-This project pins one issuer string, one audience string, one fixed subject for the test user, a normalized issued-at time, an equal not-before time, an expiration exactly five minutes later, and a unique token ID. The parser must verify all required claims and their types as well as the signature. Membership in an audience list is not enough if extra audiences are permitted by accident; this contract requires the exact configured audience and no unexpected audience values.
+- A JWT compact token has a header, claims payload, and signature.
+- HS256 uses one shared secret for signing and verification.
+- The token proves that a holder of the secret signed the claims; it does not prove that the token is encrypted, fresh beyond its time claims, or unrevoked.
 
-A Bearer authentication scheme places the compact token after the exact scheme token and one separator space. The middleware rejects missing, duplicated, or malformed credentials before attempting verification. On every protected authentication failure it returns the same public `401` response and exact challenge, regardless of whether the token was absent, malformed, expired, incorrectly signed, or had a wrong claim.
+- This project pins one issuer string, one audience string, one fixed subject for the test user, a normalized issued-at time, an equal not-before time, an expiration exactly five minutes later, and a unique token ID.
+- The parser must verify all required claims and their types as well as the signature.
+- Membership in an audience list is not enough if extra audiences are permitted by accident; this contract requires the exact configured audience and no unexpected audience values.
 
-A typed context value carries the authenticated subject from middleware to the protected endpoint for one request. It is evidence that authentication completed; it is not a role system or a permission decision. The protected endpoint proves availability by returning the subject in its success data.
+- A Bearer authentication scheme places the compact token after the exact scheme token and one separator space.
+- The middleware rejects missing, duplicated, or malformed credentials before attempting verification.
+- On every protected authentication failure it returns the same public `401` response and exact challenge, regardless of whether the token was absent, malformed, expired, incorrectly signed, or had a wrong claim.
 
-Secret loading is a startup boundary. The required environment value is decoded and validated once before the listener is made available. Tests inject the resulting secret directly whenever possible, avoiding process-global environment mutation and avoiding accidental logging of configuration.
+- A typed context value carries the authenticated subject from middleware to the protected endpoint for one request.
+- It is evidence that authentication completed; it is not a role system or a permission decision.
+- The protected endpoint proves availability by returning the subject in its success data.
+
+- Secret loading is a startup boundary.
+- The required environment value is decoded and validated once before the listener is made available.
+- Tests inject the resulting secret directly whenever possible, avoiding process-global environment mutation and avoiding accidental logging of configuration.
 
 ## 7. Learning Objective
 
-By completion, you can explain password-hash comparison, JWT signing versus encryption, algorithm allowlisting, registered-claim validation, Bearer parsing, generic authentication errors, secret configuration, and TLS deployment boundaries. You can build deterministic login and protected-route tests that reject forged, expired, malformed, and algorithm-confused tokens while remaining safe under concurrent verification.
+- By completion, you can explain password-hash comparison, JWT signing versus encryption, algorithm allowlisting, registered-claim validation, Bearer parsing, generic authentication errors, secret configuration, and TLS deployment boundaries.
+- You can build deterministic login and protected-route tests that reject forged, expired, malformed, and algorithm-confused tokens while remaining safe under concurrent verification.
 
 ## 8. Functional Requirements
 
@@ -72,47 +93,91 @@ By completion, you can explain password-hash comparison, JWT signing versus encr
 
 ## 9. Inputs and Outputs
 
-The login path accepts one JSON object with exactly two string fields: `username` and `password`. The fixed test username is `learner`; the corresponding test password is supplied by the test fixture and exists only to exercise the stored bcrypt hash. Runtime credential state contains the hash, not that plaintext test value.
+### Interface Contract
 
-A successful login response is status `200`, content type exactly `application/json; charset=utf-8`, and the Project 049 success envelope. Its data object has an opaque compact JWT in `access_token`, exact string `Bearer` in `token_type`, and integer `300` in `expires_in`. It contains no password, hash, secret, or extra credential detail.
+- The login path accepts one JSON object with exactly two string fields: `username` and `password`.
+- The fixed test username is `learner`; the corresponding test password is supplied by the test fixture and exists only to exercise the stored bcrypt hash.
+- Runtime credential state contains the hash, not that plaintext test value.
 
-Text-only login example: a valid JSON login using the fixed fixture credentials returns one Bearer token whose issuer is `project-050`, whose audience is `project-050-protected`, whose subject is `user-001`, and whose expiration is exactly 300 seconds after issued-at. The token text itself is not printed in this guide or in logs.
+- A successful login response is status `200`, content type exactly `application/json; charset=utf-8`, and the Project 049 success envelope.
+- Its data object has an opaque compact JWT in `access_token`, exact string `Bearer` in `token_type`, and integer `300` in `expires_in`.
+- It contains no password, hash, secret, or extra credential detail.
 
-A wrong-user and wrong-password response is the same public response in both cases: status `401`, JSON error code `unauthenticated`, message `authentication required`, content type `application/json; charset=utf-8`, and `WWW-Authenticate: Bearer`.
+- Text-only login example: a valid JSON login using the fixed fixture credentials returns one Bearer token whose issuer is `project-050`, whose audience is `project-050-protected`, whose subject is `user-001`, and whose expiration is exactly 300 seconds after issued-at.
+- The token text itself is not printed in this guide or in logs.
 
-The protected path accepts a `GET` with exactly one valid Bearer credential. Its success data object has exactly one field, `subject`, containing `user-001`. Missing or invalid credentials use the same generic protected `401` response regardless of failure reason.
+- A wrong-user and wrong-password response is the same public response in both cases: status `401`, JSON error code `unauthenticated`, message `authentication required`, content type `application/json; charset=utf-8`, and `WWW-Authenticate: Bearer`.
 
-Malformed login documents use the Project 049 error code `invalid_request` and status `400`; over-limit bodies use `payload_too_large` and `413`; wrong media types use `unsupported_media_type` and `415`; internal configuration or dependency failures use `internal_error` and `500`. All body-bearing responses use the formatter's stable envelope and content type.
+- The protected path accepts a `GET` with exactly one valid Bearer credential.
+- Its success data object has exactly one field, `subject`, containing `user-001`.
+- Missing or invalid credentials use the same generic protected `401` response regardless of failure reason.
+
+- Malformed login documents use the Project 049 error code `invalid_request` and status `400`; over-limit bodies use `payload_too_large` and `413`; wrong media types use `unsupported_media_type` and `415`; internal configuration or dependency failures use `internal_error` and `500`.
+- All body-bearing responses use the formatter's stable envelope and content type.
 
 ## 10. Rules and Edge Cases
 
-The login decoder accepts one complete JSON value followed only by whitespace. Empty input, malformed syntax, a second JSON value, unknown field, missing field, null field, or non-string field is a `400` structural error. A syntactically valid but empty or impossible credential is treated as a generic credential failure under the same `401` contract rather than revealing account-validation detail. Password characters, including surrounding whitespace, are significant.
+- The login decoder accepts one complete JSON value followed only by whitespace.
+- Empty input, malformed syntax, a second JSON value, unknown field, missing field, null field, or non-string field is a `400` structural error.
+- A syntactically valid but empty or impossible credential is treated as a generic credential failure under the same `401` contract rather than revealing account-validation detail.
+- Password characters, including surrounding whitespace, are significant.
 
-The 16,384-byte cap counts the encoded request body, including whitespace. A body that attempts to exceed the cap is rejected before state or token mutation. No partial JSON value can trigger a credential lookup or token issuance. The service does not accept form data, query-string credentials, credentials in a URL, or a second JSON document.
+- The 16,384-byte cap counts the encoded request body, including whitespace.
+- A body that attempts to exceed the cap is rejected before state or token mutation.
+- No partial JSON value can trigger a credential lookup or token issuance.
+- The service does not accept form data, query-string credentials, credentials in a URL, or a second JSON document.
 
-Credential comparison uses bcrypt for both known and unknown usernames, with a fixed non-matching comparison path for an unknown user. The test suite checks equal public behavior, not wall-clock equality. A malformed configured bcrypt hash or credential-store failure is a server configuration/dependency failure and maps to generic `500`, never to a misleading client `401`.
+- Credential comparison uses bcrypt for both known and unknown usernames, with a fixed non-matching comparison path for an unknown user.
+- The test suite checks equal public behavior, not wall-clock equality.
+- A malformed configured bcrypt hash or credential-store failure is a server configuration/dependency failure and maps to generic `500`, never to a misleading client `401`.
 
-The environment secret is loaded once at startup. Base64 decoding is required, and the decoded byte sequence must contain at least 32 random bytes. An empty variable, fallback value, hardcoded development key, short value, or invalid encoding prevents startup. Startup can verify encoding and decoded length but cannot prove entropy; deployment configuration must obtain the bytes from a cryptographically secure random source. Tests inject a deterministic secret directly and do not require process-global environment changes unless they are specifically testing the loader boundary.
+- The environment secret is loaded once at startup.
+- Base64 decoding is required, and the decoded byte sequence must contain at least 32 random bytes.
+- An empty variable, fallback value, hardcoded development key, short value, or invalid encoding prevents startup.
+- Startup can verify encoding and decoded length but cannot prove entropy; deployment configuration must obtain the bytes from a cryptographically secure random source.
+- Tests inject a deterministic secret directly and do not require process-global environment changes unless they are specifically testing the loader boundary.
 
-Issued claim times are normalized to whole UTC seconds. The token is valid only when current time is at least `nbf` and strictly before `exp`; a token at the expiration instant is expired. An issued-at value in the future is rejected. There is no implicit clock leeway in the required contract. A token ID is exactly 32 lowercase hexadecimal ASCII characters, and the injected production source must provide a fresh value for every successful login.
+- Issued claim times are normalized to whole UTC seconds.
+- The token is valid only when current time is at least `nbf` and strictly before `exp`; a token at the expiration instant is expired.
+- An issued-at value in the future is rejected.
+- There is no implicit clock leeway in the required contract.
+- A token ID is exactly 32 lowercase hexadecimal ASCII characters, and the injected production source must provide a fresh value for every successful login.
 
-The parser validates the signing method before trusting claims. A token declaring `none`, an HMAC algorithm other than HS256, an asymmetric algorithm, or an unknown method is rejected even if its text has a plausible three-part shape. A signature is checked with the configured secret, and all required claims are checked for presence, exact type, expected identity, and expected time semantics.
+- The parser validates the signing method before trusting claims.
+- A token declaring `none`, an HMAC algorithm other than HS256, an asymmetric algorithm, or an unknown method is rejected even if its text has a plausible three-part shape.
+- A signature is checked with the configured secret, and all required claims are checked for presence, exact type, expected identity, and expected time semantics.
 
-The audience must be exactly the one configured value `project-050-protected`; missing, empty, malformed, or extra audience values are rejected. Issuer must equal `project-050`; subject must equal `user-001`; `iat`, `nbf`, and `exp` must be integral numeric dates; and `jti` must be exactly 32 lowercase hexadecimal ASCII characters. No claim is accepted merely because it can be decoded.
+- The audience must be exactly the one configured value `project-050-protected`; missing, empty, malformed, or extra audience values are rejected.
+- Issuer must equal `project-050`; subject must equal `user-001`; `iat`, `nbf`, and `exp` must be integral numeric dates; and `jti` must be exactly 32 lowercase hexadecimal ASCII characters.
+- No claim is accepted merely because it can be decoded.
 
-Authorization parsing is strict. There must be one and only one `Authorization` field value. The scheme spelling must be exactly `Bearer`, followed by exactly one ASCII space and a non-empty compact token with no additional whitespace or comma. Any missing, duplicated, malformed, or invalid token produces the same protected `401` response and exact Bearer challenge. The token is never placed in logs or context.
+- Authorization parsing is strict.
+- There must be one and only one `Authorization` field value.
+- The scheme spelling must be exactly `Bearer`, followed by exactly one ASCII space and a non-empty compact token with no additional whitespace or comma.
+- Any missing, duplicated, malformed, or invalid token produces the same protected `401` response and exact Bearer challenge.
+- The token is never placed in logs or context.
 
-`HEAD` is rejected on both known paths with the relevant `Allow` value and zero body bytes. Unknown paths are `404`. The real service must run behind TLS or a trusted TLS terminator; in-memory `httptest` HTTP is a test transport, not a production security claim.
+- `HEAD` is rejected on both known paths with the relevant `Allow` value and zero body bytes.
+- Unknown paths are `404`.
+- The real service must run behind TLS or a trusted TLS terminator; in-memory `httptest` HTTP is a test transport, not a production security claim.
 
-Concurrent verification may share immutable configuration but must not share mutable per-request claims, buffers, parser state, or context values. Each request receives its own authenticated subject. Authentication success does not grant any role or permission beyond access to this one protected demonstration route.
+- Concurrent verification may share immutable configuration but must not share mutable per-request claims, buffers, parser state, or context values.
+- Each request receives its own authenticated subject.
+- Authentication success does not grant any role or permission beyond access to this one protected demonstration route.
 
 ## 11. Project Constraints
 
-Use the Go standard library plus exactly these two external dependencies: `golang.org/x/crypto/bcrypt` and `github.com/golang-jwt/jwt/v5`. Use maintained, pinned module versions selected by the learner's module configuration. Do not add a framework, another JWT library, another password library, an ORM, a database, or a password/crypto implementation.
+- Use the Go standard library plus exactly these two external dependencies: `golang.org/x/crypto/bcrypt` and `github.com/golang-jwt/jwt/v5`.
+- Use maintained, pinned module versions selected by the learner's module configuration.
+- Do not add a framework, another JWT library, another password library, an ORM, a database, or a password/crypto implementation.
 
-Do not hand-roll cryptography, JWT parsing, signing, claim validation, Bearer parsing shortcuts, or password hashing. Do not put secrets, passwords, hashes, tokens, or implementation code in this README. Do not log sensitive headers or bodies. Tests use `httptest`, injected clock, injected secret, injected credential store, and injected ID/random source; they do not rely on real sleeps or external services.
+- Do not hand-roll cryptography, JWT parsing, signing, claim validation, Bearer parsing shortcuts, or password hashing.
+- Do not put secrets, passwords, hashes, tokens, or implementation code in this README.
+- Do not log sensitive headers or bodies.
+- Tests use `httptest`, injected clock, injected secret, injected credential store, and injected ID/random source; they do not rely on real sleeps or external services.
 
-TLS is required for real deployment and is intentionally terminated outside this learning server and its tests. Roles, authorization, registration, persistence, refresh, revocation, key rotation, and account recovery are not part of the baseline.
+- TLS is required for real deployment and is intentionally terminated outside this learning server and its tests.
+- Roles, authorization, registration, persistence, refresh, revocation, key rotation, and account recovery are not part of the baseline.
 
 ## 12. Design Questions Before Coding
 
@@ -143,6 +208,8 @@ TLS is required for real deployment and is intentionally terminated outside this
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 - Log in with the fixed test credentials and verify status, content type, success envelope shape, Bearer token type, five-minute `expires_in`, and absence of password or secret fields.
 - Log in with the wrong password and wrong username. Verify byte-equivalent public error envelopes, identical status and challenge headers, and no account-enumeration detail. Do not assert network timing equality.
 - Submit a missing media type, an unrelated media type, a malformed media type, malformed JSON, empty input, unknown fields, wrong field types, missing fields, a second JSON value, and a body beyond 16,384 bytes. Verify exact `415`, `400`, or `413` behavior and no token issuance. Submit `application/json` with a valid media-type parameter and verify it passes the media-type check.
@@ -162,21 +229,32 @@ TLS is required for real deployment and is intentionally terminated outside this
 
 ## 15. Common Mistakes to Watch For
 
-Comparing plaintext passwords, storing plaintext beside the hash, generating a hash on every request, or using a fast general hash for passwords defeats bcrypt's purpose. Returning “unknown user” and “wrong password” through different messages or statuses enables account enumeration. Logging a password, hash, token, Authorization header, or secret turns diagnostics into a credential leak.
+- Comparing plaintext passwords, storing plaintext beside the hash, generating a hash on every request, or using a fast general hash for passwords defeats bcrypt's purpose.
+- Returning “unknown user” and “wrong password” through different messages or statuses enables account enumeration.
+- Logging a password, hash, token, Authorization header, or secret turns diagnostics into a credential leak.
 
-Trusting the token's declared algorithm, accepting `none`, using an unchecked parse path, or selecting a verification key from untrusted token data creates algorithm-confusion vulnerabilities. Checking only the signature while ignoring issuer, audience, subject, time, or required-claim presence accepts a token outside its intended use.
+- Trusting the token's declared algorithm, accepting `none`, using an unchecked parse path, or selecting a verification key from untrusted token data creates algorithm-confusion vulnerabilities.
+- Checking only the signature while ignoring issuer, audience, subject, time, or required-claim presence accepts a token outside its intended use.
 
-Using a default or hardcoded HMAC secret, accepting a short human phrase as sufficient entropy, loading the secret after serving begins, or printing it in startup logs weakens the entire system. Base64 text length is not the same as decoded random-byte length; validate the decoded bytes.
+- Using a default or hardcoded HMAC secret, accepting a short human phrase as sufficient entropy, loading the secret after serving begins, or printing it in startup logs weakens the entire system.
+- Base64 text length is not the same as decoded random-byte length; validate the decoded bytes.
 
-Parsing the first Authorization value, splitting on arbitrary whitespace, accepting comma-separated values, or treating a lowercase scheme as equivalent when the contract pins exact `Bearer` creates ambiguous authentication behavior. Returning a different protected error for expiration, signature failure, or missing credentials leaks verification detail.
+- Parsing the first Authorization value, splitting on arbitrary whitespace, accepting comma-separated values, or treating a lowercase scheme as equivalent when the contract pins exact `Bearer` creates ambiguous authentication behavior.
+- Returning a different protected error for expiration, signature failure, or missing credentials leaks verification detail.
 
-Using wall-clock calls directly in issuance and parsing tests makes expiration cases flaky. Adding leeway without documenting it changes the exact lifetime boundary. Sharing mutable claims, parser state, buffers, or context maps across concurrent requests creates races and possible subject confusion.
+- Using wall-clock calls directly in issuance and parsing tests makes expiration cases flaky.
+- Adding leeway without documenting it changes the exact lifetime boundary.
+- Sharing mutable claims, parser state, buffers, or context maps across concurrent requests creates races and possible subject confusion.
 
-Treating a JWT as encrypted, putting a password or secret in claims, assuming a valid token is revocable, or deploying bearer authentication over plain HTTP confuses separate security properties. TLS termination outside this learning server must still be configured and trusted in a real deployment.
+- Treating a JWT as encrypted, putting a password or secret in claims, assuming a valid token is revocable, or deploying bearer authentication over plain HTTP confuses separate security properties.
+- TLS termination outside this learning server must still be configured and trusted in a real deployment.
 
 ## 16. Topics and References for Study
 
-Study the official documentation for `golang.org/x/crypto/bcrypt`, especially password comparison and its input limits. Study `github.com/golang-jwt/jwt/v5` for registered claims, parser validation options, signing-method allowlists, NumericDate behavior, and time injection. Read RFC 7519 for JWT claims, RFC 6750 for Bearer authentication and challenges, and RFC 8725 for JWT best practices and algorithm validation. Review OWASP password-storage and authentication guidance, Go `encoding/json`, `net/http`, `context`, `httptest`, `crypto/rand`, and Project 049's response boundary.
+- Study the official documentation for `golang.org/x/crypto/bcrypt`, especially password comparison and its input limits.
+- Study `github.com/golang-jwt/jwt/v5` for registered claims, parser validation options, signing-method allowlists, NumericDate behavior, and time injection.
+- Read RFC 7519 for JWT claims, RFC 6750 for Bearer authentication and challenges, and RFC 8725 for JWT best practices and algorithm validation.
+- Review OWASP password-storage and authentication guidance, Go `encoding/json`, `net/http`, `context`, `httptest`, `crypto/rand`, and Project 049's response boundary.
 
 ## 17. Self-Assessment Questions
 
@@ -193,19 +271,38 @@ Study the official documentation for `golang.org/x/crypto/bcrypt`, especially pa
 
 ## 18. Definition of Completion
 
-- `/login` and `/protected` implement the exact route, method, status, header, JSON, and body policies, including explicit `HEAD` behavior.
-- The only runtime credential record is the fixed test user and bcrypt hash; no registration or database exists.
-- Login enforces strict JSON, exact content type, the 16,384-byte cap, generic wrong-credential behavior, and no sensitive output.
-- Only HS256 is accepted, the required base64 environment secret is validated before startup, and tests can inject a secret directly without process-global state.
-- Issued tokens have exact issuer, audience, subject, whole-second times, five-minute lifetime, and unique token ID. Injected clock and ID/random source make tests deterministic.
-- Verification validates algorithm, signature, every required claim, exact audience and subject, expiration, not-before, and issued-at semantics, rejecting all listed malformed and forged variants.
-- Protected middleware accepts exactly one `Bearer` form, returns generic `401` plus `WWW-Authenticate: Bearer` for every authentication failure, and exposes only the verified subject through typed context.
-- No internal cause leaks to clients. Logs contain only safe categories and request identifiers for authentication failures and never contain a password, hash, compact token, Authorization value, signing secret, raw request body, stack trace, or other sensitive material.
-- Concurrent login and verification pass under the race detector without real sleeps or external services.
-- TLS is explicitly required at the real deployment boundary, and roles, authorization, revocation, refresh, registration, and persistence remain out of scope.
-- The implementation uses only the two named external dependencies and the standard library, and the learner can explain every security decision.
+- [ ] `/login` and `/protected` implement the exact route, method, status, header, JSON, and body policies, including explicit `HEAD` behavior.
+- [ ] The only runtime credential record is the fixed test user and bcrypt hash; no registration or database exists.
+- [ ] Login enforces strict JSON, exact content type, the 16,384-byte cap, generic wrong-credential behavior, and no sensitive output.
+- [ ] Only HS256 is accepted, the required base64 environment secret is validated before startup, and tests can inject a secret directly without process-global state.
+- [ ] Issued tokens have exact issuer, audience, subject, whole-second times, five-minute lifetime, and unique token ID. Injected clock and ID/random source make tests deterministic.
+- [ ] Verification validates algorithm, signature, every required claim, exact audience and subject, expiration, not-before, and issued-at semantics, rejecting all listed malformed and forged variants.
+- [ ] Protected middleware accepts exactly one `Bearer` form, returns generic `401` plus `WWW-Authenticate: Bearer` for every authentication failure, and exposes only the verified subject through typed context.
+- [ ] No internal cause leaks to clients. Logs contain only safe categories and request identifiers for authentication failures and never contain a password, hash, compact token, Authorization value, signing secret, raw request body, stack trace, or other sensitive material.
+- [ ] Concurrent login and verification pass under the race detector without real sleeps or external services.
+- [ ] TLS is explicitly required at the real deployment boundary, and roles, authorization, revocation, refresh, registration, and persistence remain out of scope.
+- [ ] The implementation uses only the two named external dependencies and the standard library, and the learner can explain every security decision.
 
 ## 19. Optional Extensions
 
-1. Add HMAC key rotation with an explicit allowlist of configured keys and a documented key identifier, without accepting an algorithm outside HS256.
-2. Add login-attempt throttling with deterministic injected time and per-identity limits, without changing generic authentication errors or adding revocation and refresh semantics.
+- Add HMAC key rotation with an explicit allowlist of configured keys and a documented key identifier, without accepting an algorithm outside HS256.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 049 — JSON API Response Formatter](../../04-apis-and-services/049_json_api_response_formatter/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`golang.org/x/crypto/bcrypt`](https://pkg.go.dev/golang.org/x/crypto/bcrypt), [`github.com/golang-jwt/jwt/v5`](https://pkg.go.dev/github.com/golang-jwt/jwt/v5).
+- **Standards and concept references:** [RFC 7519: JWT](https://www.rfc-editor.org/rfc/rfc7519.html), [RFC 6750: Bearer tokens](https://www.rfc-editor.org/rfc/rfc6750.html), [RFC 8725: JWT best practices](https://www.rfc-editor.org/rfc/rfc8725.html).
+
+### Project-specific learning focus
+
+- **Learn now:** password hashing, algorithm allowlists, registered-claim validation, clock injection, generic authentication errors, authorization context, and secret handling.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

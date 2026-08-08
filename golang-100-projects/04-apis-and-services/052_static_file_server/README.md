@@ -2,7 +2,7 @@
 
 ## 1. Project Name and Number
 
-Project 052 — Static File Server, located in `052_static_file_server`.
+- Project 052 — Static File Server, located in `052_static_file_server`.
 
 ## 2. Project Idea
 
@@ -10,13 +10,17 @@ Build a small HTTP service that serves a fixed asset tree compiled into the bina
 
 ## 3. Why This Project Now?
 
-Project 051 produced uploaded files whose integrity and naming policy this project must respect when they later become assets, and Project 046 is the `net/http` foundation this project extends. This project introduces embedding, deterministic cache headers, an exact route grammar, and exact `If-None-Match` semantics that the later CRUD and middleware projects rely on. The new step is to serve bytes without ever trusting request paths beyond a fixed prefix, to generate cache metadata from content, and to keep the asset tree inside the binary rather than on disk.
+- Project 051 produced uploaded files whose integrity and naming policy this project must respect when they later become assets, and Project 046 is the `net/http` foundation this project extends.
+- This project introduces embedding, deterministic cache headers, an exact route grammar, and exact `If-None-Match` semantics that the later CRUD and middleware projects rely on.
+- The new step is to serve bytes without ever trusting request paths beyond a fixed prefix, to generate cache metadata from content, and to keep the asset tree inside the binary rather than on disk.
 
 ## 4. Prerequisites
 
-Complete Projects 051 and 046 before starting. Earlier projects may be useful review, but they are not required prerequisites.
+- Complete Projects 051 and 046 before starting.
+- Earlier projects may be useful review, but they are not required prerequisites.
 
-You should already be able to construct independently testable `net/http` handlers with `httptest`, distinguish `200`, `304 Not Modified`, `404`, and `405` semantically, set headers before body, validate request paths, and reason about byte-exact responses. You should also know how `embed.FS` compiles a directory tree into the binary and how `fs` and `io/fs` work for static content.
+- You should already be able to construct independently testable `net/http` handlers with `httptest`, distinguish `200`, `304 Not Modified`, `404`, and `405` semantically, set headers before body, validate request paths, and reason about byte-exact responses.
+- You should also know how `embed.FS` compiles a directory tree into the binary and how `fs` and `io/fs` work for static content.
 
 ## 5. What You Must Know Before Starting
 
@@ -35,27 +39,54 @@ You should already be able to construct independently testable `net/http` handle
 
 ## 6. Explanation of New Concepts
 
-`embed.FS` is a filesystem value built at compile time from the contents of one or more directories in the source tree. The resulting binary contains the files as data, not as paths on disk. The service uses the embedded tree rooted at the asset directory and serves it under `/assets/`. The embedded tree is the only source of bytes the service ever returns for asset requests.
+### Concepts
 
-A strong ETag is a token derived from the actual bytes of a resource. A quoted lowercase hexadecimal SHA-256 digest of the exact embedded representation bytes is a strong tag in this project. It changes whenever the bytes change, and it is the same across processes that embed the same content. A weak ETag is a token derived from semantic equivalence and may be shared by representations that differ in unimportant ways. The project uses strong tags from the embedded bytes only; it does not use timestamps, file sizes, or modification times that could vary between builds.
+- `embed.FS` is a filesystem value built at compile time from the contents of one or more directories in the source tree.
+- The resulting binary contains the files as data, not as paths on disk.
+- The service uses the embedded tree rooted at the asset directory and serves it under `/assets/`.
+- The embedded tree is the only source of bytes the service ever returns for asset requests.
 
-The route grammar has two mapped entries and one custom-404 sinkhole. `/assets/{path}` is matched against the embedded tree. `/` is the pinned index route, served only when the embedded `index.html` is present. Any other path, including `/assets/` itself, is answered with the custom `404` page or with `405` for an unsupported method.
+- A strong ETag is a token derived from the actual bytes of a resource.
+- A quoted lowercase hexadecimal SHA-256 digest of the exact embedded representation bytes is a strong tag in this project.
+- It changes whenever the bytes change, and it is the same across processes that embed the same content.
+- A weak ETag is a token derived from semantic equivalence and may be shared by representations that differ in unimportant ways.
+- The project uses strong tags from the embedded bytes only; it does not use timestamps, file sizes, or modification times that could vary between builds.
 
-Path containment is verified before the suffix is matched. The matcher accepts the prefix `/assets/` and discards the rest only when the rest has no `..` segments, no encoded separators, no raw backslashes, and no double-encoded forms. This prevents a request from being reinterpreted as a path outside the embedded tree.
+- The route grammar has two mapped entries and one custom-404 sinkhole. `/assets/{path}` is matched against the embedded tree. `/` is the pinned index route, served only when the embedded `index.html` is present.
+- Any other path, including `/assets/` itself, is answered with the custom `404` page or with `405` for an unsupported method.
 
-`Content-Type` is decided by a deterministic rule. For files whose extension is in the pinned map below, the rule is the documented mapping. For unknown extensions or no extension, the rule is the bounded standard content-detection reading on a prefix of the embedded bytes, with the returned type used as the response `Content-Type`. The header is set explicitly; the handler does not let the response writer infer it from body bytes.
+- Path containment is verified before the suffix is matched.
+- The matcher accepts the prefix `/assets/` and discards the rest only when the rest has no `..` segments, no encoded separators, no raw backslashes, and no double-encoded forms.
+- This prevents a request from being reinterpreted as a path outside the embedded tree.
 
-`Cache-Control` is a pinned directive pair. Successful assets and the index use `public, max-age=3600`. The custom `404` page and every method or error response use `no-store`. The pinned values are part of the contract and are asserted by tests.
+- `Content-Type` is decided by a deterministic rule.
+- For files whose extension is in the pinned map below, the rule is the documented mapping.
+- For unknown extensions or no extension, the rule is the bounded standard content-detection reading on a prefix of the embedded bytes, with the returned type used as the response `Content-Type`.
+- The header is set explicitly; the handler does not let the response writer infer it from body bytes.
 
-`HEAD` semantics are honored explicitly. The handler runs the same path and method-resolution logic, computes the same headers, runs the same `If-None-Match` evaluation, writes the headers, and stops before the body. The handler does not delegate `HEAD` to `GET` and does not skip the ETag check.
+- `Cache-Control` is a pinned directive pair.
+- Successful assets and the index use `public, max-age=3600`.
+- The custom `404` page and every method or error response use `no-store`.
+- The pinned values are part of the contract and are asserted by tests.
 
-`If-None-Match` is evaluated with one consistent rule. A request whose `If-None-Match` value is exactly the current strong ETag for the resource returns `304 Not Modified` with no body, no `Content-Type`, no `Content-Length`, the current ETag, and the current `Cache-Control`. Any other header value is treated as a non-match and produces the normal `200` response with the full asset body. Weak tags, the wildcard form, comma-separated lists, and malformed values all fall under this non-match rule. The same rule applies on `HEAD`, and a matching `HEAD` returns `304 Not Modified` with zero body bytes.
+- `HEAD` semantics are honored explicitly.
+- The handler runs the same path and method-resolution logic, computes the same headers, runs the same `If-None-Match` evaluation, writes the headers, and stops before the body.
+- The handler does not delegate `HEAD` to `GET` and does not skip the ETag check.
 
-The custom `404` page is itself a pinned asset. It is served with its own ETag — the strong SHA-256 digest of its own embedded bytes — but the response status remains `404`, and the `Cache-Control` is `no-store`, not `public, max-age=3600`. Even though the body has an internal ETag, the page is never matched into `304` by the conditional machinery: conditional handling applies only to successful assets and `/`.
+- `If-None-Match` is evaluated with one consistent rule.
+- A request whose `If-None-Match` value is exactly the current strong ETag for the resource returns `304 Not Modified` with no body, no `Content-Type`, no `Content-Length`, the current ETag, and the current `Cache-Control`.
+- Any other header value is treated as a non-match and produces the normal `200` response with the full asset body.
+- Weak tags, the wildcard form, comma-separated lists, and malformed values all fall under this non-match rule.
+- The same rule applies on `HEAD`, and a matching `HEAD` returns `304 Not Modified` with zero body bytes.
+
+- The custom `404` page is itself a pinned asset.
+- It is served with its own ETag — the strong SHA-256 digest of its own embedded bytes — but the response status remains `404`, and the `Cache-Control` is `no-store`, not `public, max-age=3600`.
+- Even though the body has an internal ETag, the page is never matched into `304` by the conditional machinery: conditional handling applies only to successful assets and `/`.
 
 ## 7. Learning Objective
 
-By completion, you can serve a compiled asset tree under a fixed route prefix, generate deterministic strong ETag values from the embedded bytes at construction, pin exact `Cache-Control` policies for normal assets versus the custom `404` and method-error responses, handle `HEAD` and `GET` distinctly, reject path-traversal and encoded-separator attempts, return a custom HTML `404` for every unmapped path, and decide `304 Not Modified` based on exact single-tag `If-None-Match` equality. You can also explain why the asset tree is embedded rather than read from disk, why strong ETags are pinned to lowercase hex SHA-256 digests, why the custom `404` page uses `no-store`, and why `If-None-Match` does not accept weak tags, lists, wildcards, or malformed values.
+- By completion, you can serve a compiled asset tree under a fixed route prefix, generate deterministic strong ETag values from the embedded bytes at construction, pin exact `Cache-Control` policies for normal assets versus the custom `404` and method-error responses, handle `HEAD` and `GET` distinctly, reject path-traversal and encoded-separator attempts, return a custom HTML `404` for every unmapped path, and decide `304 Not Modified` based on exact single-tag `If-None-Match` equality.
+- You can also explain why the asset tree is embedded rather than read from disk, why strong ETags are pinned to lowercase hex SHA-256 digests, why the custom `404` page uses `no-store`, and why `If-None-Match` does not accept weak tags, lists, wildcards, or malformed values.
 
 ## 8. Functional Requirements
 
@@ -78,47 +109,79 @@ By completion, you can serve a compiled asset tree under a fixed route prefix, g
 
 ## 9. Inputs and Outputs
 
-The request is an HTTP method and a path. The path is matched against `/assets/` and then against the embedded tree, or against the pinned index route `/`. The request body is irrelevant for `GET` and `HEAD`; the server does not parse it.
+### Interface Contract
 
-Text-only asset example: a `GET` for an HTML asset under `/assets/` produces `200 OK`, the pinned `Content-Type` for HTML, the strong ETag token in quotes, `Cache-Control: public, max-age=3600`, the `Content-Length` value, and the file bytes in the body.
+- The request is an HTTP method and a path.
+- The path is matched against `/assets/` and then against the embedded tree, or against the pinned index route `/`.
+- The request body is irrelevant for `GET` and `HEAD`; the server does not parse it.
 
-Text-only HEAD example: a `HEAD` for the same asset produces the same status and headers with zero body bytes.
+- Text-only asset example: a `GET` for an HTML asset under `/assets/` produces `200 OK`, the pinned `Content-Type` for HTML, the strong ETag token in quotes, `Cache-Control: public, max-age=3600`, the `Content-Length` value, and the file bytes in the body.
 
-Text-only 304 example: a `GET` with `If-None-Match` set to exactly the asset's current strong ETag produces `304 Not Modified`. The response has no body, no `Content-Type`, no `Content-Length`, includes the current `ETag` and `Cache-Control: public, max-age=3600`.
+- Text-only HEAD example: a `HEAD` for the same asset produces the same status and headers with zero body bytes.
 
-Text-only non-match example: a `GET` with `If-None-Match` set to a weak tag, the wildcard, a comma-separated list, a malformed value, or missing produces the normal `200 OK` response with the full body.
+- Text-only 304 example: a `GET` with `If-None-Match` set to exactly the asset's current strong ETag produces `304 Not Modified`.
+- The response has no body, no `Content-Type`, no `Content-Length`, includes the current `ETag` and `Cache-Control: public, max-age=3600`.
 
-Text-only index example: a `GET /` produces `200 OK` for the embedded `index.html` with `Content-Type: text/html; charset=utf-8`, the strong ETag for `index.html`, and `Cache-Control: public, max-age=3600`.
+- Text-only non-match example: a `GET` with `If-None-Match` set to a weak tag, the wildcard, a comma-separated list, a malformed value, or missing produces the normal `200 OK` response with the full body.
 
-Text-only 404 example: a `GET` for an unknown path under `/assets/`, for `/assets/`, for any other directory under `/assets/`, for the index of a directory that does not have a pinned `index.html`, for a traversal-style path, or for any path outside the two mapped entries produces `404 Not Found` with the custom HTML content type, the strong ETag for the custom `404` page, `Cache-Control: no-store`, and the HTML body of the custom `404` page.
+- Text-only index example: a `GET /` produces `200 OK` for the embedded `index.html` with `Content-Type: text/html; charset=utf-8`, the strong ETag for `index.html`, and `Cache-Control: public, max-age=3600`.
 
-Text-only 405 example: a `POST` to an asset path or to `/` produces `405 Method Not Allowed`, sorted `Allow: GET, HEAD`, and `Cache-Control: no-store`. The body uses the documented error envelope.
+- Text-only 404 example: a `GET` for an unknown path under `/assets/`, for `/assets/`, for any other directory under `/assets/`, for the index of a directory that does not have a pinned `index.html`, for a traversal-style path, or for any path outside the two mapped entries produces `404 Not Found` with the custom HTML content type, the strong ETag for the custom `404` page, `Cache-Control: no-store`, and the HTML body of the custom `404` page.
+
+- Text-only 405 example: a `POST` to an asset path or to `/` produces `405 Method Not Allowed`, sorted `Allow: GET, HEAD`, and `Cache-Control: no-store`.
+- The body uses the documented error envelope.
 
 ## 10. Rules and Edge Cases
 
-The path is matched by prefix and by exact segment count. A request whose asset suffix has an empty segment, an extra slash, or a missing trailing component is rejected by the documented route logic. A request for `/assets/` itself is a directory request and returns the custom `404`.
+- The path is matched by prefix and by exact segment count.
+- A request whose asset suffix has an empty segment, an extra slash, or a missing trailing component is rejected by the documented route logic.
+- A request for `/assets/` itself is a directory request and returns the custom `404`.
 
-Path traversal is rejected before the embedded tree is consulted. A request whose normalized path contains `..`, an encoded slash, an encoded backslash, a raw backslash, or any double-encoded form is rejected as an unknown path. The server does not clean the path into a different resource.
+- Path traversal is rejected before the embedded tree is consulted.
+- A request whose normalized path contains `..`, an encoded slash, an encoded backslash, a raw backslash, or any double-encoded form is rejected as an unknown path.
+- The server does not clean the path into a different resource.
 
-A request whose asset suffix matches a directory under the embedded tree returns the custom `404` unless that directory is reached through `/`. The response does not list the directory's contents and does not redirect to a canonical trailing-slash form.
+- A request whose asset suffix matches a directory under the embedded tree returns the custom `404` unless that directory is reached through `/`.
+- The response does not list the directory's contents and does not redirect to a canonical trailing-slash form.
 
-The ETag is a quoted lowercase hexadecimal SHA-256 digest of the exact embedded representation bytes. A weak tag in `If-None-Match` is not equivalent to the strong tag for matching purposes and is treated as a non-match. A wildcard value is not equivalent to the strong tag and is treated as a non-match. A comma-separated list of one or more tags is treated as a non-match unless the exact strong tag is the only listed value and the value equals the current strong tag in full; the implementation uses the simpler exact equality rule and treats every other form as a non-match. A malformed tag is a non-match. A missing header is a non-match and produces the normal `200`.
+- The ETag is a quoted lowercase hexadecimal SHA-256 digest of the exact embedded representation bytes.
+- A weak tag in `If-None-Match` is not equivalent to the strong tag for matching purposes and is treated as a non-match.
+- A wildcard value is not equivalent to the strong tag and is treated as a non-match.
+- A comma-separated list of one or more tags is treated as a non-match unless the exact strong tag is the only listed value and the value equals the current strong tag in full; the implementation uses the simpler exact equality rule and treats every other form as a non-match.
+- A malformed tag is a non-match.
+- A missing header is a non-match and produces the normal `200`.
 
-`HEAD` returns the same status and headers as `GET` with zero body bytes. A `HEAD` request for an unknown path returns `404` with the custom `404` headers and zero body bytes. A `HEAD` request that would otherwise produce `304 Not Modified` returns `304` with zero body bytes.
+- `HEAD` returns the same status and headers as `GET` with zero body bytes.
+- A `HEAD` request for an unknown path returns `404` with the custom `404` headers and zero body bytes.
+- A `HEAD` request that would otherwise produce `304 Not Modified` returns `304` with zero body bytes.
 
-A matching `GET` or `HEAD` returns `304 Not Modified`. The `304` response includes only the headers explicitly allowed for `304`: `ETag` and `Cache-Control`. The `304` response does not include `Content-Type`, does not include `Content-Length`, and does not include any other header from the corresponding `200` response.
+- A matching `GET` or `HEAD` returns `304 Not Modified`.
+- The `304` response includes only the headers explicitly allowed for `304`: `ETag` and `Cache-Control`.
+- The `304` response does not include `Content-Type`, does not include `Content-Length`, and does not include any other header from the corresponding `200` response.
 
-The custom `404` page is a pinned asset served with its own ETag and `Cache-Control: no-store`. Tests assert the cache policy for the custom `404` separately from the cache policy for normal assets. The custom `404` remains `404` even though its body has an ETag; conditional handling never collapses a `404` into `304`.
+- The custom `404` page is a pinned asset served with its own ETag and `Cache-Control: no-store`.
+- Tests assert the cache policy for the custom `404` separately from the cache policy for normal assets.
+- The custom `404` remains `404` even though its body has an ETag; conditional handling never collapses a `404` into `304`.
 
-The `Content-Type` rule is deterministic. For embedded files whose extension is in the pinned map, the response uses the mapped value exactly. For unknown extensions and for the custom `404` page, the response uses the type returned by a bounded standard content detection on a prefix of the embedded bytes. The header is set before the body is written. The handler never infers `Content-Type` from body bytes outside this documented rule.
+- The `Content-Type` rule is deterministic.
+- For embedded files whose extension is in the pinned map, the response uses the mapped value exactly.
+- For unknown extensions and for the custom `404` page, the response uses the type returned by a bounded standard content detection on a prefix of the embedded bytes.
+- The header is set before the body is written.
+- The handler never infers `Content-Type` from body bytes outside this documented rule.
 
-Concurrent reads of the same asset do not race because the embedded filesystem is immutable and the ETag is computed once at startup. The race detector passes under a parallel test suite.
+- Concurrent reads of the same asset do not race because the embedded filesystem is immutable and the ETag is computed once at startup.
+- The race detector passes under a parallel test suite.
 
 ## 11. Project Constraints
 
-Use only the Go standard library. Use `embed`, `io/fs`, `net/http`, `mime`, `crypto/sha256`, `encoding/hex`, `strings`, and `net/http/httptest`. Do not use a web framework, a third-party router, a third-party templating engine, a third-party asset bundler, a third-party MIME database, or a disk-based static file server. Do not implement range requests, compression negotiation, content negotiation, conditional requests beyond `If-None-Match`, or any caching protocol beyond the documented ETag and `Cache-Control` headers.
+- Use only the Go standard library.
+- Use `embed`, `io/fs`, `net/http`, `mime`, `crypto/sha256`, `encoding/hex`, `strings`, and `net/http/httptest`.
+- Do not use a web framework, a third-party router, a third-party templating engine, a third-party asset bundler, a third-party MIME database, or a disk-based static file server.
+- Do not implement range requests, compression negotiation, content negotiation, conditional requests beyond `If-None-Match`, or any caching protocol beyond the documented ETag and `Cache-Control` headers.
 
-The exact `Cache-Control` policies, the exact MIME map, the exact status name `304 Not Modified`, and the exact rule that `304` carries only the documented header subset are required learning contracts and are part of this document. Do not include other implementation code, function signatures, exact byte sequences of the ETag, exact MIME strings, or the exact HTML of the custom `404` page in this guide. The guide states policies, not literal values.
+- The exact `Cache-Control` policies, the exact MIME map, the exact status name `304 Not Modified`, and the exact rule that `304` carries only the documented header subset are required learning contracts and are part of this document.
+- Do not include other implementation code, function signatures, exact byte sequences of the ETag, exact MIME strings, or the exact HTML of the custom `404` page in this guide.
+- The guide states policies, not literal values.
 
 ## 12. Design Questions Before Coding
 
@@ -151,6 +214,8 @@ The exact `Cache-Control` policies, the exact MIME map, the exact status name `3
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 - Serve an existing HTML asset, a CSS asset, a JavaScript asset, a plain text asset, a PNG, a JPEG, and an SVG through `GET`. Verify the exact status, the exact `Content-Type` from the pinned map, the exact `Content-Length`, the strong ETag token, and `Cache-Control: public, max-age=3600`. Verify the body bytes match the embedded bytes exactly.
 - Send `HEAD` for each served asset. Verify the status, all `200` headers, and zero body bytes. Verify the `Content-Length` header is present and matches the asset size.
 - Send `GET` and `HEAD` for an unknown path under `/assets/`, for `/assets/`, for a directory under `/assets/` with no pinned index, for a traversal-style path with `..`, and for an encoded-separator path. Verify `404`, the custom HTML content type, the custom `404` ETag, `Cache-Control: no-store`, and the custom `404` HTML body. Verify zero body bytes for `HEAD`.
@@ -167,25 +232,46 @@ The exact `Cache-Control` policies, the exact MIME map, the exact status name `3
 
 ## 15. Common Mistakes to Watch For
 
-Trusting the request path after prefix matching without checking `..` segments, encoded separators, or raw backslashes allows path traversal out of the embedded tree. Cleaning the path into a permitted resource hides the attack and changes the contract. Using `http.FileServer` against a directory on disk re-introduces filesystem dependency and breaks the embed contract.
+- Trusting the request path after prefix matching without checking `..` segments, encoded separators, or raw backslashes allows path traversal out of the embedded tree.
+- Cleaning the path into a permitted resource hides the attack and changes the contract.
+- Using `http.FileServer` against a directory on disk re-introduces filesystem dependency and breaks the embed contract.
 
-Serving `HEAD` by reusing `GET` and discarding the body is fragile. The standard library does not always guarantee that the implicit body discard is silent or that headers are written before the body, and the contract here is explicit. Skipping the ETag check on `HEAD` defeats conditional responses.
+- Serving `HEAD` by reusing `GET` and discarding the body is fragile.
+- The standard library does not always guarantee that the implicit body discard is silent or that headers are written before the body, and the contract here is explicit.
+- Skipping the ETag check on `HEAD` defeats conditional responses.
 
-Treating any weak tag as equivalent to the strong tag violates HTTP semantics and the documented `If-None-Match` rule. Treating any `If-None-Match` value that contains the strong tag as a match is wrong here; the rule is exact single-tag equality. Treating the wildcard as a match, treating comma-separated lists as a match by any single element, or treating malformed values as a match violates the same rule. Pinning any of those as a match is wrong.
+- Treating any weak tag as equivalent to the strong tag violates HTTP semantics and the documented `If-None-Match` rule.
+- Treating any `If-None-Match` value that contains the strong tag as a match is wrong here; the rule is exact single-tag equality.
+- Treating the wildcard as a match, treating comma-separated lists as a match by any single element, or treating malformed values as a match violates the same rule.
+- Pinning any of those as a match is wrong.
 
-Returning a directory listing or a generated index page violates the no-listing rule. Returning `301` to a trailing-slash form changes the route grammar and the cache behavior. Serving the custom `404` page from disk re-introduces the dependency on the working directory.
+- Returning a directory listing or a generated index page violates the no-listing rule.
+- Returning `301` to a trailing-slash form changes the route grammar and the cache behavior.
+- Serving the custom `404` page from disk re-introduces the dependency on the working directory.
 
-Setting `Cache-Control: public, max-age=3600` for the custom `404` page makes outages sticky and contradicts the pinned `no-store` policy. Inferring `Content-Type` from body bytes silently changes the contract when the same byte sequence is also a valid HTML document. Treating the MIME map as advisory rather than authoritative breaks the byte-exact Content-Type promise.
+- Setting `Cache-Control: public, max-age=3600` for the custom `404` page makes outages sticky and contradicts the pinned `no-store` policy.
+- Inferring `Content-Type` from body bytes silently changes the contract when the same byte sequence is also a valid HTML document.
+- Treating the MIME map as advisory rather than authoritative breaks the byte-exact Content-Type promise.
 
-Computing the ETag as anything other than a quoted lowercase hexadecimal SHA-256 digest of the exact embedded bytes makes the digest shape inconsistent with the contract. Embedding the asset tree but recomputing the ETag at request time is wasteful and may race. Computing the ETag from a timestamp, from a filesystem modification time, or from a hash of the path lets the same name in different builds share an ETag and is wrong.
+- Computing the ETag as anything other than a quoted lowercase hexadecimal SHA-256 digest of the exact embedded bytes makes the digest shape inconsistent with the contract.
+- Embedding the asset tree but recomputing the ETag at request time is wasteful and may race.
+- Computing the ETag from a timestamp, from a filesystem modification time, or from a hash of the path lets the same name in different builds share an ETag and is wrong.
 
-Allowing the `304 Not Modified` response to carry `Content-Type`, `Content-Length`, or arbitrary `200` headers leaks representation metadata for a body that has none. The `304` header subset is exactly `ETag` and `Cache-Control`; everything else is omitted.
+- Allowing the `304 Not Modified` response to carry `Content-Type`, `Content-Length`, or arbitrary `200` headers leaks representation metadata for a body that has none.
+- The `304` header subset is exactly `ETag` and `Cache-Control`; everything else is omitted.
 
-Allowing conditional handling to collapse `404 Not Found` into `304 Not Modified` because the `404` body has an internal ETag is wrong. The custom `404` page is a `404`, always.
+- Allowing conditional handling to collapse `404 Not Found` into `304 Not Modified` because the `404` body has an internal ETag is wrong.
+- The custom `404` page is a `404`, always.
 
 ## 16. Topics and References for Study
 
-Study the official documentation for `embed.FS`, `fs.FS`, `fs.Sub`, and `fs.WalkDir` for compiling and reading the asset tree. Study `net/http` `Handler`, `ServeMux`, `FileServer`, `ServeContent`, and the documented behavior of `HEAD`. Study `crypto/sha256` and `encoding/hex` for deterministic strong ETag generation. Study `mime` for the standard extension mapping and content-detection primitives. Study `net/http/httptest` for in-memory handler testing. Review RFC 7232 for HTTP conditional requests, RFC 9110 for `If-None-Match` and ETag semantics, and RFC 9111 for Cache-Control directives. Note that the status name is `304 Not Modified` in standard documentation, not `304 Not Content` or `304 Not Found`.
+- Study the official documentation for `embed.FS`, `fs.FS`, `fs.Sub`, and `fs.WalkDir` for compiling and reading the asset tree.
+- Study `net/http` `Handler`, `ServeMux`, `FileServer`, `ServeContent`, and the documented behavior of `HEAD`.
+- Study `crypto/sha256` and `encoding/hex` for deterministic strong ETag generation.
+- Study `mime` for the standard extension mapping and content-detection primitives.
+- Study `net/http/httptest` for in-memory handler testing.
+- Review RFC 7232 for HTTP conditional requests, RFC 9110 for `If-None-Match` and ETag semantics, and RFC 9111 for Cache-Control directives.
+- Note that the status name is `304 Not Modified` in standard documentation, not `304 Not Content` or `304 Not Found`.
 
 ## 17. Self-Assessment Questions
 
@@ -202,19 +288,38 @@ Study the official documentation for `embed.FS`, `fs.FS`, `fs.Sub`, and `fs.Walk
 
 ## 18. Definition of Completion
 
-- The asset tree is compiled through `embed.FS` and served under `/assets/`, with no disk access at request time.
-- The strong ETag for each asset, the index, and the custom `404` page is computed at construction or startup as a quoted lowercase hexadecimal SHA-256 digest of the exact embedded representation bytes and is reused on every request.
-- `GET` returns `200 OK` for assets and for `/` with the exact `Content-Type` from the pinned map, the exact `Content-Length`, the strong ETag, `Cache-Control: public, max-age=3600`, and exact body bytes.
-- `HEAD` returns the same status and headers as `GET` for assets and `/`, with zero body bytes.
-- `If-None-Match` returns `304 Not Modified` for the exact single strong tag and `200` for every other form, with the `304` response including only `ETag` and `Cache-Control` and no body, `Content-Type`, or `Content-Length`.
-- Path traversal, encoded separators, raw backslashes, and double-encoded forms return `404` with the custom `404` page; the service never cleans a path into a different resource.
-- Directory requests return `404` with the custom `404` page; there is no implicit directory index for any directory, including `/assets/`.
-- The custom `404` page uses `Cache-Control: no-store`, retains its own ETag, and never becomes `304` through the conditional machinery.
-- `405` returns the sorted `Allow: GET, HEAD` header with `Cache-Control: no-store` for unsupported methods.
-- All tests use `httptest`, the race detector passes under concurrent reads, and the handler tree is composable without opening a listener.
-- The implementation uses only the Go standard library, and the learner can explain each policy and trade-off without referring to implementation syntax.
+- [ ] The asset tree is compiled through `embed.FS` and served under `/assets/`, with no disk access at request time.
+- [ ] The strong ETag for each asset, the index, and the custom `404` page is computed at construction or startup as a quoted lowercase hexadecimal SHA-256 digest of the exact embedded representation bytes and is reused on every request.
+- [ ] `GET` returns `200 OK` for assets and for `/` with the exact `Content-Type` from the pinned map, the exact `Content-Length`, the strong ETag, `Cache-Control: public, max-age=3600`, and exact body bytes.
+- [ ] `HEAD` returns the same status and headers as `GET` for assets and `/`, with zero body bytes.
+- [ ] `If-None-Match` returns `304 Not Modified` for the exact single strong tag and `200` for every other form, with the `304` response including only `ETag` and `Cache-Control` and no body, `Content-Type`, or `Content-Length`.
+- [ ] Path traversal, encoded separators, raw backslashes, and double-encoded forms return `404` with the custom `404` page; the service never cleans a path into a different resource.
+- [ ] Directory requests return `404` with the custom `404` page; there is no implicit directory index for any directory, including `/assets/`.
+- [ ] The custom `404` page uses `Cache-Control: no-store`, retains its own ETag, and never becomes `304` through the conditional machinery.
+- [ ] `405` returns the sorted `Allow: GET, HEAD` header with `Cache-Control: no-store` for unsupported methods.
+- [ ] All tests use `httptest`, the race detector passes under concurrent reads, and the handler tree is composable without opening a listener.
+- [ ] The implementation uses only the Go standard library, and the learner can explain each policy and trade-off without referring to implementation syntax.
 
 ## 19. Optional Extensions
 
-1. Add a deterministic `Last-Modified` value derived from a stable build timestamp and a documented `If-Modified-Since` rule, while keeping the strong ETag primary and the existing `If-None-Match` rule unchanged.
-2. Add a small `Content-Encoding: gzip` policy for known compressible text assets, computed once at startup, without changing the ETag or `Cache-Control` rules.
+- Add a deterministic `Last-Modified` value derived from a stable build timestamp and a documented `If-Modified-Since` rule, while keeping the strong ETag primary and the existing `If-None-Match` rule unchanged.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 051 — File Upload Server](../../04-apis-and-services/051_file_upload_server/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`embed`](https://pkg.go.dev/embed).
+- **Standards and concept references:** [RFC 9111: HTTP caching](https://www.rfc-editor.org/rfc/rfc9111.html).
+
+### Project-specific learning focus
+
+- **Learn now:** embedded filesystems, MIME types, GET and HEAD parity, strong ETags, If-None-Match, cache-control policy, startup indexing, and path safety.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

@@ -2,7 +2,7 @@
 
 ## 1. Project Name and Number
 
-Project 047 — REST API CRUD, located in `047_rest_api_crud`.
+- Project 047 — REST API CRUD, located in `047_rest_api_crud`.
 
 ## 2. Project Idea
 
@@ -10,13 +10,17 @@ Build an in-memory JSON REST API for Notes. A note has a stable positive identif
 
 ## 3. Why This Project Now?
 
-Project 046 introduced independently testable `net/http` handlers and precise status and header behavior. This project applies that foundation to resource-oriented routing, JSON validation, HTTP method semantics, and synchronized mutable state. Project 046 remains a required foundation, while Project 014 supplies validation practice and Project 017 is useful review for JSON thinking; neither replaces the exact prerequisites below. Project 048 will later build a router and middleware layer on top of this API discipline.
+- Project 046 introduced independently testable `net/http` handlers and precise status and header behavior.
+- This project applies that foundation to resource-oriented routing, JSON validation, HTTP method semantics, and synchronized mutable state.
+- Project 046 remains a required foundation, while Project 014 supplies validation practice and Project 017 is useful review for JSON thinking; neither replaces the exact prerequisites below.
+- Project 048 will later build a router and middleware layer on top of this API discipline.
 
 ## 4. Prerequisites
 
-Complete Project 046 before starting. Earlier projects, including Projects 014 and 017, may be useful review, but they are not required prerequisites.
+- Complete Project 046 before starting.
+- Earlier projects, including Projects 014 and 017, may be useful review, but they are not required prerequisites.
 
-You should already be able to test a handler with `httptest`, set response headers before a body, distinguish `404` from `405`, and keep network startup outside handler tests.
+- You should already be able to test a handler with `httptest`, set response headers before a body, distinguish `404` from `405`, and keep network startup outside handler tests.
 
 ## 5. What You Must Know Before Starting
 
@@ -31,19 +35,32 @@ You should already be able to test a handler with `httptest`, set response heade
 
 ## 6. Explanation of New Concepts
 
-A collection endpoint represents all notes at `/notes`. Its `GET` operation returns an ordered snapshot, and its `POST` operation creates one note. An item endpoint represents one note at `/notes/{id}`. Its `GET` reads, its `PUT` replaces, and its `DELETE` removes. The path and method are evaluated before the request document is interpreted.
+### Concepts
 
-Full replacement with `PUT` means the submitted representation becomes the complete mutable note representation. This project does not define a partial-update operation. A missing optional body therefore means an empty body for the replacement, while a missing required title is invalid.
+- A collection endpoint represents all notes at `/notes`.
+- Its `GET` operation returns an ordered snapshot, and its `POST` operation creates one note.
+- An item endpoint represents one note at `/notes/{id}`.
+- Its `GET` reads, its `PUT` replaces, and its `DELETE` removes.
+- The path and method are evaluated before the request document is interpreted.
 
-Strict JSON input has several independent checks: the media type is appropriate, the body is within the byte limit, the first JSON value has the expected shape and field types, no unknown field appears, and no second non-whitespace value follows it. Passing one check does not imply that the others passed.
+- Full replacement with `PUT` means the submitted representation becomes the complete mutable note representation.
+- This project does not define a partial-update operation.
+- A missing optional body therefore means an empty body for the replacement, while a missing required title is invalid.
 
-The store owns note state. Its mutex protects ID allocation and maps or collections, and its public read operations return copies. List order is a contract rather than an accidental property of map iteration.
+- Strict JSON input has several independent checks: the media type is appropriate, the body is within the byte limit, the first JSON value has the expected shape and field types, no unknown field appears, and no second non-whitespace value follows it.
+- Passing one check does not imply that the others passed.
 
-A clock dependency is a boundary around time acquisition. The API still emits timestamp strings in one documented format, but tests can supply a fixed sequence of times and assert which state transition used which reading.
+- The store owns note state.
+- Its mutex protects ID allocation and maps or collections, and its public read operations return copies.
+- List order is a contract rather than an accidental property of map iteration.
+
+- A clock dependency is a boundary around time acquisition.
+- The API still emits timestamp strings in one documented format, but tests can supply a fixed sequence of times and assert which state transition used which reading.
 
 ## 7. Learning Objective
 
-By completion, you can explain and implement a complete in-memory REST contract, validate JSON at an HTTP boundary, preserve resource identity during replacement, synchronize concurrent mutation, and produce deterministic output independent of map iteration and wall-clock timing. You can also explain why copies, injected time, request-size limits, and strict end-of-document checks matter.
+- By completion, you can explain and implement a complete in-memory REST contract, validate JSON at an HTTP boundary, preserve resource identity during replacement, synchronize concurrent mutation, and produce deterministic output independent of map iteration and wall-clock timing.
+- You can also explain why copies, injected time, request-size limits, and strict end-of-document checks matter.
 
 ## 8. Functional Requirements
 
@@ -69,37 +86,66 @@ By completion, you can explain and implement a complete in-memory REST contract,
 
 ## 9. Inputs and Outputs
 
-The collection path is exactly `/notes`; the item path is exactly `/notes/{id}`. The request document for create and replacement is a JSON object with required string field `title` and optional string field `body`, and no other fields. Title surrounding whitespace is removed before validation and storage. Body whitespace is not changed.
+### Interface Contract
 
-Note output fields use JSON names `id`, `title`, `body`, `created_at`, and `updated_at`. `id` is a positive JSON integer. The two timestamp strings use UTC and RFC3339Nano formatting with a literal `Z` suffix. The created note has equal creation and update timestamps because both use the one creation reading.
+- The collection path is exactly `/notes`; the item path is exactly `/notes/{id}`.
+- The request document for create and replacement is a JSON object with required string field `title` and optional string field `body`, and no other fields.
+- Title surrounding whitespace is removed before validation and storage.
+- Body whitespace is not changed.
 
-Text-only create example: submitting a JSON note with title `  groceries  ` and no body creates a note whose stored title is `groceries`, whose body is empty, and whose first successful ID is `1`. The response status is `201`, and its `Location` value is `/notes/1`.
+- Note output fields use JSON names `id`, `title`, `body`, `created_at`, and `updated_at`. `id` is a positive JSON integer.
+- The two timestamp strings use UTC and RFC3339Nano formatting with a literal `Z` suffix.
+- The created note has equal creation and update timestamps because both use the one creation reading.
 
-Text-only list example: after successful creations with IDs `3` and `1`, the collection response lists ID `1` before ID `3`, regardless of request completion order. An empty list response is the JSON array with no elements.
+- Text-only create example: submitting a JSON note with title ` groceries ` and no body creates a note whose stored title is `groceries`, whose body is empty, and whose first successful ID is `1`.
+- The response status is `201`, and its `Location` value is `/notes/1`.
 
-Text-only error examples: a missing title is a `400` with code `invalid_request`; a missing item is a `404` with code `not_found`; a missing or non-JSON media type is a `415` with code `unsupported_media_type`; and an over-limit body is a `413` with code `payload_too_large`.
+- Text-only list example: after successful creations with IDs `3` and `1`, the collection response lists ID `1` before ID `3`, regardless of request completion order.
+- An empty list response is the JSON array with no elements.
 
-Every JSON error document has exactly two top-level string fields, `code` and `message`. Codes and messages are public stable values, not raw decoder, filesystem, mutex, or clock errors. The required mappings are `invalid_request` with `invalid request`, `invalid_id` with `invalid note id`, `not_found` with `note not found`, `method_not_allowed` with `method not allowed`, `unsupported_media_type` with `unsupported media type`, `payload_too_large` with `payload too large`, and `internal_error` with `internal server error`.
+- Text-only error examples: a missing title is a `400` with code `invalid_request`; a missing item is a `404` with code `not_found`; a missing or non-JSON media type is a `415` with code `unsupported_media_type`; and an over-limit body is a `413` with code `payload_too_large`.
+
+- Every JSON error document has exactly two top-level string fields, `code` and `message`.
+- Codes and messages are public stable values, not raw decoder, filesystem, mutex, or clock errors.
+- The required mappings are `invalid_request` with `invalid request`, `invalid_id` with `invalid note id`, `not_found` with `note not found`, `method_not_allowed` with `method not allowed`, `unsupported_media_type` with `unsupported media type`, `payload_too_large` with `payload too large`, and `internal_error` with `internal server error`.
 
 ## 10. Rules and Edge Cases
 
-The title is invalid when it is absent, not a JSON string, or empty after surrounding whitespace is trimmed. A title consisting only of whitespace is invalid. A title containing internal whitespace, Unicode, or punctuation is allowed unless the body limit is exceeded. The body may be absent or empty and is otherwise preserved as submitted.
+- The title is invalid when it is absent, not a JSON string, or empty after surrounding whitespace is trimmed.
+- A title consisting only of whitespace is invalid.
+- A title containing internal whitespace, Unicode, or punctuation is allowed unless the body limit is exceeded.
+- The body may be absent or empty and is otherwise preserved as submitted.
 
-The decoder accepts one complete JSON document followed only by JSON whitespace. An empty body, malformed value, second JSON value, unknown object field, or wrong type is rejected under the documented `400` policy. `null` is not a note object. Duplicate-known-field detection is outside the required scope. A body at the byte limit is eligible for decoding if it is otherwise valid; any attempt to exceed the limit is `413`, and no partial mutation is allowed.
+- The decoder accepts one complete JSON document followed only by JSON whitespace.
+- An empty body, malformed value, second JSON value, unknown object field, or wrong type is rejected under the documented `400` policy. `null` is not a note object.
+- Duplicate-known-field detection is outside the required scope.
+- A body at the byte limit is eligible for decoding if it is otherwise valid; any attempt to exceed the limit is `413`, and no partial mutation is allowed.
 
-IDs are parsed from the item path only. An item-shaped path with exactly one non-empty ID segment returns `400` when that segment is zero, negative, signed, leading-zero, non-decimal, overflowing, or otherwise non-canonical. An empty segment, trailing slash, or extra path segment does not identify an item route and returns `404`.
+- IDs are parsed from the item path only.
+- An item-shaped path with exactly one non-empty ID segment returns `400` when that segment is zero, negative, signed, leading-zero, non-decimal, overflowing, or otherwise non-canonical.
+- An empty segment, trailing slash, or extra path segment does not identify an item route and returns `404`.
 
-Failed validation, unsupported media type, malformed JSON, and an over-limit body do not allocate an ID, read the creation clock, or mutate an existing note. An unknown update does not read a replacement timestamp. An unknown delete does not alter the ID sequence or any note.
+- Failed validation, unsupported media type, malformed JSON, and an over-limit body do not allocate an ID, read the creation clock, or mutate an existing note.
+- An unknown update does not read a replacement timestamp.
+- An unknown delete does not alter the ID sequence or any note.
 
-A replacement never changes ID or creation time. It performs a fresh update-time assignment even if the replacement title and body happen to equal the old values. Clock reads for successful creates and replacements occur while the store's mutation lock is held, alongside the state transition they timestamp. A clock supplied by tests may return equal or non-monotonic times; the API reports the injected values rather than inventing wall-clock ordering, and tests that require a changed serialized timestamp supply a later value.
+- A replacement never changes ID or creation time.
+- It performs a fresh update-time assignment even if the replacement title and body happen to equal the old values.
+- Clock reads for successful creates and replacements occur while the store's mutation lock is held, alongside the state transition they timestamp.
+- A clock supplied by tests may return equal or non-monotonic times; the API reports the injected values rather than inventing wall-clock ordering, and tests that require a changed serialized timestamp supply a later value.
 
-If the representable ID space is exhausted, creation fails without wrapping or reusing an ID and returns the generic internal error contract. This condition is not simulated with a long-running test. Concurrent creates may complete in any order, but each receives one unique ID and every completed list is sorted.
+- If the representable ID space is exhausted, creation fails without wrapping or reusing an ID and returns the generic internal error contract.
+- This condition is not simulated with a long-running test.
+- Concurrent creates may complete in any order, but each receives one unique ID and every completed list is sorted.
 
 ## 11. Project Constraints
 
-Use only the Go standard library, including `net/http`, `encoding/json`, `sync`, `time`, `mime`, and `net/http/httptest` as appropriate. Do not use a database, framework, global mutable store, generated API package, or third-party JSON validator.
+- Use only the Go standard library, including `net/http`, `encoding/json`, `sync`, `time`, `mime`, and `net/http/httptest` as appropriate.
+- Do not use a database, framework, global mutable store, generated API package, or third-party JSON validator.
 
-Do not implement partial update semantics, pagination, filtering, persistence, authentication, or a custom router in the required project. Do not expose internal errors, map iteration order, mutable store references, or unbounded request bodies. Tests must use `httptest`, injected time, deterministic data, and the race detector; they must not bind fixed ports, sleep, or call external services.
+- Do not implement partial update semantics, pagination, filtering, persistence, authentication, or a custom router in the required project.
+- Do not expose internal errors, map iteration order, mutable store references, or unbounded request bodies.
+- Tests must use `httptest`, injected time, deterministic data, and the race detector; they must not bind fixed ports, sleep, or call external services.
 
 ## 12. Design Questions Before Coding
 
@@ -129,6 +175,8 @@ Do not implement partial update semantics, pagination, filtering, persistence, a
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 - Create the first note and verify `201`, the exact JSON fields, trimmed title, empty default body, both timestamps, and exact path-only `Location`.
 - Create several notes with an injected sequence of times and verify IDs are positive, increasing, non-reused, and timestamp values are exact.
 - List an empty store and verify a JSON empty array. List notes created in a deliberately different completion order and verify ascending ID order.
@@ -149,19 +197,36 @@ Do not implement partial update semantics, pagination, filtering, persistence, a
 
 ## 15. Common Mistakes to Watch For
 
-Using a map directly for list output makes order nondeterministic and creates flaky tests. Returning pointers or a slice backed by store memory lets callers mutate state outside the mutex. Incrementing an ID before validation can create unexplained gaps and makes failed requests affect the contract. Reusing a deleted ID breaks identity and can make old references point at a new resource.
+- Using a map directly for list output makes order nondeterministic and creates flaky tests.
+- Returning pointers or a slice backed by store memory lets callers mutate state outside the mutex.
+- Incrementing an ID before validation can create unexplained gaps and makes failed requests affect the contract.
+- Reusing a deleted ID breaks identity and can make old references point at a new resource.
 
-Treating `PUT` as an unspecified partial update creates incompatible clients. Trimming the body as well as the title changes user data. Updating `created_at` during replacement destroys resource history. Calling the clock multiple times in one operation makes deterministic timestamp assertions ambiguous.
+- Treating `PUT` as an unspecified partial update creates incompatible clients.
+- Trimming the body as well as the title changes user data.
+- Updating `created_at` during replacement destroys resource history.
+- Calling the clock multiple times in one operation makes deterministic timestamp assertions ambiguous.
 
-A JSON decoder that stops after its first value accepts concatenated documents. Default decoder behavior may accept unknown fields. Checking only `Content-Type` for a string prefix can accept unrelated media types. Decoding an unbounded request before applying a limit permits avoidable memory growth.
+- A JSON decoder that stops after its first value accepts concatenated documents.
+- Default decoder behavior may accept unknown fields.
+- Checking only `Content-Type` for a string prefix can accept unrelated media types.
+- Decoding an unbounded request before applying a limit permits avoidable memory growth.
 
-Returning `200` for creation, a body for deletion, or no `Location` header loses useful HTTP semantics. Falling through from an unsupported method to `404` hides a known resource. Allowing implicit `HEAD` without documenting it makes handler and wire behavior diverge. Writing raw internal parse or mutex errors gives clients unstable information.
+- Returning `200` for creation, a body for deletion, or no `Location` header loses useful HTTP semantics.
+- Falling through from an unsupported method to `404` hides a known resource.
+- Allowing implicit `HEAD` without documenting it makes handler and wire behavior diverge.
+- Writing raw internal parse or mutex errors gives clients unstable information.
 
-Locking individual map operations while returning a live collection is not enough. Holding a lock while doing unnecessary response encoding can reduce concurrency, while releasing it before copying can create a race. A race-detector pass is evidence for exercised paths, not permission to omit ownership reasoning.
+- Locking individual map operations while returning a live collection is not enough.
+- Holding a lock while doing unnecessary response encoding can reduce concurrency, while releasing it before copying can create a race.
+- A race-detector pass is evidence for exercised paths, not permission to omit ownership reasoning.
 
 ## 16. Topics and References for Study
 
-Study the official `net/http` and `net/http/httptest` documentation, HTTP method and status semantics, the `Allow` header, and `Location` on `201 Created`. Study `encoding/json` decoder behavior, strict field handling, complete-document validation, and JSON number and string rules. Study `mime.ParseMediaType` for media-type validation, `sync.Mutex` for ownership protection, `sort` for deterministic output, `time.Time` formatting, and `errors` for stable error classification. Review Project 046's handler boundary and Project 014's validation discipline.
+- Study the official `net/http` and `net/http/httptest` documentation, HTTP method and status semantics, the `Allow` header, and `Location` on `201 Created`.
+- Study `encoding/json` decoder behavior, strict field handling, complete-document validation, and JSON number and string rules.
+- Study `mime.ParseMediaType` for media-type validation, `sync.Mutex` for ownership protection, `sort` for deterministic output, `time.Time` formatting, and `errors` for stable error classification.
+- Review Project 046's handler boundary and Project 014's validation discipline.
 
 ## 17. Self-Assessment Questions
 
@@ -178,17 +243,36 @@ Study the official `net/http` and `net/http/httptest` documentation, HTTP method
 
 ## 18. Definition of Completion
 
-- The collection and item routes implement exactly the pinned methods, statuses, `Allow` values, `Location`, content types, and body policies.
-- Notes have positive monotonic non-reused IDs, trimmed non-empty titles, preserved bodies, and correctly formatted injected timestamps.
-- Full replacement preserves ID and creation time and changes update time; unknown update and delete do not mutate state.
-- Lists are empty arrays when empty, sorted ascending by ID, and made from copies.
-- JSON requests enforce the exact media-type, 1,048,576-byte body limit, shape, unknown-field, complete-document, ID, and title rules.
-- Every non-`204` response with a body uses the exact stable JSON error or success representation, and `HEAD` is explicitly tested.
-- Concurrent creates, reads, updates, deletes, and list operations are safe under the race detector without sleeps or external networking.
-- The clock and store boundaries are injected and deterministic in tests.
-- Only standard-library facilities are used, and the learner can explain each status and edge-case decision.
+- [ ] The collection and item routes implement exactly the pinned methods, statuses, `Allow` values, `Location`, content types, and body policies.
+- [ ] Notes have positive monotonic non-reused IDs, trimmed non-empty titles, preserved bodies, and correctly formatted injected timestamps.
+- [ ] Full replacement preserves ID and creation time and changes update time; unknown update and delete do not mutate state.
+- [ ] Lists are empty arrays when empty, sorted ascending by ID, and made from copies.
+- [ ] JSON requests enforce the exact media-type, 1,048,576-byte body limit, shape, unknown-field, complete-document, ID, and title rules.
+- [ ] Every non-`204` response with a body uses the exact stable JSON error or success representation, and `HEAD` is explicitly tested.
+- [ ] Concurrent creates, reads, updates, deletes, and list operations are safe under the race detector without sleeps or external networking.
+- [ ] The clock and store boundaries are injected and deterministic in tests.
+- [ ] Only standard-library facilities are used, and the learner can explain each status and edge-case decision.
 
 ## 19. Optional Extensions
 
-1. Add bounded, deterministic pagination and filtering to collection listing, with a separately documented query contract and ordering tests.
-2. Add a persistence adapter that saves and restores notes using the atomic JSON-file lessons from Project 017 without changing the in-memory API contract.
+- Add bounded, deterministic pagination and filtering to collection listing, with a separately documented query contract and ordering tests.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`mime`](https://pkg.go.dev/mime), [`sync`](https://pkg.go.dev/sync).
+- **Standards and concept references:** [RFC 8259: JSON](https://www.rfc-editor.org/rfc/rfc8259.html).
+
+### Project-specific learning focus
+
+- **Learn now:** REST method matrices, strict JSON documents, media types, stable public errors, thread-safe in-memory state, locations, and deterministic listing.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

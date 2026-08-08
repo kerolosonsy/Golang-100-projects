@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project 057 — `rate_limited_api`. Folder: `04-apis-and-services/057_rate_limited_api/`. README only; the learner writes all source and tests.
+- Project 057 — `rate_limited_api`.
+- Folder: `04-apis-and-services/057_rate_limited_api/`.
+- README only; the learner writes all source and tests.
 
 ## 2. Project Idea
 
@@ -10,11 +12,19 @@ Build a per-client HTTP middleware that applies a token-bucket rate limit to a J
 
 ## 3. Why This Project Now?
 
-Projects 046 through 056 produced an HTTP service with growing cross-cutting concerns: routing, middleware, JSON envelopes, auth, CORS. None of those projects decided who a request was "for". Project 057 introduces the client-identity question, which is the same question authentication (Project 059) and the API gateway (Project 091) will answer again. Token-bucket logic was first written in Project 036; here the same logic is rebuilt under concurrency and HTTP semantics. The OpenAPI contract in Project 058 must describe the `429` and `503` responses and the rate headers. The session middleware in Project 059 will reuse the same map-cleanup discipline with TTL. The graceful shutdown in Project 060 will reuse the "test the orchestration, not the wall clock" pattern this project establishes.
+- Projects 046 through 056 produced an HTTP service with growing cross-cutting concerns: routing, middleware, JSON envelopes, auth, CORS.
+- None of those projects decided who a request was "for".
+- Project 057 introduces the client-identity question, which is the same question authentication (Project 059) and the API gateway (Project 091) will answer again.
+- Token-bucket logic was first written in Project 036; here the same logic is rebuilt under concurrency and HTTP semantics.
+- The OpenAPI contract in Project 058 must describe the `429` and `503` responses and the rate headers.
+- The session middleware in Project 059 will reuse the same map-cleanup discipline with TTL.
+- The graceful shutdown in Project 060 will reuse the "test the orchestration, not the wall clock" pattern this project establishes.
 
 ## 4. Prerequisites
 
-Required earlier projects: Project 056, Project 046, and Project 036. Earlier HTTP, middleware, JSON envelope, and concurrency projects are useful review but are not formally required. The learner must already understand `net/http` handler chaining, the token-bucket model from Project 036 (capacity, refill rate, cost, the meaning of "no tokens"), `context.Context`, and how to write `httptest` tests that drive the middleware through a real `http.Handler` chain.
+- Required earlier projects: Project 056, Project 046, and Project 036.
+- Earlier HTTP, middleware, JSON envelope, and concurrency projects are useful review but are not formally required.
+- The learner must already understand `net/http` handler chaining, the token-bucket model from Project 036 (capacity, refill rate, cost, the meaning of "no tokens"), `context.Context`, and how to write `httptest` tests that drive the middleware through a real `http.Handler` chain.
 
 ## 5. What You Must Know Before Starting
 
@@ -29,27 +39,55 @@ Required earlier projects: Project 056, Project 046, and Project 036. Earlier HT
 
 ## 6. Explanation of New Concepts
 
-**Per-client state.** Each client identity has its own bucket. The limiter keeps a map from identity to bucket state. The map is guarded by a single mutex; the per-bucket state lives inside the value type. When a request arrives, the limiter looks up the bucket, charges it, and updates `lastSeen`.
+### Concepts
 
-**Clock injection.** A production limiter reads `time.Now()`. A testable limiter reads from a clock interface that the constructor accepts. Tests use a fake clock that returns a fixed time and lets the test advance it explicitly. No test sleeps, no `time.After`, no real timers.
+- **Per-client state.** Each client identity has its own bucket.
+- The limiter keeps a map from identity to bucket state.
+- The map is guarded by a single mutex; the per-bucket state lives inside the value type.
+- When a request arrives, the limiter looks up the bucket, charges it, and updates `lastSeen`.
 
-**Client identity.** The default identity is the IP host parsed from `Request.RemoteAddr` using `net.SplitHostPort`. The function supports IPv4 and bracketed IPv6. A missing port, an empty string, or any unparsable input is a `400 Bad Request` with the JSON envelope `{ "code": "invalid_client_address", "message": "client address could not be parsed" }`; no bucket is created and the next handler is not called.
+- **Clock injection.** A production limiter reads `time.Now()`.
+- A testable limiter reads from a clock interface that the constructor accepts.
+- Tests use a fake clock that returns a fixed time and lets the test advance it explicitly.
+- No test sleeps, no `time.After`, no real timers.
 
-**Trusted proxy CIDRs.** `X-Forwarded-For` is ignored by default. The optional configured trusted-proxy CIDR list is used only for one narrow rule: when the immediate peer IP is inside the allowlist, the middleware accepts `X-Forwarded-For` only if it contains exactly one comma-free, syntactically valid IP, and uses that IP as the client identity. If `X-Forwarded-For` is missing, empty, contains a comma, contains an unparsable IP, or contains more than one IP, the middleware falls back to the immediate peer IP. If the immediate peer IP is not in the trusted-proxy allowlist, `X-Forwarded-For` is ignored entirely. Multi-proxy chains are out of scope.
+- **Client identity.** The default identity is the IP host parsed from `Request.RemoteAddr` using `net.SplitHostPort`.
+- The function supports IPv4 and bracketed IPv6.
+- A missing port, an empty string, or any unparsable input is a `400 Bad Request` with the JSON envelope `{ "code": "invalid_client_address", "message": "client address could not be parsed" }`; no bucket is created and the next handler is not called.
 
-**TTL cleanup.** Each bucket records a `lastSeen` timestamp. A `Cleanup(now)` function removes any bucket whose `now - lastSeen` is greater than or equal to 10 minutes. The function is a pure function with no goroutine, no ticker, and no sleep. The application invokes cleanup at known boundaries. Tests call cleanup directly. `lastSeen` is updated on every successfully identified request, including a request that is rejected with `429` for rate exhaustion; it is not updated on requests that fail the identity check.
+- **Trusted proxy CIDRs.** `X-Forwarded-For` is ignored by default.
+- The optional configured trusted-proxy CIDR list is used only for one narrow rule: when the immediate peer IP is inside the allowlist, the middleware accepts `X-Forwarded-For` only if it contains exactly one comma-free, syntactically valid IP, and uses that IP as the client identity.
+- If `X-Forwarded-For` is missing, empty, contains a comma, contains an unparsable IP, or contains more than one IP, the middleware falls back to the immediate peer IP.
+- If the immediate peer IP is not in the trusted-proxy allowlist, `X-Forwarded-For` is ignored entirely.
+- Multi-proxy chains are out of scope.
 
-**Bounded memory.** `MaxClients` is exactly 1000. When the map already holds 1000 records and a request arrives whose identity is not already present, the middleware rejects the request with `503 Service Unavailable` and the JSON envelope `{ "code": "limiter_capacity_reached", "message": "rate limiter client capacity reached" }`. No bucket is created for that identity, and no `Retry-After` is emitted. An existing identity continues to use its bucket. The map size never exceeds 1000. Reclaiming capacity requires the application to call `Cleanup` explicitly; the limiter does not run cleanup itself.
+- **TTL cleanup.** Each bucket records a `lastSeen` timestamp.
+- A `Cleanup(now)` function removes any bucket whose `now - lastSeen` is greater than or equal to 10 minutes.
+- The function is a pure function with no goroutine, no ticker, and no sleep.
+- The application invokes cleanup at known boundaries.
+- Tests call cleanup directly. `lastSeen` is updated on every successfully identified request, including a request that is rejected with `429` for rate exhaustion; it is not updated on requests that fail the identity check.
 
-**Rate headers.** Allowed responses and `429` responses both include three headers whose values are derived from the bucket state. `X-RateLimit-Limit` is exactly `5`. `X-RateLimit-Remaining` is an integer equal to the floor of the post-decision usable tokens. `X-RateLimit-Reset` is the Unix seconds value, in the current fake-clock frame, at which the next request would be admitted when at least one token remains; it is the current fake-clock Unix second when at least one token remains. These are legacy `X-` headers and the middleware does not claim they are an IETF standard.
+- **Bounded memory.** `MaxClients` is exactly 1000.
+- When the map already holds 1000 records and a request arrives whose identity is not already present, the middleware rejects the request with `503 Service Unavailable` and the JSON envelope `{ "code": "limiter_capacity_reached", "message": "rate limiter client capacity reached" }`.
+- No bucket is created for that identity, and no `Retry-After` is emitted.
+- An existing identity continues to use its bucket.
+- The map size never exceeds 1000.
+- Reclaiming capacity requires the application to call `Cleanup` explicitly; the limiter does not run cleanup itself.
 
-**429 response.** Rejected requests due to rate exhaustion receive `429 Too Many Requests`, a JSON body exactly equal to `{ "code": "rate_limited", "message": "rate limit exceeded", "retry_after_seconds": N }` where `N` is the integer ceiling of the seconds needed for one full token to refill, with a minimum of 1, and the `Retry-After` header is exactly `N`. `N` and `Retry-After` must match exactly.
+- **Rate headers.** Allowed responses and `429` responses both include three headers whose values are derived from the bucket state. `X-RateLimit-Limit` is exactly `5`. `X-RateLimit-Remaining` is an integer equal to the floor of the post-decision usable tokens. `X-RateLimit-Reset` is the Unix seconds value, in the current fake-clock frame, at which the next request would be admitted when at least one token remains;
+- It is the current fake-clock Unix second when at least one token remains.
+- These are legacy `X-` headers and the middleware does not claim they are an IETF standard.
 
-**Fractional tokens.** A bucket with `0.7` tokens after refill still cannot serve a request of cost 1. A bucket with `1.0` tokens can serve one request. The `retry_after_seconds` value rounds up so that after waiting `N` seconds the next request is admitted even if the calculation produces a fractional token count.
+- **429 response.** Rejected requests due to rate exhaustion receive `429 Too Many Requests`, a JSON body exactly equal to `{ "code": "rate_limited", "message": "rate limit exceeded", "retry_after_seconds": N }` where `N` is the integer ceiling of the seconds needed for one full token to refill, with a minimum of 1, and the `Retry-After` header is exactly `N`. `N` and `Retry-After` must match exactly.
+
+- **Fractional tokens.** A bucket with `0.7` tokens after refill still cannot serve a request of cost 1.
+- A bucket with `1.0` tokens can serve one request.
+- The `retry_after_seconds` value rounds up so that after waiting `N` seconds the next request is admitted even if the calculation produces a fractional token count.
 
 ## 7. Learning Objective
 
-After finishing this project, the learner can explain how a token-bucket limiter is lifted from a single-process design (Project 036) into a per-client HTTP middleware, why the clock must be injected, why `X-Forwarded-For` must not be trusted by default, why a TTL plus an explicit cleanup call bounds memory without leaking goroutines, and how the rate headers and `Retry-After` value are computed. The learner can also describe the exact behaviour at `MaxClients` and defend that choice.
+- After finishing this project, the learner can explain how a token-bucket limiter is lifted from a single-process design (Project 036) into a per-client HTTP middleware, why the clock must be injected, why `X-Forwarded-For` must not be trusted by default, why a TTL plus an explicit cleanup call bounds memory without leaking goroutines, and how the rate headers and `Retry-After` value are computed.
+- The learner can also describe the exact behaviour at `MaxClients` and defend that choice.
 
 ## 8. Functional Requirements
 
@@ -69,6 +107,8 @@ After finishing this project, the learner can explain how a token-bucket limiter
 14. The middleware is safe for concurrent use.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
 
 Inputs the middleware reads from the request: `RemoteAddr`, optionally `X-Forwarded-For`, and the request method and path (the latter two only to set headers, not for routing decisions). Outputs are: either a short-circuit `400`, `429`, or `503` response with the documented envelope, or a forwarded request with the `X-RateLimit-*` headers added to the response. Example textual inputs and expected textual outputs:
 
@@ -131,6 +171,8 @@ Inputs the middleware reads from the request: `RemoteAddr`, optionally `X-Forwar
 10. Review the verification list and confirm every item is covered before declaring the project complete.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
 
 Each item is a behavioural specification. The learner writes the corresponding `go test` code.
 
@@ -211,17 +253,36 @@ Each item is a behavioural specification. The learner writes the corresponding `
 
 The project is complete when, in addition to the rules above:
 
-- Every item in the verification list is a passing test that the learner wrote themselves.
-- The tests pass under `go test -race ./...` from the project folder.
-- The middleware contains no third-party imports and starts no goroutines of its own.
-- The clock interface and the fake clock are reused by every test, with no `time.Sleep` anywhere.
-- The configuration struct has the exact fixed values and a constructor that rejects contradictory inputs.
-- The map size never exceeds `MaxClients` at any point.
-- The learner can answer every self-assessment question without rereading the README.
+- [ ] Every item in the verification list is a passing test that the learner wrote themselves.
+- [ ] The tests pass under `go test -race ./...` from the project folder.
+- [ ] The middleware contains no third-party imports and starts no goroutines of its own.
+- [ ] The clock interface and the fake clock are reused by every test, with no `time.Sleep` anywhere.
+- [ ] The configuration struct has the exact fixed values and a constructor that rejects contradictory inputs.
+- [ ] The map size never exceeds `MaxClients` at any point.
+- [ ] The learner can answer every self-assessment question without rereading the README.
 
 ## 19. Optional Extensions
 
 At most two. Pick one only if the core project is already complete and tested. Optional extensions must not change the core behaviour, must not add speculative eviction, and must not introduce another third-party dependency.
 
 - Add a per-identity counters struct (`Allowed`, `Limited`, `Rejected`) that the application may read after `Cleanup` for structured logging.
-- Add a `Stop` method that prevents new identities from being added and reports the map size. The map is not cleared by `Stop`.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 056 — CORS Header Middleware](../../04-apis-and-services/056_cors_header_middleware/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide), [Project 034 — Worker Pool Basic](../../03-concurrency/034_worker_pool_basic/README.md#20-prerequisite-based-documentation-guide), [Project 036 — Rate Limiter Token Bucket](../../03-concurrency/036_rate_limiter_token_bucket/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`net`](https://pkg.go.dev/net), [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate).
+- **Standards and concept references:** [RFC 6585: 429 Too Many Requests](https://www.rfc-editor.org/rfc/rfc6585.html), [RFC 9110: Retry-After](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after).
+
+### Project-specific learning focus
+
+- **Learn now:** identity extraction and proxy trust, per-key token buckets, lock scope, retry metadata, bounded cleanup, injected time, and deterministic concurrency tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

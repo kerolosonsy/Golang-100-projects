@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project **012** — `012_bill_splitter`. The directory name and number must match exactly.
+- Project **012** — `012_bill_splitter`.
+- The directory name and number must match exactly.
 
 ## 2. Project Idea
 
@@ -12,9 +13,12 @@ The split must work for a single diner as well as for several diners, must accep
 
 ## 3. Why This Project Now?
 
-Project 011 taught the learner to keep behavior as data and to inject I/O boundaries. Project 012 adds the first piece of *domain logic* with rules the user can verify by hand: a tip on top of a bill, divided across N people, with a chosen rounding policy. It is also the first project where the choice of numeric type matters in a way the learner can see and measure.
+- Project 011 taught the learner to keep behavior as data and to inject I/O boundaries.
+- Project 012 adds the first piece of *domain logic* with rules the user can verify by hand: a tip on top of a bill, divided across N people, with a chosen rounding policy.
+- It is also the first project where the choice of numeric type matters in a way the learner can see and measure.
 
-Because the inputs and outputs are small and the rules are easy to state in plain language, this is a good place to develop the habit of writing test cases as tables before writing the implementation. Each row of the table — amount, tip, people, expected total in cents, expected shares in cents, expected sum — is a contract the implementation must honor exactly.
+- Because the inputs and outputs are small and the rules are easy to state in plain language, this is a good place to develop the habit of writing test cases as tables before writing the implementation.
+- Each row of the table — amount, tip, people, expected total in cents, expected shares in cents, expected sum — is a contract the implementation must honor exactly.
 
 ## 4. Prerequisites
 
@@ -37,37 +41,39 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Structs as small data carriers
+### Concepts
+
+#### Structs as small data carriers
 
 A `struct` groups fields that travel together. For a bill, those fields are the amount, the tip percentage, and the number of people. For a result, those fields are the total in cents, the per-person share for each diner, and the size of the leftover that the chosen policy decided to distribute.
 
-### Methods as operations on a value
+#### Methods as operations on a value
 
 A method attaches a function to a type's receiver. The method can read the fields, derive new values, and return them. The struct's fields stay immutable from the caller's point of view when the receiver is a value receiver, which is the right default for a bill that does not change after it is constructed.
 
-### Binary floating point versus decimal money
+#### Binary floating point versus decimal money
 
 A `float64` holds a binary approximation of a real number. Many decimal values — `0.10`, `0.20`, `0.30`, `1.10`, and so on — cannot be represented exactly in binary, so arithmetic on them accumulates small errors. The product `0.10 * 3` may print as `0.30000000000000004` even though the user thinks of it as `0.30`. The honest response for money is: do the rounding step at the boundary between the user-facing decimal and the internal arithmetic, then keep the rest of the work in integers.
 
-### Rounding to cents at the boundary
+#### Rounding to cents at the boundary
 
 The contract for this project is: the bill-plus-tip total is rounded to the nearest cent once, expressed as an integer number of cents, and that integer is the only money value the splitter manipulates. From that point on, the per-person shares are also integers (number of cents per person), and the sum of those integers is exactly the integer total. No further rounding is performed at any other step.
 
 If the bill is represented by `B` and the tip percentage by `T`, first calculate the bill plus `B` multiplied by `T / 100`. Multiply that total by 100 and round it to the nearest whole cent using Go's `math.Round` behavior (half away from zero). The resulting integer cent amount is the only total used by the split. This rounding rule is fixed for the project, not chosen per implementation or per input.
 
-### The chosen remainder policy
+#### The chosen remainder policy
 
 Once the rounded total in cents is known, integer division by the number of people gives the base share, while the integer remainder gives the number of extra cents still to allocate. The **first as many people as there are remainder cents** get one extra cent each; everyone else gets the base share. The sum of all shares is exactly the rounded total in cents.
 
 This policy is the one the README requires. The learner does not choose among multiple policies; the contract is fixed here. The verification cases pin the outcomes.
 
-### Worked examples
+#### Worked examples
 
 - `110.00` split three ways: `totalCents = 11000`. `base = 3666`, `remainder = 2`. Shares in cents: `3667, 3667, 3666`. In decimal: `36.67, 36.67, 36.66`. Sum: `110.00`.
 - `100.00` split three ways: `totalCents = 10000`. `base = 3333`, `remainder = 1`. Shares in cents: `3334, 3333, 3333`. In decimal: `33.34, 33.33, 33.33`. Sum: `100.00`.
 - `10.00` split two ways: `totalCents = 1000`. `base = 500`, `remainder = 0`. Shares: `500, 500`. In decimal: `5.00, 5.00`. Sum: `10.00`.
 
-### Validating the people count
+#### Validating the people count
 
 Zero or negative people is not a bill split; it is a malformed input. The program must reject it with a clear error and must not divide by zero. A fractional people count is also rejected; people count is an integer greater than zero.
 
@@ -98,20 +104,22 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A bill amount: a non-negative decimal number the user types. Examples: `42.50`, `100`, `7.25`.
 - A tip percentage: a non-negative decimal number. Examples: `0` (no tip), `10`, `12.5`, `20`.
 - A number of people: a positive integer. Examples: `1`, `2`, `4`.
 
-### Outputs
+#### Outputs
 
 - The total including tip, rounded to the nearest cent, shown in decimal.
 - For one person, a single per-person share equal to the total.
 - For several people, a per-person share for each diner, in order. The first `remainder` entries are one cent larger than the rest. (For typical small bills this is a difference of `0.01`.)
 - A line that confirms the sum of the shares equals the total exactly.
 
-### Example text-only success run (three people, 100 with 10% tip)
+#### Example text-only success run (three people, 100 with 10% tip)
 
 ```
 Bill amount: 100
@@ -124,7 +132,7 @@ Per person: 36.66
 Sum of shares: 110.00
 ```
 
-### Example text-only success run (three people, 100 with no tip)
+#### Example text-only success run (three people, 100 with no tip)
 
 ```
 Bill amount: 100
@@ -137,7 +145,7 @@ Per person: 33.33
 Sum of shares: 100.00
 ```
 
-### Example text-only error run
+#### Example text-only error run
 
 ```
 Bill amount: 50
@@ -199,6 +207,8 @@ Number of people must be a positive integer.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is a table row: bill, tip percent, people, expected total in cents, expected shares in cents, expected sum. The cases must pin the chosen policy exactly.
 
 - One diner, zero tip: `totalCents` equals the bill in cents; the single share equals `totalCents`.
@@ -249,16 +259,34 @@ Each case is a table row: bill, tip percent, people, expected total in cents, ex
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and each test pins the chosen rounding rule and the "first `remainder` people get the extra cent" policy in integer cents.
-- The package documentation declares the rounding rule and the remainder policy in plain English.
-- The splitting logic is reachable from a test that constructs the input struct directly, without going through the interactive prompt.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and each test pins the chosen rounding rule and the "first `remainder` people get the extra cent" policy in integer cents.
+- [ ] The package documentation declares the rounding rule and the remainder policy in plain English.
+- [ ] The splitting logic is reachable from a test that constructs the input struct directly, without going through the interactive prompt.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Unequal shares by weights.** Accept a list of weights (for example `[1, 1, 2]`) and compute weighted shares in cents, still under the same "round the total to cents once, then distribute the remainder deterministically" rule. Do not add a more elaborate allocation algorithm.
-- **Currency symbol and locale hint.** Accept a single command-line flag that selects a currency symbol printed next to the total. Keep the parser simple: one flag, one symbol, no localization of the decimal separator.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 011 — Interactive Menu](../../01-foundations/011_interactive_menu/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** rounding policies, fixed-point money representations, remainder allocation, invariants, and exact boundary tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

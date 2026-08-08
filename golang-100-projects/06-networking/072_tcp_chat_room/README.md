@@ -1,43 +1,98 @@
 # Project 072 — TCP Chat Room
 
 ## 1. Project Name and Number
-Project 072, tcp_chat_room. This README is a learning guide only. You will create every source and test file yourself in `06-networking/072_tcp_chat_room/`. This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- Project 072, tcp_chat_room.
+- This README is a learning guide only.
+- You will create every source and test file yourself in `06-networking/072_tcp_chat_room/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 2. Project Idea
+
 A local line-based chat on a loopback address. The first line is the requested username with pinned length and character rules and unique case-insensitively. Subsequent lines are chat messages under a fixed limit. A hub goroutine owns membership, outbound queues, and broadcast ordering. Each client has exactly one writer owner; slow clients are torn down by the hub through a lifecycle owner without requiring the writer to drain a full queue.
 
 ## 3. Why This Project Now?
-This follows Project 071 (tcp_echo_server). It reuses the LF-only framing and the per-connection lifecycle. It adds the hub pattern, broadcast ordering, slow-client teardown, and the discipline of one writer owner per connection with no socket I/O performed by the hub.
+
+- This follows Project 071 (tcp_echo_server).
+- It reuses the LF-only framing and the per-connection lifecycle.
+- It adds the hub pattern, broadcast ordering, slow-client teardown, and the discipline of one writer owner per connection with no socket I/O performed by the hub.
 
 ## 4. Prerequisites
-Project 071 is the immediate predecessor and required prerequisite. The tests need only frozen time, fake clients for the hub, and an ephemeral loopback listener for the integration check. No public network, no Docker, no environment variables.
+
+- Project 071 is the immediate predecessor and required prerequisite.
+- The tests need only frozen time, fake clients for the hub, and an ephemeral loopback listener for the integration check.
+- No public network, no Docker, no environment variables.
 
 ## 5. What You Must Know Before Starting
-Know the line framing from Project 071, channels, goroutine ownership, the hub loop pattern, select with default for nonblocking sends, the difference between per-client slow-consumer drops and server-wide stalls, lifecycle signaling between hub and per-connection owners, and the race detector.
+
+- Know the line framing from Project 071, channels, goroutine ownership, the hub loop pattern, select with default for nonblocking sends, the difference between per-client slow-consumer drops and server-wide stalls, lifecycle signaling between hub and per-connection owners, and the race detector.
 
 ## 6. Explanation of New Concepts
-The wire framing is the same as Project 071: LF only, no CRLF. A CR before LF is content. The username is 1..24 ASCII bytes, only letters, digits, underscore, and hyphen. No trimming or normalization beyond ASCII case-insensitive uniqueness. The accepted display spelling is preserved and used exactly as accepted on the wire. The chat message is 1..1,024 bytes excluding LF, must be valid UTF-8, and preserves spaces and content exactly. A CR before LF makes a username invalid because CR is not in the allowed character set, but a CR before LF may be valid message content if the rest of the message is valid UTF-8 and within the byte limit.
 
-The wire notice formats are pinned exactly. A join notice is the literal prefix `[hub] ` followed by the accepted display name followed by the literal word ` joined` followed by the LF byte. A leave notice is the literal prefix `[hub] ` followed by the accepted display name followed by the literal word ` left` followed by the LF byte. An accepted chat message is the accepted display name followed by the literal `: ` followed by the exact message followed by the LF byte. A pre-registration invalid or duplicate username rejection is the literal `[hub] username rejected` followed by the LF byte. No alternative phrasing is permitted.
+### Concepts
 
-The hub goroutine owns the membership map, the per-client outbound queues, and the broadcast channel. The channel-receive order is authoritative. Join, leave, and chat events are enqueued in receive order. Once a client is registered, the hub enqueues a join notice for all registered clients including the joiner. Accepted chat becomes the exact chat format for all registered clients including the sender. An unregistered client never emits a leave. No history is replayed.
+- The wire framing is the same as Project 071: LF only, no CRLF.
+- A CR before LF is content.
+- The username is 1..24 ASCII bytes, only letters, digits, underscore, and hyphen.
+- No trimming or normalization beyond ASCII case-insensitive uniqueness.
+- The accepted display spelling is preserved and used exactly as accepted on the wire.
+- The chat message is 1..1,024 bytes excluding LF, must be valid UTF-8, and preserves spaces and content exactly.
+- A CR before LF makes a username invalid because CR is not in the allowed character set, but a CR before LF may be valid message content if the rest of the message is valid UTF-8 and within the byte limit.
 
-Each client has one reader goroutine, one writer owner, one outbound channel, and one lifecycle owner. The reader never writes to the socket directly. The writer is the sole owner of socket writes and close writes. The outbound channel capacity is exactly 32 complete events. The hub performs no socket I/O.
+- The wire notice formats are pinned exactly.
+- A join notice is the literal prefix `[hub] ` followed by the accepted display name followed by the literal word ` joined` followed by the LF byte.
+- A leave notice is the literal prefix `[hub] ` followed by the accepted display name followed by the literal word ` left` followed by the LF byte.
+- An accepted chat message is the accepted display name followed by the literal `: ` followed by the exact message followed by the LF byte.
+- A pre-registration invalid or duplicate username rejection is the literal `[hub] username rejected` followed by the LF byte.
+- No alternative phrasing is permitted.
 
-Slow-client teardown is implementable while preserving one writer. When the hub finds a client's outbound queue full during a nonblocking enqueue, the hub marks the client unregistered, closes that client's outbound queue exactly once, and signals the client's lifecycle owner. The lifecycle owner cancels or closes the connection so the reader and writer stop without requiring the writer to drain a full queue. The event that overflowed is not delivered to the disconnected client. The current broadcast continues to other clients before exactly one leave notice is ordered for the remaining membership. Repeated teardown for the same client is idempotent.
+- The hub goroutine owns the membership map, the per-client outbound queues, and the broadcast channel.
+- The channel-receive order is authoritative.
+- Join, leave, and chat events are enqueued in receive order.
+- Once a client is registered, the hub enqueues a join notice for all registered clients including the joiner.
+- Accepted chat becomes the exact chat format for all registered clients including the sender.
+- An unregistered client never emits a leave.
+- No history is replayed.
 
-Message violations after registration are a protocol violation that disconnects and unregisters the offending client and produces exactly one leave notice for the remaining members. A post-registration violation covers empty message, invalid UTF-8 message, and over-1,024-byte message. Violations during pre-registration are handled by the rejection path below and never touch membership.
+- Each client has one reader goroutine, one writer owner, one outbound channel, and one lifecycle owner.
+- The reader never writes to the socket directly.
+- The writer is the sole owner of socket writes and close writes.
+- The outbound channel capacity is exactly 32 complete events.
+- The hub performs no socket I/O.
 
-Pre-registration rejection delivery is best-effort through a pre-registration writer or control path with a bounded delivery deadline. The literal rejection format `[hub] username rejected` followed by LF is sent at most once. If the rejection cannot be delivered within the bounded deadline, the connection is closed without blocking the hub. Case-insensitive duplicate preserves the existing member. The display name is used exactly as accepted on the wire.
+- Slow-client teardown is implementable while preserving one writer.
+- When the hub finds a client's outbound queue full during a nonblocking enqueue, the hub marks the client unregistered, closes that client's outbound queue exactly once, and signals the client's lifecycle owner.
+- The lifecycle owner cancels or closes the connection so the reader and writer stop without requiring the writer to drain a full queue.
+- The event that overflowed is not delivered to the disconnected client.
+- The current broadcast continues to other clients before exactly one leave notice is ordered for the remaining membership.
+- Repeated teardown for the same client is idempotent.
 
-Shutdown stops new registration, unregisters all clients once, closes each outbound queue once, closes the listener and connections, and waits for pumps. Active connections are closed once.
+- Message violations after registration are a protocol violation that disconnects and unregisters the offending client and produces exactly one leave notice for the remaining members.
+- A post-registration violation covers empty message, invalid UTF-8 message, and over-1,024-byte message.
+- Violations during pre-registration are handled by the rejection path below and never touch membership.
 
-Text-only protocol examples are permitted. As a prose shape: a client connects and sends `alice` followed by LF. The server registers the user and sends `[hub] alice joined` followed by LF to every registered client including the new one. The client then sends `hello there` followed by LF. The server sends `alice: hello there` followed by LF to every registered client including the sender. A second client sends `BOB` followed by LF while one `bob` is already registered; the server sends `[hub] username rejected` followed by LF at most once, then closes that second client without joining.
+- Pre-registration rejection delivery is best-effort through a pre-registration writer or control path with a bounded delivery deadline.
+- The literal rejection format `[hub] username rejected` followed by LF is sent at most once.
+- If the rejection cannot be delivered within the bounded deadline, the connection is closed without blocking the hub.
+- Case-insensitive duplicate preserves the existing member.
+- The display name is used exactly as accepted on the wire.
+
+- Shutdown stops new registration, unregisters all clients once, closes each outbound queue once, closes the listener and connections, and waits for pumps.
+- Active connections are closed once.
+
+- Text-only protocol examples are permitted.
+- As a prose shape: a client connects and sends `alice` followed by LF.
+- The server registers the user and sends `[hub] alice joined` followed by LF to every registered client including the new one.
+- The client then sends `hello there` followed by LF.
+- The server sends `alice: hello there` followed by LF to every registered client including the sender.
+- A second client sends `BOB` followed by LF while one `bob` is already registered; the server sends `[hub] username rejected` followed by LF at most once, then closes that second client without joining.
 
 ## 7. Learning Objective
-Implement a deterministic, hub-owned chat room with exact username rules, exact pinned wire notice formats, exact outbound queue capacity, exact slow-client teardown lifecycle, exact post-registration violation behavior, and tests that pin event order, queue behavior, and shutdown without sleep-based synchronization.
+
+- Implement a deterministic, hub-owned chat room with exact username rules, exact pinned wire notice formats, exact outbound queue capacity, exact slow-client teardown lifecycle, exact post-registration violation behavior, and tests that pin event order, queue behavior, and shutdown without sleep-based synchronization.
 
 ## 8. Functional Requirements
+
 1. Server binds to a configurable loopback address; production default is `127.0.0.1:0`.
 2. Wire framing reuses LF-only from Project 071.
 3. Username is 1..24 ASCII bytes, only letters, digits, underscore, and hyphen.
@@ -70,18 +125,57 @@ Implement a deterministic, hub-owned chat room with exact username rules, exact 
 30. Codec and hub are independently testable without a real listener.
 
 ## 9. Inputs and Outputs
-Server input is a TCP loopback address. Codec input is a username line followed by zero or more chat lines. Codec output is one of the pinned wire notice formats per line on the wire: join, message, leave, or pre-registration rejection. Server output is a bound address. Tests use fake clients that inject hub events and observe outbound channel deliveries.
+
+### Interface Contract
+
+- Server input is a TCP loopback address.
+- Codec input is a username line followed by zero or more chat lines.
+- Codec output is one of the pinned wire notice formats per line on the wire: join, message, leave, or pre-registration rejection.
+- Server output is a bound address.
+- Tests use fake clients that inject hub events and observe outbound channel deliveries.
 
 ## 10. Rules and Edge Cases
-Empty username is rejected. Username longer than 24 bytes is rejected. Username with a disallowed character is rejected. A CR before LF makes a username invalid. Duplicate username case-insensitive is rejected without modifying the existing member. Empty message after registration is a post-registration violation that disconnects and unregisters. Invalid UTF-8 message after registration is a post-registration violation that disconnects and unregisters. Message longer than 1,024 bytes after registration is a post-registration violation that disconnects and unregisters. A full outbound queue during a nonblocking enqueue causes slow-client teardown through the lifecycle owner without requiring the writer to drain. Disconnect after join produces exactly one leave notice ordered for the remaining membership. Shutdown is ordered and idempotent. Repeated teardown for the same client is idempotent. Pre-registration rejection is sent at most once under a bounded delivery deadline and never blocks the hub.
+
+- Empty username is rejected.
+- Username longer than 24 bytes is rejected.
+- Username with a disallowed character is rejected.
+- A CR before LF makes a username invalid.
+- Duplicate username case-insensitive is rejected without modifying the existing member.
+- Empty message after registration is a post-registration violation that disconnects and unregisters.
+- Invalid UTF-8 message after registration is a post-registration violation that disconnects and unregisters.
+- Message longer than 1,024 bytes after registration is a post-registration violation that disconnects and unregisters.
+- A full outbound queue during a nonblocking enqueue causes slow-client teardown through the lifecycle owner without requiring the writer to drain.
+- Disconnect after join produces exactly one leave notice ordered for the remaining membership.
+- Shutdown is ordered and idempotent.
+- Repeated teardown for the same client is idempotent.
+- Pre-registration rejection is sent at most once under a bounded delivery deadline and never blocks the hub.
 
 ## 11. Project Constraints
-Loopback only. No public network. No TLS. No authentication. No history, no private messages, no rooms, no persistence. No real-time clock dependency. The repository must contain no generated code in this README; tool installation and code generation belong to the learner. The four pinned wire notice formats are exact and are not customizable.
+
+- Loopback only.
+- No public network.
+- No TLS.
+- No authentication.
+- No history, no private messages, no rooms, no persistence.
+- No real-time clock dependency.
+- The repository must contain no generated code in this README; tool installation and code generation belong to the learner.
+- The four pinned wire notice formats are exact and are not customizable.
 
 ## 12. Design Questions Before Coding
-How is the membership map protected under concurrent registration and unregistration? How is the per-client outbound channel capacity exactly 32? How is a nonblocking enqueue implemented so the hub never blocks on a slow client? How does the lifecycle owner stop the reader and writer without requiring the writer to drain a full queue? How is the leave notice ordered after the rest of the current broadcast to other clients? How is teardown idempotent under repeated signals? How is registration closed before shutdown, and how is shutdown wait ensured to not lock on a slow pump? How is the display name preserved exactly on the wire? How is invalid-UTF-8 content detected without depending on the framing buffer's encoding? How does the bounded pre-registration delivery deadline guarantee the hub never blocks on rejection delivery?
+
+- How is the membership map protected under concurrent registration and unregistration?
+- How is the per-client outbound channel capacity exactly 32?
+- How is a nonblocking enqueue implemented so the hub never blocks on a slow client?
+- How does the lifecycle owner stop the reader and writer without requiring the writer to drain a full queue?
+- How is the leave notice ordered after the rest of the current broadcast to other clients?
+- How is teardown idempotent under repeated signals?
+- How is registration closed before shutdown, and how is shutdown wait ensured to not lock on a slow pump?
+- How is the display name preserved exactly on the wire?
+- How is invalid-UTF-8 content detected without depending on the framing buffer's encoding?
+- How does the bounded pre-registration delivery deadline guarantee the hub never blocks on rejection delivery?
 
 ## 13. Implementation Milestones
+
 1. Define the line codec with username and message validation including the empty, invalid UTF-8, and over-limit cases.
 2. Define the exact four pinned wire notice formats as a single internal contract shared by the codec, the hub, and the tests.
 3. Define the client structure with one reader, one writer owner, one outbound channel, and one lifecycle owner.
@@ -93,6 +187,9 @@ How is the membership map protected under concurrent registration and unregistra
 9. Run race detector and concurrency tests.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - The join wire format is exactly the literal prefix `[hub] ` followed by the accepted display name followed by the literal word ` joined` followed by the LF byte, for all registered clients including the joiner.
 - The leave wire format is exactly the literal prefix `[hub] ` followed by the accepted display name followed by the literal word ` left` followed by the LF byte, for remaining members only.
 - The chat wire format is exactly the accepted display name followed by the literal `: ` followed by the exact message followed by the LF byte, for all registered clients including the sender.
@@ -119,15 +216,30 @@ How is the membership map protected under concurrent registration and unregistra
 - All tests pass under the race detector with no sleep synchronization.
 
 ## 15. Common Mistakes to Watch For
-Normalizing the username beyond case-insensitive uniqueness, trimming whitespace, rejecting CRLF-split lines, misordering the leave notice relative to the broadcast that overflowed, blocking the hub on a slow client, requiring the writer to drain a full queue, missing the nonblocking enqueue on full queue, leaking the writer or reader goroutine, double-closing the outbound channel, leaving the lifecycle owner unsignalled, replaying history, treating CR as a line delimiter, allowing customizable wire notice prefixes, using sleep to wait for tests, and producing a duplicate leave notice for the same disconnect.
+
+- Normalizing the username beyond case-insensitive uniqueness, trimming whitespace, rejecting CRLF-split lines, misordering the leave notice relative to the broadcast that overflowed, blocking the hub on a slow client, requiring the writer to drain a full queue, missing the nonblocking enqueue on full queue, leaking the writer or reader goroutine, double-closing the outbound channel, leaving the lifecycle owner unsignalled, replaying history, treating CR as a line delimiter, allowing customizable wire notice prefixes, using sleep to wait for tests, and producing a duplicate leave notice for the same disconnect.
 
 ## 16. Topics and References for Study
-Study the hub pattern, broadcast channels, channel capacity, select with default, pump ownership, structured concurrency, lifecycle signaling between hub and per-connection owners, idempotent shutdown, and bounded delivery deadlines. Review Go's `net`, `sync`, `context`, and `unicode/utf8` documentation plus the race detector. Read the prior README for Project 071, the required foundation, for framing and lifecycle.
+
+- Study the hub pattern, broadcast channels, channel capacity, select with default, pump ownership, structured concurrency, lifecycle signaling between hub and per-connection owners, idempotent shutdown, and bounded delivery deadlines.
+- Review Go's `net`, `sync`, `context`, and `unicode/utf8` documentation plus the race detector.
+- Read the prior README for Project 071, the required foundation, for framing and lifecycle.
 
 ## 17. Self-Assessment Questions
-Why is the hub the only owner of membership, outbound queues, and broadcast order, and why is the outbound channel capacity exactly 32? Why is a slow client torn down through a lifecycle owner instead of requiring the writer to drain? Why is the leave notice ordered after the current broadcast's other deliveries? Why are the four wire notice formats exact and not customizable? Why is a post-registration message violation a disconnect rather than just a rejection? Why is pre-registration rejection delivered under a bounded deadline, before membership, and without blocking the hub? Why is the display name preserved exactly on the wire? Why is a CR before LF allowed in a message but not in a username? Why is repeated teardown idempotent? How can tests prove hub order, wire formats, and teardown lifecycle without sleep?
+
+1. Why is the hub the only owner of membership, outbound queues, and broadcast order, and why is the outbound channel capacity exactly 32?
+2. Why is a slow client torn down through a lifecycle owner instead of requiring the writer to drain?
+3. Why is the leave notice ordered after the current broadcast's other deliveries?
+4. Why are the four wire notice formats exact and not customizable?
+5. Why is a post-registration message violation a disconnect rather than just a rejection?
+6. Why is pre-registration rejection delivered under a bounded deadline, before membership, and without blocking the hub?
+7. Why is the display name preserved exactly on the wire?
+8. Why is a CR before LF allowed in a message but not in a username?
+9. Why is repeated teardown idempotent?
+10. How can tests prove hub order, wire formats, and teardown lifecycle without sleep?
 
 ## 18. Definition of Completion
+
 - [ ] Username rules and chat message rules are exact and validated before any hub state change.
 - [ ] The four pinned wire notice formats are exact: `[hub] <name> joined` LF, `[hub] <name> left` LF, `<name>: <msg>` LF, `[hub] username rejected` LF.
 - [ ] Hub is the sole owner of membership, per-client outbound queues, and broadcast order; cross-client arrival order equals hub receive order.
@@ -143,4 +255,25 @@ Why is the hub the only owner of membership, outbound queues, and broadcast orde
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
-Add a per-hub metric for joined, rejected, post-registration-violation, and dropped-slow clients visible at shutdown. Add a hub-side log line that records teardown reasons without weakening the pinned wire contract.
+
+- Add a per-hub metric for joined, rejected, post-registration-violation, and dropped-slow clients visible at shutdown.
+- Add a hub-side log line that records teardown reasons without weakening the pinned wire contract.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 071 — TCP Echo Server](../../06-networking/071_tcp_echo_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** hub ownership, read and write pumps, bounded broadcast queues, slow-client policy, registration lifecycle, framing, idempotent shutdown, and delivery deadlines.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

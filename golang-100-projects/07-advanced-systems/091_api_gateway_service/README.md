@@ -1,18 +1,28 @@
 # Project 091 — API Gateway Service
 
 ## 1. Project Name and Number
-Project 091, `091_api_gateway_service`. The folder name is fixed by the curriculum table; do not rename the directory.
+
+- Project 091, `091_api_gateway_service`.
+- The folder name is fixed by the curriculum table; do not rename the directory.
 
 ## 2. Project Idea
+
 A small HTTP gateway that sits in front of a fixed set of upstream services. A validated configuration maps URL path prefixes to fixed upstream origins. The gateway composes, in one `net/http` handler chain, request and correlation identifiers, panic recovery, access logging, route selection, an unauthenticated health response for the public prefix, JWT authentication for protected prefixes, a per-client rate limiter, and a reverse proxy to the chosen upstream. There is no service discovery and no open proxy. The client never chooses the target; the route is fully decided by the gateway from the request path and the validated configuration.
 
 ## 3. Why This Project Now?
-This project is the composition capstone for the HTTP, auth, limits, and proxy work that came before. It pulls the wiring discipline, the header policy, the timeouts, and the per-route behavior into a single program. The previous projects taught each piece in isolation; this project is the lesson about how the pieces coexist, in what order, and with what error ownership. The formal prerequisites — project 050 (JWT authentication server), project 057 (rate-limited API), project 060 (graceful web shutdown), and project 078 (fixed-upstream reverse proxy) — each contribute one ingredient that this gateway combines. The immediate catalog predecessor, project 090, is optional context rather than a formal prerequisite.
+
+- This project is the composition capstone for the HTTP, auth, limits, and proxy work that came before.
+- It pulls the wiring discipline, the header policy, the timeouts, and the per-route behavior into a single program.
+- The previous projects taught each piece in isolation; this project is the lesson about how the pieces coexist, in what order, and with what error ownership.
+- The formal prerequisites — project 050 (JWT authentication server), project 057 (rate-limited API), project 060 (graceful web shutdown), and project 078 (fixed-upstream reverse proxy) — each contribute one ingredient that this gateway combines.
+- The immediate catalog predecessor, project 090, is optional context rather than a formal prerequisite.
 
 ## 4. Prerequisites
-The formal prerequisites are projects 050, 057, 060, and 078; project 090 is the immediate catalog predecessor and remains useful as optional context rather than a formal prerequisite.
+
+- The formal prerequisites are projects 050, 057, 060, and 078; project 090 is the immediate catalog predecessor and remains useful as optional context rather than a formal prerequisite.
 
 ## 5. What You Must Know Before Starting
+
 - That `net/http` middleware composition is a typed chain where each middleware takes the next `http.Handler` and returns a new `http.Handler`, and the order matters for both short-circuiting and observability.
 - That a `ReverseProxy` from `net/http/httputil` will, by default, forward almost every header and writes the upstream response body directly to the client; both behaviors must be shaped deliberately.
 - That JWT verification is verification of signature, expiry, issuer, and audience; a missing or invalid token is a 401 from the gateway, never an upstream failure.
@@ -22,6 +32,9 @@ The formal prerequisites are projects 050, 057, 060, and 078; project 090 is the
 - That graceful shutdown is `Server.Shutdown` waiting for in-flight handlers and refusing new connections; in-flight upstream calls must end on their own deadline.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 - Composition as a typed chain: each middleware takes the next handler and returns a new handler. Order becomes a property of the wiring, not of any individual handler, and so it is part of the gateway's contract.
 - Segment-aware normalized prefix matching: configuration entries are validated before matching. A valid prefix has one leading slash, no trailing slash unless the prefix is exactly the root, no repeated slash, and no dot, dot-dot, or encoded-slash segment. Invalid spellings are rejected rather than silently rewritten. A prefix matches the path equal to it or a path that begins with the prefix followed by a slash. So `/api` matches `/api` and `/api/...`, but not `/apix` or `/apifoo`. Two entries with the exact same valid prefix are an invalid configuration. Two entries that are disjoint at the same length are valid. A longer prefix nested inside a shorter prefix is valid and the longer one wins for paths it matches.
 - Explicit route selection as a stage: route selection is its own stage in the chain. It runs before authentication and rate limiting so that protected-route and public-route decisions are made before identity and limit decisions, and so that unmatched paths short-circuit to a 404 without ever reaching the auth or limit stages.
@@ -31,9 +44,11 @@ The formal prerequisites are projects 050, 057, 060, and 078; project 090 is the
 - Configuration as a validated contract: the configuration is loaded and validated at startup. Validation fails closed: the process exits with a non-zero status and never serves traffic. Validation rejects a normalized prefix that duplicates another entry, an upstream URL that is not an absolute `http` or `https` origin with no userinfo, no query, and no fragment, a protected route that has no secret reference, and a rate-limit value that is not positive and finite. A normalized prefix whose path component collapses to empty is rejected. Timeouts for read, write, idle, and upstream are explicit and validated. There is no request-selected target and no open proxy.
 
 ## 7. Learning Objective
-After completing this project you must be able to explain in your own words: why segment-aware prefix matching is the correct shape rather than substring matching, why invalid prefix spellings and exact duplicate prefixes fail startup, why route selection must be its own stage before authentication and rate limiting, why both identifiers are echoed and forwarded under pinned header names, why neither identifier is ever an authentication or rate-limit identity, why each JSON error class is owned by the gateway or the upstream and never mixed, and why cancellation is not a hidden success.
+
+- After completing this project you must be able to explain in your own words: why segment-aware prefix matching is the correct shape rather than substring matching, why invalid prefix spellings and exact duplicate prefixes fail startup, why route selection must be its own stage before authentication and rate limiting, why both identifiers are echoed and forwarded under pinned header names, why neither identifier is ever an authentication or rate-limit identity, why each JSON error class is owned by the gateway or the upstream and never mixed, and why cancellation is not a hidden success.
 
 ## 8. Functional Requirements
+
 1. The gateway is configured at startup from a single configuration file with a fixed schema. No configuration is changed at runtime and no admin endpoint exists.
 2. Each route has a normalized path prefix, an absolute `http` or `https` upstream origin, a protected flag, a prefix policy of strip or preserve, and a rate-limit declaration including a key kind.
 3. Routing uses segment-aware normalized prefix matching. The longest matching prefix wins. An unmatched path returns the gateway 404. Two entries with the exact same normalized prefix fail validation at startup. Two entries that are disjoint at the same length are allowed. A longer prefix nested inside a shorter prefix is allowed.
@@ -50,6 +65,9 @@ After completing this project you must be able to explain in your own words: why
 14. The HTTP server is started with explicit timeouts. `SIGINT` and `SIGTERM` trigger a bounded `Server.Shutdown` that waits for in-flight handlers and refuses new connections.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
+
 - Configuration input: a single static file with a fixed schema. Example route entries:
   - `prefix: "/api/v1/notes"`, `upstream_origin: "http://127.0.0.1:9101"`, `protected: true`, `prefix_policy: "strip"`, `rate_limit: { rps: 10, burst: 20, key_kind: "subject" }`.
   - `/healthz` is not a configured proxy route; it is the single built-in public health path.
@@ -62,6 +80,7 @@ After completing this project you must be able to explain in your own words: why
 - 502 output: a JSON body with a stable error code and no internal leakage; the upstream error detail is in the log only.
 
 ## 10. Rules and Edge Cases
+
 - Two configuration entries with the exact same normalized prefix fail validation at startup.
 - Two entries that are same-length but disjoint are valid; the validator rejects only genuine ambiguity or duplication.
 - A request for a path that matches no prefix returns the gateway 404 from the unmatched short circuit.
@@ -79,6 +98,7 @@ After completing this project you must be able to explain in your own words: why
 - A panic in any later middleware still produces the gateway 500 JSON; recovery is the outermost stage.
 
 ## 11. Project Constraints
+
 - The gateway depends only on `net/http`, `net/http/httputil`, and the JWT library the learner chooses. The chosen JWT library must support signature verification, expiry, issuer, and audience.
 - No service registry, no dynamic upstream discovery, and no open proxy. Upstreams are fixed in the configuration.
 - No TLS termination inside the gateway process; the gateway runs plain HTTP behind a trusted reverse proxy or load balancer in this project.
@@ -89,6 +109,7 @@ After completing this project you must be able to explain in your own words: why
 - The optional integration test must start a fake upstream on loopback; it is separate from the unit tests and is gated behind a build tag and an environment flag.
 
 ## 12. Design Questions Before Coding
+
 - Which header names will you pin for request identifier and correlation identifier, and what is the maximum allowed length and the validation rule for inbound values?
 - Which JWT library will you choose, and what is its exact verification contract including signing algorithm, mandatory claims, allowed clock skew, and error mapping?
 - What is your normalized prefix representation as a value type, and what is your segment-aware matching algorithm and its worst case?
@@ -99,6 +120,7 @@ After completing this project you must be able to explain in your own words: why
 - How do you test that access logging records exactly once even when later middleware short-circuits?
 
 ## 13. Implementation Milestones
+
 1. Define the configuration value type and the loader. Build the validator that rejects duplicate normalized prefixes, invalid upstream origins, missing secret references on protected routes, and non-positive or non-finite limits. Validator operates on a parsed value, not a file path.
 2. Implement segment-aware normalized prefix matching and the route selection stage that returns a matched route with its prefix policy or an unmatched decision. Tests cover equal-length disjoint prefixes, nested prefixes with the longer one winning, and unmatched paths.
 3. Implement the request and correlation identifier stages with pinned header names, generation rules, echo to response, and replacement of invalid inbound values.
@@ -113,6 +135,9 @@ After completing this project you must be able to explain in your own words: why
 12. Write the opt-in integration test gated by build tag and environment flag against a fake upstream on loopback.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Routing: a longer normalized prefix wins over a shorter one; two disjoint same-length prefixes are both valid and each routes correctly; a duplicate normalized prefix is rejected by the validator; unmatched paths return the gateway 404 from the unmatched short circuit.
 - Authentication: protected route with no token, malformed token, expired token, wrong issuer, wrong audience, and wrong signature all return the gateway 401 with the same stable code; the public route with no token succeeds.
 - Rate limiting: two distinct subjects get isolated buckets; a subject that exhausts its bucket returns 429 with `Retry-After`; a rate-limited request never reaches the upstream; refill is observable with an injected clock and no real sleep.
@@ -126,6 +151,7 @@ After completing this project you must be able to explain in your own words: why
 - Hop-by-hop headers: the proxy strips hop-by-hop headers in both directions; tests assert they never appear in the upstream request or in the response.
 
 ## 15. Common Mistakes to Watch For
+
 - Letting the rate limit key be a client-controlled header; the key for protected routes is the verified subject.
 - Letting a panic in a later stage leave the response half-written; recovery must still produce JSON.
 - Forwarding hop-by-hop headers across the proxy.
@@ -139,6 +165,7 @@ After completing this project you must be able to explain in your own words: why
 - Rewriting a client cancellation as a successful response; cancellation is its own outcome.
 
 ## 16. Topics and References for Study
+
 - The Go blog post on `net/http` middleware composition and `http.Handler` as a value.
 - The `net/http/httputil` documentation for `ReverseProxy`, `Director`, and `ErrorHandler`.
 - RFC 7230 section 6.1 for the canonical hop-by-hop header list.
@@ -148,18 +175,39 @@ After completing this project you must be able to explain in your own words: why
 - The Go documentation on `context.WithCancel` for client cancellation propagation.
 
 ## 17. Self-Assessment Questions
-- Why is segment-aware normalized prefix matching the correct rule, and what fails with substring matching?
-- Why does route selection run before authentication and rate limiting rather than after?
-- Why must both identifiers be echoed and forwarded, and why must invalid inbound values be replaced?
-- Why are the request identifier and correlation identifier not authentication identities or rate-limit keys?
-- Why is each JSON error class owned by the gateway or by the upstream and never mixed?
-- Why is client cancellation surfaced as cancellation rather than rewritten as success?
-- Why must exact duplicate prefixes and invalid prefix spellings fail startup?
-- Why does the configuration validator reject only genuine ambiguity rather than every overlap?
+
+1. Why is segment-aware normalized prefix matching the correct rule, and what fails with substring matching?
+2. Why does route selection run before authentication and rate limiting rather than after?
+3. Why must both identifiers be echoed and forwarded, and why must invalid inbound values be replaced?
+4. Why are the request identifier and correlation identifier not authentication identities or rate-limit keys?
+5. Why is each JSON error class owned by the gateway or by the upstream and never mixed?
+6. Why is client cancellation surfaced as cancellation rather than rewritten as success?
+7. Why must exact duplicate prefixes and invalid prefix spellings fail startup?
+8. Why does the configuration validator reject only genuine ambiguity rather than every overlap?
 
 ## 18. Definition of Completion
-The project is complete when the gateway reads a validated configuration, starts the HTTP server with the pinned middleware order and explicit timeouts, serves the public prefix without authentication or rate limiting, returns 404 from the unmatched short circuit, returns 401 for protected requests with missing or invalid JWTs, returns 429 with `Retry-After` for rate-limited subjects, returns 500 from recovery, returns 502 for upstream transport failures without internal leakage, echoes and forwards request and correlation identifiers under pinned header names with the same safe values in the response, log, and upstream request, logs one structured line per request exactly once and without raw credentials, shuts down gracefully on `SIGINT` and `SIGTERM`, runs all unit tests locally without external services, and runs the opt-in integration test against a fake upstream on loopback when the gating flag and build tag are set.
+
+- [ ] The project is complete when the gateway reads a validated configuration, starts the HTTP server with the pinned middleware order and explicit timeouts, serves the public prefix without authentication or rate limiting, returns 404 from the unmatched short circuit, returns 401 for protected requests with missing or invalid JWTs, returns 429 with `Retry-After` for rate-limited subjects, returns 500 from recovery, returns 502 for upstream transport failures without internal leakage, echoes and forwards request and correlation identifiers under pinned header names with the same safe values in the response, log, and upstream request, logs one structured line per request exactly once and without raw credentials, shuts down gracefully on `SIGINT` and `SIGTERM`, runs all unit tests locally without external services, and runs the opt-in integration test against a fake upstream on loopback when the gating flag and build tag are set.
 
 ## 19. Optional Extensions
+
 - An additional authentication scheme on a second protected prefix, with the route selection stage choosing the verifier by prefix.
-- A second route kind that is authenticated but not rate-limited, demonstrating that rate limiting is genuinely opt-in per route and that the route selection stage is the single source of truth for which chain applies.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 050 — JWT Auth Server](../../04-apis-and-services/050_jwt_auth_server/README.md#20-prerequisite-based-documentation-guide), [Project 057 — Rate Limited API](../../04-apis-and-services/057_rate_limited_api/README.md#20-prerequisite-based-documentation-guide), [Project 060 — Graceful Shutdown Web](../../04-apis-and-services/060_graceful_shutdown_web/README.md#20-prerequisite-based-documentation-guide), [Project 078 — Reverse Proxy](../../06-networking/078_reverse_proxy/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [OWASP API Security](https://owasp.org/www-project-api-security/).
+
+### Project-specific learning focus
+
+- **Learn now:** route-selected middleware chains, reverse-proxy trust, authentication and authorization, opt-in rate limits, cancellation propagation, bounded errors, and graceful shutdown.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

@@ -1,41 +1,94 @@
 # Project 081 — SSH Remote Executor
 
 ## 1. Project Name and Number
-Project 081, ssh_remote_executor. This README is a learning guide only. You will create every source and test file yourself in `06-networking/081_ssh_remote_executor/`. This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- Project 081, ssh_remote_executor.
+- This README is a learning guide only.
+- You will create every source and test file yourself in `06-networking/081_ssh_remote_executor/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 2. Project Idea
+
 A small SSH client whose required learning path and required tests connect only to numeric loopback addresses. A non-loopback test server is permitted only when the application constructs an exact numeric address allowlist at construction time; no required test uses that path, and no runtime input enters that allowlist. The client authenticates with public key, verifies the server host key against an explicit boundary, and executes one of exactly two caller-visible enum values, `status` and `version`. Each enum value is mapped internally to one fixed literal opaque exec-request string and is sent through the standard SSH exec channel. The in-process test server compares those exact opaque strings and returns fixtures; it never invokes an operating-system shell and never spawns a process.
 
 ## 3. Why This Project Now?
-This follows Project 080 (dns_lookup_tool) as the immediate predecessor. Project 071 (tcp_echo_server) is the other formal prerequisite for loopback TCP listener lifecycle. Project 041 (context_timeout_example) is recommended review for context cancellation and deadlines, but is not a formal prerequisite. This project introduces SSH host-key verification discipline, the SSH exec channel semantics that the request is a single string, an explicit enum mapped to fixed opaque strings, and the integration of independent time budgets and byte caps with cancellation.
+
+- This follows Project 080 (dns_lookup_tool) as the immediate predecessor.
+- Project 071 (tcp_echo_server) is the other formal prerequisite for loopback TCP listener lifecycle.
+- Project 041 (context_timeout_example) is recommended review for context cancellation and deadlines, but is not a formal prerequisite.
+- This project introduces SSH host-key verification discipline, the SSH exec channel semantics that the request is a single string, an explicit enum mapped to fixed opaque strings, and the integration of independent time budgets and byte caps with cancellation.
 
 ## 4. Prerequisites
-Project 080 is the immediate predecessor and required prerequisite; Project 071 is also a formal prerequisite. Project 041 is recommended review for context cancellation and deadlines, but is not a formal prerequisite. The SSH client uses the pinned `golang.org/x/crypto` package at version `v0.54.0` and its `ssh` package. The required tests and the default learning path target numeric loopback addresses only. Public-key authentication reads a configured private-key file path; the credential boundary is the same whether the test supplies an in-memory signer or reads from a file. No real remote host is contacted by any required test.
+
+- Project 080 is the immediate predecessor and required prerequisite; Project 071 is also a formal prerequisite.
+- Project 041 is recommended review for context cancellation and deadlines, but is not a formal prerequisite.
+- The SSH client uses the pinned `golang.org/x/crypto` package at version `v0.54.0` and its `ssh` package.
+- The required tests and the default learning path target numeric loopback addresses only.
+- Public-key authentication reads a configured private-key file path; the credential boundary is the same whether the test supplies an in-memory signer or reads from a file.
+- No real remote host is contacted by any required test.
 
 ## 5. What You Must Know Before Starting
-Know the `golang.org/x/crypto/ssh` package at version `v0.54.0`, the pinned `ClientConfig`, public key authentication and signer construction, the SSH exec channel semantics that the request is a single command string, the distinction between a session and the underlying client, `ssh.HostKeyCallback` and the difference between an exact pinned key callback and a known-hosts file callback, the difference between `InsecureIgnoreHostKey` and a real verification boundary, file permission checks on Unix-like systems, context cancellation, byte caps that are independent of time budgets, the `Wait` exit-status semantics, and the race detector.
+
+- Know the `golang.org/x/crypto/ssh` package at version `v0.54.0`, the pinned `ClientConfig`, public key authentication and signer construction, the SSH exec channel semantics that the request is a single command string, the distinction between a session and the underlying client, `ssh.HostKeyCallback` and the difference between an exact pinned key callback and a known-hosts file callback, the difference between `InsecureIgnoreHostKey` and a real verification boundary, file permission checks on Unix-like systems, context cancellation, byte caps that are independent of time budgets, the `Wait` exit-status semantics, and the race detector.
 
 ## 6. Explanation of New Concepts
-The required tests and the default learning path connect only to numeric loopback addresses. A non-loopback test server is allowed only through an exact construction-time numeric address allowlist controlled by the application; that allowlist is established when the client is constructed and no runtime input can add or change it. A target is accepted only when it is a numeric IP whose `net.IP.IsLoopback` returns true or it exactly matches an entry in that immutable allowlist; arbitrary DNS, hostnames, and every non-loopback address absent from the allowlist are rejected. The username is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen. The port is one to 65535 inclusive. The command is one of exactly two enum values, `status` or `version`. Any other input, including an injection-looking string, a whitespace-only string, an empty string, or any character outside the enums, is an unknown enum and is rejected before any dial.
 
-The SSH exec channel carries a single command string. The client never sends an argv slice and never sends anything other than a single literal opaque string. The two enum values are mapped internally to one fixed literal opaque exec-request string each, and that opaque string is the entire payload of the exec request. The mapping is a fixed table; the caller never supplies a command line. The in-process test server receives the exec request, compares the incoming opaque string against the fixed table, and returns a fixture response for a match; an unknown opaque string is rejected by the test server. The server never invokes an operating-system shell and never spawns a process.
+### Concepts
 
-Public-key authentication uses a configured private-key file path or an injected signer through the same credential boundary. On Unix-like systems the configuration rejects a private-key file whose group or world permission bits are set; the file is required to be readable by the owner only. Tests may supply an in-memory signer through the same injected credential boundary to avoid writing any secret to disk. The credential path, key bytes, key fingerprint, captured stdout, and captured stderr are never logged.
+- The required tests and the default learning path connect only to numeric loopback addresses.
+- A non-loopback test server is allowed only through an exact construction-time numeric address allowlist controlled by the application; that allowlist is established when the client is constructed and no runtime input can add or change it.
+- A target is accepted only when it is a numeric IP whose `net.IP.IsLoopback` returns true or it exactly matches an entry in that immutable allowlist; arbitrary DNS, hostnames, and every non-loopback address absent from the allowlist are rejected.
+- The username is one to sixty-four ASCII characters drawn from letters, digits, underscore, and hyphen.
+- The port is one to 65535 inclusive.
+- The command is one of exactly two enum values, `status` or `version`.
+- Any other input, including an injection-looking string, a whitespace-only string, an empty string, or any character outside the enums, is an unknown enum and is rejected before any dial.
 
-Server host-key verification supports two configurations: an exact pinned server public key callback, and a known-hosts file callback. Required tests use the exact pinned key callback. A mismatch between the expected pinned key and the server's actual host key is a handshake verification failure that occurs before user authentication. The client never sets `InsecureIgnoreHostKey`; any code path that would require disabling verification is a defect.
+- The SSH exec channel carries a single command string.
+- The client never sends an argv slice and never sends anything other than a single literal opaque string.
+- The two enum values are mapped internally to one fixed literal opaque exec-request string each, and that opaque string is the entire payload of the exec request.
+- The mapping is a fixed table; the caller never supplies a command line.
+- The in-process test server receives the exec request, compares the incoming opaque string against the fixed table, and returns a fixture response for a match; an unknown opaque string is rejected by the test server.
+- The server never invokes an operating-system shell and never spawns a process.
 
-The byte caps and the time budgets are independent. The stdout cap is exactly 64 KiB inclusive and the stderr cap is exactly 64 KiB inclusive; the time budget is independent of the byte caps. The client reads up to one byte beyond each cap to detect excess; if either stream exceeds its cap, the client retains at most 64 KiB for the typed result, closes the session and the client to unblock both streams, waits for the owned read and wait goroutines, and returns a typed `OutputLimitExceeded` result. The client does not pretend that an individual SSH stdout reader can be closed in isolation; closing the session and the client is the only correct way to unblock both streams.
+- Public-key authentication uses a configured private-key file path or an injected signer through the same credential boundary.
+- On Unix-like systems the configuration rejects a private-key file whose group or world permission bits are set; the file is required to be readable by the owner only.
+- Tests may supply an in-memory signer through the same injected credential boundary to avoid writing any secret to disk.
+- The credential path, key bytes, key fingerprint, captured stdout, and captured stderr are never logged.
 
-The TCP and SSH handshake budget is five seconds; the total command budget is ten seconds. The TCP dial is performed with a context, and the handshake is bounded by the handshake deadline or by closing the underlying client. On cancellation or deadline expiry, the client closes the session and the client exactly once and waits for the read and wait goroutines to finish. A bounded watchdog force-closes only on a failed proof and then fails the test; the watchdog is never a success path.
+- Server host-key verification supports two configurations: an exact pinned server public key callback, and a known-hosts file callback.
+- Required tests use the exact pinned key callback.
+- A mismatch between the expected pinned key and the server's actual host key is a handshake verification failure that occurs before user authentication.
+- The client never sets `InsecureIgnoreHostKey`; any code path that would require disabling verification is a defect.
 
-The exit-status mapping is exact. A nil `Wait` error is mapped to `success` with code `0`. A non-nil `ssh.ExitError` is mapped to `nonzero` with the remote status and an optional signal category when present. A missing exit status, a channel error, or a protocol error is mapped to `channel error`. Context outcomes and `OutputLimitExceeded` take precedence over the exit-status mapping when they caused the teardown, because no clean exit status exists in those paths.
+- The byte caps and the time budgets are independent.
+- The stdout cap is exactly 64 KiB inclusive and the stderr cap is exactly 64 KiB inclusive; the time budget is independent of the byte caps.
+- The client reads up to one byte beyond each cap to detect excess; if either stream exceeds its cap, the client retains at most 64 KiB for the typed result, closes the session and the client to unblock both streams, waits for the owned read and wait goroutines, and returns a typed `OutputLimitExceeded` result.
+- The client does not pretend that an individual SSH stdout reader can be closed in isolation; closing the session and the client is the only correct way to unblock both streams.
 
-Text-only protocol examples are permitted. As a prose shape: the client validates the numeric loopback address, the port, the username, and the enum, dials the in-process test server, completes the handshake with the pinned server public key, completes public-key authentication, sends the fixed opaque exec-request string for the mapped enum, reads stdout and stderr into independent byte buffers bounded by 64 KiB each, examines the `Wait` result, returns the typed result, and closes the session and the client once. An unknown enum is rejected before dial. A host-key mismatch is rejected before authentication. A stream that exceeds its cap returns `OutputLimitExceeded` and the client is closed. A canceled context closes the session and the client once and returns the typed cancellation category.
+- The TCP and SSH handshake budget is five seconds; the total command budget is ten seconds.
+- The TCP dial is performed with a context, and the handshake is bounded by the handshake deadline or by closing the underlying client.
+- On cancellation or deadline expiry, the client closes the session and the client exactly once and waits for the read and wait goroutines to finish.
+- A bounded watchdog force-closes only on a failed proof and then fails the test; the watchdog is never a success path.
+
+- The exit-status mapping is exact.
+- A nil `Wait` error is mapped to `success` with code `0`.
+- A non-nil `ssh.ExitError` is mapped to `nonzero` with the remote status and an optional signal category when present.
+- A missing exit status, a channel error, or a protocol error is mapped to `channel error`.
+- Context outcomes and `OutputLimitExceeded` take precedence over the exit-status mapping when they caused the teardown, because no clean exit status exists in those paths.
+
+- Text-only protocol examples are permitted.
+- As a prose shape: the client validates the numeric loopback address, the port, the username, and the enum, dials the in-process test server, completes the handshake with the pinned server public key, completes public-key authentication, sends the fixed opaque exec-request string for the mapped enum, reads stdout and stderr into independent byte buffers bounded by 64 KiB each, examines the `Wait` result, returns the typed result, and closes the session and the client once.
+- An unknown enum is rejected before dial.
+- A host-key mismatch is rejected before authentication.
+- A stream that exceeds its cap returns `OutputLimitExceeded` and the client is closed.
+- A canceled context closes the session and the client once and returns the typed cancellation category.
 
 ## 7. Learning Objective
-Implement a loopback SSH client that uses `golang.org/x/crypto` at version `v0.54.0`, validates a numeric loopback address, a port, a username, and one of exactly two enum values before any dial, sends one fixed literal opaque exec-request string per enum through the SSH exec channel, verifies the server host key against an explicit pinned-key boundary, authenticates with public key from a configured file or an injected signer through the same credential boundary, applies independent 64 KiB stdout and stderr caps and 5-second handshake and 10-second total budgets, returns a typed result with the exact exit-status mapping, and proves every branch through a local in-process test server without contacting any real remote host.
+
+- Implement a loopback SSH client that uses `golang.org/x/crypto` at version `v0.54.0`, validates a numeric loopback address, a port, a username, and one of exactly two enum values before any dial, sends one fixed literal opaque exec-request string per enum through the SSH exec channel, verifies the server host key against an explicit pinned-key boundary, authenticates with public key from a configured file or an injected signer through the same credential boundary, applies independent 64 KiB stdout and stderr caps and 5-second handshake and 10-second total budgets, returns a typed result with the exact exit-status mapping, and proves every branch through a local in-process test server without contacting any real remote host.
 
 ## 8. Functional Requirements
+
 1. The SSH client uses `golang.org/x/crypto` at version `v0.54.0` and its `ssh` package only.
 2. The required tests and the default learning path connect only to numeric loopback addresses. A non-loopback test server is permitted only through an exact construction-time numeric address allowlist controlled by the application; no required test uses that path; no runtime input can extend the allowlist.
 3. The address, port, username, and command are validated before any dial. The address is a numeric IP whose `net.IP.IsLoopback` returns true or exactly matches the immutable construction-time allowlist; no runtime input can extend that allowlist. The port is 1..65535 inclusive. The username is 1..64 ASCII characters drawn from letters, digits, underscore, and hyphen. The command is one of the two enum values `status` or `version`.
@@ -53,18 +106,64 @@ Implement a loopback SSH client that uses `golang.org/x/crypto` at version `v0.5
 15. The required test SSH server is local and in-process; no real remote host is contacted by any required test.
 
 ## 9. Inputs and Outputs
-Client input is a validated enum value drawn from `status` or `version`. Client configuration input is the numeric target address, the immutable optional non-loopback test-address allowlist, the port, the username, the pinned server public key or the known-hosts file path, the credential boundary as a configured private-key file path or an injected signer, the byte caps, the handshake budget, the total command budget, and a context with optional deadline. Client output is a typed result that contains the bounded stdout and stderr byte slices, the typed exit-status category, and the typed error category when applicable. The error categories are `OutputLimitExceeded`, `ContextCanceled`, `ContextDeadlineExceeded`, `HandshakeVerificationFailure`, `HandshakeTimeout`, `AuthenticationFailure`, `TransportError`, and `ChannelError`. The test server input is the SSH protocol stream; the test server output is the fixture response for the matched opaque exec-request string.
+
+### Interface Contract
+
+- Client input is a validated enum value drawn from `status` or `version`.
+- Client configuration input is the numeric target address, the immutable optional non-loopback test-address allowlist, the port, the username, the pinned server public key or the known-hosts file path, the credential boundary as a configured private-key file path or an injected signer, the byte caps, the handshake budget, the total command budget, and a context with optional deadline.
+- Client output is a typed result that contains the bounded stdout and stderr byte slices, the typed exit-status category, and the typed error category when applicable.
+- The error categories are `OutputLimitExceeded`, `ContextCanceled`, `ContextDeadlineExceeded`, `HandshakeVerificationFailure`, `HandshakeTimeout`, `AuthenticationFailure`, `TransportError`, and `ChannelError`.
+- The test server input is the SSH protocol stream; the test server output is the fixture response for the matched opaque exec-request string.
 
 ## 10. Rules and Edge Cases
-A non-loopback identifier absent from the immutable construction-time allowlist is rejected before dial. A hostname is rejected without DNS resolution. An invalid port is rejected before dial. An invalid username is rejected before dial. An empty command is rejected before dial. An unknown enum is rejected before dial. An injection-looking or whitespace command input is an unknown enum and is rejected before dial with zero dial. The TCP and SSH handshake budget is five seconds. The total command budget is ten seconds. The stdout cap is 64 KiB inclusive and the stderr cap is 64 KiB inclusive. A stream that exceeds its cap returns `OutputLimitExceeded` and the client is closed. The exit-status mapping is exact as described in the functional requirements. Context cancellation closes the session and the client exactly once; the read and wait goroutines are joined. A bounded watchdog force-closes only on a failed proof and then fails the test. A host-key mismatch is a handshake verification failure before user authentication. A private-key file with group or world permission bits set is rejected on Unix-like systems. The credential path, key bytes, key fingerprint, captured stdout, and captured stderr are never logged. The test server never invokes an operating-system shell and never spawns a process.
+
+- A non-loopback identifier absent from the immutable construction-time allowlist is rejected before dial.
+- A hostname is rejected without DNS resolution.
+- An invalid port is rejected before dial.
+- An invalid username is rejected before dial.
+- An empty command is rejected before dial.
+- An unknown enum is rejected before dial.
+- An injection-looking or whitespace command input is an unknown enum and is rejected before dial with zero dial.
+- The TCP and SSH handshake budget is five seconds.
+- The total command budget is ten seconds.
+- The stdout cap is 64 KiB inclusive and the stderr cap is 64 KiB inclusive.
+- A stream that exceeds its cap returns `OutputLimitExceeded` and the client is closed.
+- The exit-status mapping is exact as described in the functional requirements.
+- Context cancellation closes the session and the client exactly once; the read and wait goroutines are joined.
+- A bounded watchdog force-closes only on a failed proof and then fails the test.
+- A host-key mismatch is a handshake verification failure before user authentication.
+- A private-key file with group or world permission bits set is rejected on Unix-like systems.
+- The credential path, key bytes, key fingerprint, captured stdout, and captured stderr are never logged.
+- The test server never invokes an operating-system shell and never spawns a process.
 
 ## 11. Project Constraints
-Numeric loopback address only for required tests and the default learning path. A non-loopback test server is allowed only through an exact construction-time numeric address allowlist controlled by the application; no required test uses it. `golang.org/x/crypto` is pinned to `v0.54.0`. No shell channel. No argv slicing. No user-supplied command string. No `InsecureIgnoreHostKey`. No password authentication. No `exec.Command` on the host. No production certificate authority. No public network. The credential path is configurable; no hard-coded path. The watchdog force-closes only on a failed proof; the watchdog is never a success path.
+
+- Numeric loopback address only for required tests and the default learning path.
+- A non-loopback test server is allowed only through an exact construction-time numeric address allowlist controlled by the application; no required test uses it. `golang.org/x/crypto` is pinned to `v0.54.0`.
+- No shell channel.
+- No argv slicing.
+- No user-supplied command string.
+- No `InsecureIgnoreHostKey`.
+- No password authentication.
+- No `exec.Command` on the host.
+- No production certificate authority.
+- No public network.
+- The credential path is configurable; no hard-coded path.
+- The watchdog force-closes only on a failed proof; the watchdog is never a success path.
 
 ## 12. Design Questions Before Coding
-Why is the validator the boundary and why is an unknown enum rejected before dial rather than after a partial parse? Why is the SSH exec channel payload a single literal opaque string and not an argv slice, and why is the mapping a fixed table whose contents are identical across every test? Why does the test server compare the incoming opaque string and return fixtures and never invoke an operating-system shell or spawn a process? Why is the non-loopback test server path allowed only through an exact construction-time numeric address allowlist controlled by the application, and why is no runtime input allowed to extend that allowlist? Why is the exact pinned server public key callback the required host verification boundary and why is `InsecureIgnoreHostKey` excluded as a configuration choice? Why are the byte caps and the time budgets independent, and why is a stream that exceeds its cap handled by closing the session and the client rather than by closing an individual reader? Why is the exit-status mapping exact and why do context outcomes and `OutputLimitExceeded` take precedence when they caused the teardown? Why is the watchdog force-close only a failure path and never a success path?
+
+- Why is the validator the boundary and why is an unknown enum rejected before dial rather than after a partial parse?
+- Why is the SSH exec channel payload a single literal opaque string and not an argv slice, and why is the mapping a fixed table whose contents are identical across every test?
+- Why does the test server compare the incoming opaque string and return fixtures and never invoke an operating-system shell or spawn a process?
+- Why is the non-loopback test server path allowed only through an exact construction-time numeric address allowlist controlled by the application, and why is no runtime input allowed to extend that allowlist?
+- Why is the exact pinned server public key callback the required host verification boundary and why is `InsecureIgnoreHostKey` excluded as a configuration choice?
+- Why are the byte caps and the time budgets independent, and why is a stream that exceeds its cap handled by closing the session and the client rather than by closing an individual reader?
+- Why is the exit-status mapping exact and why do context outcomes and `OutputLimitExceeded` take precedence when they caused the teardown?
+- Why is the watchdog force-close only a failure path and never a success path?
 
 ## 13. Implementation Milestones
+
 1. Define the pre-dial validator that accepts a numeric loopback address or an exact numeric match in the immutable construction-time test allowlist, a port in 1..65535, a username in 1..64 ASCII letters/digits/underscore/hyphen, and one of the two enum values; an invalid input is rejected before any dial.
 2. Define the fixed enum table that maps `status` and `version` to one fixed literal opaque exec-request string each; the table is identical across every test.
 3. Define the SSH exec channel call that sends the fixed opaque string for the mapped enum; the client never sends an argv slice and never sends a shell channel.
@@ -78,6 +177,9 @@ Why is the validator the boundary and why is an unknown enum rejected before dia
 11. Define the full matrix of validation, host-key mismatch, authentication failure, allowed enum, unknown enum, injection-looking input, stdout and stderr separation, byte-cap excess, deadline, cancellation, watchdog force-close, and the no-secret-log invariant.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - A non-loopback identifier absent from the immutable construction-time allowlist is rejected before dial and never opens a socket.
 - A hostname is rejected before dial without any DNS resolution.
 - An invalid port is rejected before dial.
@@ -112,15 +214,43 @@ Why is the validator the boundary and why is an unknown enum rejected before dia
 - No required test contacts a real remote host.
 
 ## 15. Common Mistakes to Watch For
-Treating an unknown enum as a fallback that is allowed to dial; concatenating user input into the opaque exec-request string; sending an argv slice rather than a single string; opening a shell channel on the session; using `InsecureIgnoreHostKey` to simplify tests; logging the private-key bytes through the standard library logger; using a hard-coded credential path; accepting a private-key file with group or world permission bits set on Unix-like systems; treating the byte cap and the time budget as a single smaller-of relationship; pretending that an individual SSH stdout reader can be closed in isolation; returning a fabricated `success` after `OutputLimitExceeded`; force-closing as a success path; contacting a real remote host to make tests pass; resolving arbitrary hostnames through DNS; running the test server with an operating-system shell or a spawned process; attempting to read more than one byte beyond each cap.
+
+- Treating an unknown enum as a fallback that is allowed to dial;
+- Concatenating user input into the opaque exec-request string;
+- Sending an argv slice rather than a single string;
+- Opening a shell channel on the session;
+- Using `InsecureIgnoreHostKey` to simplify tests;
+- Logging the private-key bytes through the standard library logger;
+- Using a hard-coded credential path;
+- Accepting a private-key file with group or world permission bits set on Unix-like systems;
+- Treating the byte cap and the time budget as a single smaller-of relationship;
+- Pretending that an individual SSH stdout reader can be closed in isolation;
+- Returning a fabricated `success` after `OutputLimitExceeded`;
+- Force-closing as a success path;
+- Contacting a real remote host to make tests pass;
+- Resolving arbitrary hostnames through DNS;
+- Running the test server with an operating-system shell or a spawned process;
+- Attempting to read more than one byte beyond each cap.
 
 ## 16. Topics and References for Study
-Study the `golang.org/x/crypto` package at version `v0.54.0` and its `ssh` package, the pinned `ClientConfig`, public-key authentication and signer construction, the SSH exec channel semantics that the request is a single string, the distinction between a session and the underlying client, `ssh.HostKeyCallback` and the difference between an exact pinned key callback and a known-hosts file callback, file permission checks on Unix-like systems, context cancellation, byte caps that are independent of time budgets, the `Wait` exit-status semantics, and the race detector. Review the Go `crypto/ssh`, `context`, `io`, and `crypto/x509` documentation. Read the prior README for Project 080 for the immediate predecessor discipline, Project 071 for the required TCP lifecycle foundation, and Project 041 for cancellation propagation as optional recommended review.
+
+- Study the `golang.org/x/crypto` package at version `v0.54.0` and its `ssh` package, the pinned `ClientConfig`, public-key authentication and signer construction, the SSH exec channel semantics that the request is a single string, the distinction between a session and the underlying client, `ssh.HostKeyCallback` and the difference between an exact pinned key callback and a known-hosts file callback, file permission checks on Unix-like systems, context cancellation, byte caps that are independent of time budgets, the `Wait` exit-status semantics, and the race detector.
+- Review the Go `crypto/ssh`, `context`, `io`, and `crypto/x509` documentation.
+- Read the prior README for Project 080 for the immediate predecessor discipline, Project 071 for the required TCP lifecycle foundation, and Project 041 for cancellation propagation as optional recommended review.
 
 ## 17. Self-Assessment Questions
-Why is the validator the boundary and why is an unknown enum rejected before dial rather than after a partial parse? Why is the SSH exec channel payload a single literal opaque string and not an argv slice, and why is the mapping a fixed table whose contents are identical across every test? Why does the test server compare the incoming opaque string and return fixtures and never invoke an operating-system shell or spawn a process? Why is the non-loopback test server path allowed only through an exact construction-time numeric address allowlist controlled by the application, and why is no runtime input allowed to extend that allowlist? Why is the exact pinned server public key callback the required host verification boundary and why is `InsecureIgnoreHostKey` excluded as a configuration choice? Why are the byte caps and the time budgets independent, and why is a stream that exceeds its cap handled by closing the session and the client rather than by closing an individual reader? Why is the exit-status mapping exact and why do context outcomes and `OutputLimitExceeded` take precedence when they caused the teardown? Why is the watchdog force-close only a failure path and never a success path?
+
+1. Why is the validator the boundary and why is an unknown enum rejected before dial rather than after a partial parse?
+2. Why is the SSH exec channel payload a single literal opaque string and not an argv slice, and why is the mapping a fixed table whose contents are identical across every test?
+3. Why does the test server compare the incoming opaque string and return fixtures and never invoke an operating-system shell or spawn a process?
+4. Why is the non-loopback test server path allowed only through an exact construction-time numeric address allowlist controlled by the application, and why is no runtime input allowed to extend that allowlist?
+5. Why is the exact pinned server public key callback the required host verification boundary and why is `InsecureIgnoreHostKey` excluded as a configuration choice?
+6. Why are the byte caps and the time budgets independent, and why is a stream that exceeds its cap handled by closing the session and the client rather than by closing an individual reader?
+7. Why is the exit-status mapping exact and why do context outcomes and `OutputLimitExceeded` take precedence when they caused the teardown?
+8. Why is the watchdog force-close only a failure path and never a success path?
 
 ## 18. Definition of Completion
+
 - [ ] The SSH client uses `golang.org/x/crypto` at version `v0.54.0` and its `ssh` package only.
 - [ ] Required tests and the default learning path connect only to numeric loopback addresses; a non-loopback test server is allowed only through an exact construction-time numeric address allowlist controlled by the application; no required test uses it.
 - [ ] The address, port, username, and command are validated before any dial; an invalid input never opens a socket.
@@ -138,4 +268,26 @@ Why is the validator the boundary and why is an unknown enum rejected before dia
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
-Add an explicit per-enum rate-limit boundary whose clock and sleeper are injected so tests never sleep. Add a small structured audit log that records the enum value, the normalized identifier, and the typed exit-status category but never parameters, output bytes, or key material.
+
+- Add an explicit per-enum rate-limit boundary whose clock and sleeper are injected so tests never sleep.
+- Add a small structured audit log that records the enum value, the normalized identifier, and the typed exit-status category but never parameters, output bytes, or key material.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 080 — DNS Lookup Tool](../../06-networking/080_dns_lookup_tool/README.md#20-prerequisite-based-documentation-guide), [Project 071 — TCP Echo Server](../../06-networking/071_tcp_echo_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`golang.org/x/crypto/ssh`](https://pkg.go.dev/golang.org/x/crypto/ssh), [`crypto/x509`](https://pkg.go.dev/crypto/x509).
+- **Standards and concept references:** [RFC 4254: SSH connection protocol](https://www.rfc-editor.org/rfc/rfc4254.html).
+
+### Project-specific learning focus
+
+- **Learn now:** public-key authentication, exact host-key verification, session versus client ownership, single-string exec semantics, file permissions, output caps, cancellation, and exit status.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

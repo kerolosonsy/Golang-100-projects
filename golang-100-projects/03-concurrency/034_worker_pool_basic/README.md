@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project 034 — Worker Pool Basic. Lives in `03-concurrency/034_worker_pool_basic`.
+- Project 034 — Worker Pool Basic.
+- Lives in `03-concurrency/034_worker_pool_basic`.
 
 ## 2. Project Idea
 
@@ -10,35 +11,77 @@ A fixed-size pool of worker goroutines processes jobs, each with a unique positi
 
 ## 3. Why This Project Now?
 
-Project 031 gave you fan-out with cancellation. Project 032 fixed channel ownership at small scale. Project 033 gave you real-world fan-out against `net/http` with a goroutine-per-URL shape. Worker Pool Basic takes the same primitives and adds a fixed worker count plus a backpressure shape where the jobs channel and the results channel are coordinated through the workers. The next several Level 3 projects reuse these primitives.
+- Project 031 gave you fan-out with cancellation.
+- Project 032 fixed channel ownership at small scale.
+- Project 033 gave you real-world fan-out against `net/http` with a goroutine-per-URL shape.
+- Worker Pool Basic takes the same primitives and adds a fixed worker count plus a backpressure shape where the jobs channel and the results channel are coordinated through the workers.
+- The next several Level 3 projects reuse these primitives.
 
 ## 4. Prerequisites
 
-The curriculum map's stated dependencies for this project: Projects 031 and 033. You must be comfortable launching goroutines, fanning out with per-item indexed ownership, and `context` cancellation. Familiarity with the channel ownership rules from Projects 032 and 033 is required because the worker pool reuses those rules. Worker-pool-shaped fan-out reuses what Project 033 established against `net/http` and uses an injected processing boundary so tests can prove out-of-order completion without wall-clock waits.
+- The curriculum map's stated dependencies for this project: Projects 031 and 033.
+- You must be comfortable launching goroutines, fanning out with per-item indexed ownership, and `context` cancellation.
+- Familiarity with the channel ownership rules from Projects 032 and 033 is required because the worker pool reuses those rules.
+- Worker-pool-shaped fan-out reuses what Project 033 established against `net/http` and uses an injected processing boundary so tests can prove out-of-order completion without wall-clock waits.
 
 ## 5. What You Must Know Before Starting
 
-The difference between an unbuffered and a buffered channel, and how a buffered channel applies backpressure. That the closing of a channel is one-way: senders close when they are done; receivers never close. That `sync.WaitGroup` waits for its counter to reach zero, and that the order of `Add` calls relative to `Done` matters. That `select` picks one ready case pseudo-randomly with no application-level priority guarantee. That signed integer multiplication in Go is unchecked by default; squaring signed-64-bit inputs may silently wrap on overflow and must be detected by a pre-multiplication range check rather than by inspecting a wrapped product. That this project pins the job value and the squared result to signed 64-bit integers, making overflow detection architecture-independent. That arbitrary positive identifiers are not indexes and not sort keys; source position travels with each job. That context cancellation is cooperative and that a goroutine currently computing cannot be magically preempted mid-iteration; the driver waits for the running processor to return while preventing new work from starting.
+- The difference between an unbuffered and a buffered channel, and how a buffered channel applies backpressure.
+- That the closing of a channel is one-way: senders close when they are done; receivers never close.
+- That `sync.WaitGroup` waits for its counter to reach zero, and that the order of `Add` calls relative to `Done` matters.
+- That `select` picks one ready case pseudo-randomly with no application-level priority guarantee.
+- That signed integer multiplication in Go is unchecked by default; squaring signed-64-bit inputs may silently wrap on overflow and must be detected by a pre-multiplication range check rather than by inspecting a wrapped product.
+- That this project pins the job value and the squared result to signed 64-bit integers, making overflow detection architecture-independent.
+- That arbitrary positive identifiers are not indexes and not sort keys; source position travels with each job.
+- That context cancellation is cooperative and that a goroutine currently computing cannot be magically preempted mid-iteration; the driver waits for the running processor to return while preventing new work from starting.
 
 ## 6. Explanation of New Concepts
 
-A "worker pool" is a fixed number of goroutines that pull work from one channel and emit outcomes into another. The fixed count bounds resource use. The pattern has three pieces: a coordinator that owns the jobs channel and feeds it, a set of workers that do the actual processing, and a collector that drains the results channel. The coordinator also owns the close of the results channel because it must close the channel after all workers have exited; a worker closing the results channel would race with the others.
+### Concepts
 
-Source position is the sort key. Arbitrary positive identifiers are not indexes and not sort keys. Returning results in input order requires that the source position travels with each job from the queue to the worker to the result slot. The collector places each result into a slot indexed by that source position. Job identifiers are identity and uniqueness fields only; they are not sort keys.
+- A "worker pool" is a fixed number of goroutines that pull work from one channel and emit outcomes into another.
+- The fixed count bounds resource use.
+- The pattern has three pieces: a coordinator that owns the jobs channel and feeds it, a set of workers that do the actual processing, and a collector that drains the results channel.
+- The coordinator also owns the close of the results channel because it must close the channel after all workers have exited; a worker closing the results channel would race with the others.
 
-The "exactly once" property is the heart of a non-cancelled run. Each accepted job is sent into the jobs channel exactly once, received exactly once, and produces exactly one result. Duplicate or non-positive job identifiers break this property at the preflight step; the pool refuses to start rather than work around them. Cancellation uses the separate one-terminal-result-per-input reconciliation rule described below because work that has not started is not falsely described as processed.
+- Source position is the sort key.
+- Arbitrary positive identifiers are not indexes and not sort keys.
+- Returning results in input order requires that the source position travels with each job from the queue to the worker to the result slot.
+- The collector places each result into a slot indexed by that source position.
+- Job identifiers are identity and uniqueness fields only; they are not sort keys.
 
-Out-of-order completion is normal even when the work is otherwise trivial, because the Go scheduler does not guarantee worker execution order. Returning results in input order is achieved by indexed ownership on source position, not by completion order.
+- The "exactly once" property is the heart of a non-cancelled run.
+- Each accepted job is sent into the jobs channel exactly once, received exactly once, and produces exactly one result.
+- Duplicate or non-positive job identifiers break this property at the preflight step; the pool refuses to start rather than work around them.
+- Cancellation uses the separate one-terminal-result-per-input reconciliation rule described below because work that has not started is not falsely described as processed.
 
-Integer overflow is a per-job processing outcome, not a batch preflight failure. The pre-multiplication range check returns an overflow error result for that job at its source-position slot. The job is processed once and produces one overflow result; independent jobs still run. Overflow is not a panic and is not a wrapped value. Panic recovery is not used for overflow detection because it hides the bug from the test and corrupts the error semantics.
+- Out-of-order completion is normal even when the work is otherwise trivial, because the Go scheduler does not guarantee worker execution order.
+- Returning results in input order is achieved by indexed ownership on source position, not by completion order.
 
-Cancellation reconciliation with exactly-once. On a non-cancelled run, every accepted job is processed exactly once. On cancellation, every input still receives exactly one terminal result: already-committed results remain as recorded (completed, overflow error, or any error the processing function returns); not-yet-started and in-flight jobs become cancelled according to the pinned processing and context boundary. No duplicate result is emitted across the boundary. A running processor cannot be preempted mid-iteration; the driver waits for the running processor to return while preventing new work from starting.
+- Integer overflow is a per-job processing outcome, not a batch preflight failure.
+- The pre-multiplication range check returns an overflow error result for that job at its source-position slot.
+- The job is processed once and produces one overflow result; independent jobs still run.
+- Overflow is not a panic and is not a wrapped value.
+- Panic recovery is not used for overflow detection because it hides the bug from the test and corrupts the error semantics.
 
-Channel closure roles. The coordinator closes the jobs channel exactly once when its send loop ends, including on cancellation. A coordinator-owned waiter closes the results channel only after every worker has exited. No worker closes any shared channel.
+- Cancellation reconciliation with exactly-once.
+- On a non-cancelled run, every accepted job is processed exactly once.
+- On cancellation, every input still receives exactly one terminal result: already-committed results remain as recorded (completed, overflow error, or any error the processing function returns); not-yet-started and in-flight jobs become cancelled according to the pinned processing and context boundary.
+- No duplicate result is emitted across the boundary.
+- A running processor cannot be preempted mid-iteration; the driver waits for the running processor to return while preventing new work from starting.
+
+- Channel closure roles.
+- The coordinator closes the jobs channel exactly once when its send loop ends, including on cancellation.
+- A coordinator-owned waiter closes the results channel only after every worker has exited.
+- No worker closes any shared channel.
 
 ## 7. Learning Objective
 
-After this project you can construct a worker pool with a configurable worker count, validate the configuration, and guarantee the one-result-per-accepted-job property under both normal runs and cancellation. You can explain who closes the jobs channel and who closes the results channel, and you can justify why neither is closed by a worker and why each is closed exactly once. You can sort results by input order regardless of completion order by using source position as the only sort key. You can use an injected processing function as the seam that lets tests prove out-of-order completion without timing waits. You can coordinate context cancellation so the pool reconciles exactly-once across the boundary, so every input gets one terminal result with no duplicates, and so the driver waits for the running processor to return instead of trying to preempt it.
+- After this project you can construct a worker pool with a configurable worker count, validate the configuration, and guarantee the one-result-per-accepted-job property under both normal runs and cancellation.
+- You can explain who closes the jobs channel and who closes the results channel, and you can justify why neither is closed by a worker and why each is closed exactly once.
+- You can sort results by input order regardless of completion order by using source position as the only sort key.
+- You can use an injected processing function as the seam that lets tests prove out-of-order completion without timing waits.
+- You can coordinate context cancellation so the pool reconciles exactly-once across the boundary, so every input gets one terminal result with no duplicates, and so the driver waits for the running processor to return instead of trying to preempt it.
 
 ## 8. Functional Requirements
 
@@ -56,27 +99,62 @@ After this project you can construct a worker pool with a configurable worker co
 
 ## 9. Inputs and Outputs
 
-**Input** is a worker count, a slice of jobs each with a positive identifier and a signed 64-bit integer value, a context, and an injected processing function whose contract is described in the Design Questions.
+### Interface Contract
 
-**Output** is a slice of length equal to the accepted input length, sorted by source position. Each entry carries the identifier, the transformed value, and any error. Preflight violations are reported as input-position rejections with no workers spawned.
+- **Input** is a worker count, a slice of jobs each with a positive identifier and a signed 64-bit integer value, a context, and an injected processing function whose contract is described in the Design Questions.
 
-**Behaviour example (text only).** Worker count two and three jobs at input positions zero, one, and two. The result slice has three entries in that order. Even if the worker that takes the job at position two finishes first, the result for that entry is at index two in the slice.
+- **Output** is a slice of length equal to the accepted input length, sorted by source position.
+- Each entry carries the identifier, the transformed value, and any error.
+- Preflight violations are reported as input-position rejections with no workers spawned.
 
-**Behaviour example (text only).** One job whose value would overflow when squared. The result slice has one entry marked as an overflow error for that identifier at its source-position slot and no panic is observed; independent jobs in the same call would still run.
+- **Behaviour example (text only).** Worker count two and three jobs at input positions zero, one, and two.
+- The result slice has three entries in that order.
+- Even if the worker that takes the job at position two finishes first, the result for that entry is at index two in the slice.
 
-**Behaviour example (text only).** Cancellation arrives while a processor is mid-iteration. The driver waits for the processor to return, prevents new sends, and on completion every input has exactly one terminal result: completed or error for already-committed jobs, cancelled for not-yet-started and in-flight jobs.
+- **Behaviour example (text only).** One job whose value would overflow when squared.
+- The result slice has one entry marked as an overflow error for that identifier at its source-position slot and no panic is observed; independent jobs in the same call would still run.
+
+- **Behaviour example (text only).** Cancellation arrives while a processor is mid-iteration.
+- The driver waits for the processor to return, prevents new sends, and on completion every input has exactly one terminal result: completed or error for already-committed jobs, cancelled for not-yet-started and in-flight jobs.
 
 ## 10. Rules and Edge Cases
 
-Worker count zero is rejected; the call returns without spawning workers. Worker count one is valid; one worker handles all jobs. Worker count greater than the number of jobs is valid; the extra workers exit because the jobs channel is closed and drained. Duplicate or non-positive job identifiers are rejected at preflight, with no workers spawned. Empty input with positive worker count returns an empty slice and spawns no workers (no workers are useful). Empty input with non-positive worker count is rejected by the worker-count rule. Out-of-order completion is preserved as out-of-order writes to the results channel, but the final slice is sorted by source position. Overflow is detected pre-multiplication as a range check; an overflow produces a per-job error entry at the affected identifier's source-position slot, not a panic and not a batch preflight failure. Cancellation reconciliation delivers exactly one terminal result per input slot, with no duplicates, by the rules in Functional Requirement 9. The closed-channels semantics is "each shared channel is closed exactly once, by the designated owner": the coordinator closes the jobs channel once when its send loop ends, and the coordinator-owned waiter closes the results channel only after all workers exit. A worker never closes a shared channel.
+- Worker count zero is rejected; the call returns without spawning workers.
+- Worker count one is valid; one worker handles all jobs.
+- Worker count greater than the number of jobs is valid; the extra workers exit because the jobs channel is closed and drained.
+- Duplicate or non-positive job identifiers are rejected at preflight, with no workers spawned.
+- Empty input with positive worker count returns an empty slice and spawns no workers (no workers are useful).
+- Empty input with non-positive worker count is rejected by the worker-count rule.
+- Out-of-order completion is preserved as out-of-order writes to the results channel, but the final slice is sorted by source position.
+- Overflow is detected pre-multiplication as a range check; an overflow produces a per-job error entry at the affected identifier's source-position slot, not a panic and not a batch preflight failure.
+- Cancellation reconciliation delivers exactly one terminal result per input slot, with no duplicates, by the rules in Functional Requirement 9.
+- The closed-channels semantics is "each shared channel is closed exactly once, by the designated owner": the coordinator closes the jobs channel once when its send loop ends, and the coordinator-owned waiter closes the results channel only after all workers exit.
+- A worker never closes a shared channel.
 
 ## 11. Project Constraints
 
-Standard library only. No `time.Sleep` or wall-clock `time.After` in tests. Tests use an injected processing function that signals readiness and waits for a release signal so out-of-order completion can be controlled without timing waits. No global state; the pool is constructed and torn down in scope. No goroutine leak under cancellation. Termination is proven by explicit done signals and waits from the test, plus a bounded deadline that fails on hang; runtime goroutine counts are not compared because the runtime and test framework keep unrelated goroutines. The injected processing function is the seam that lets tests prove out-of-order completion without timing waits; the seam's interface and signature are not prescribed. The race detector must report nothing under `-race`.
+- Standard library only.
+- No `time.Sleep` or wall-clock `time.After` in tests.
+- Tests use an injected processing function that signals readiness and waits for a release signal so out-of-order completion can be controlled without timing waits.
+- No global state; the pool is constructed and torn down in scope.
+- No goroutine leak under cancellation.
+- Termination is proven by explicit done signals and waits from the test, plus a bounded deadline that fails on hang; runtime goroutine counts are not compared because the runtime and test framework keep unrelated goroutines.
+- The injected processing function is the seam that lets tests prove out-of-order completion without timing waits; the seam's interface and signature are not prescribed.
+- The race detector must report nothing under `-race`.
 
 ## 12. Design Questions Before Coding
 
-Who closes the jobs channel, and when; and who closes the results channel, and after which condition? Is the rule "close once, by designated owner" applied here as "coordinator closes the jobs channel once when the send loop ends" and "coordinator-owned waiter closes the results channel only after all workers exit"? How is the result slice race-free when many workers write into it concurrently? How is the processed value reported when the processing function returns an error? How is overflow detected as a per-job processing outcome, before multiplication, without giving the processor an unsafe inverse or wrapped-product recipe? How does the worker exit on context cancellation? Does it drain the jobs channel first, or exit on the next iteration? When the worker count is greater than the number of jobs, how does each extra worker learn that no more work is coming? How is the source-position invariant enforced at every code path, so that the result slice is sorted by source position regardless of completion order? On cancellation, what is the exact sequence that delivers exactly one terminal result per input slot, with no duplicates, while the driver waits for the running processor to return? What is the contract the injected processing function honours so tests can drive out-of-order completion without timing waits?
+- Who closes the jobs channel, and when; and who closes the results channel, and after which condition?
+- Is the rule "close once, by designated owner" applied here as "coordinator closes the jobs channel once when the send loop ends" and "coordinator-owned waiter closes the results channel only after all workers exit"?
+- How is the result slice race-free when many workers write into it concurrently?
+- How is the processed value reported when the processing function returns an error?
+- How is overflow detected as a per-job processing outcome, before multiplication, without giving the processor an unsafe inverse or wrapped-product recipe?
+- How does the worker exit on context cancellation?
+- Does it drain the jobs channel first, or exit on the next iteration?
+- When the worker count is greater than the number of jobs, how does each extra worker learn that no more work is coming?
+- How is the source-position invariant enforced at every code path, so that the result slice is sorted by source position regardless of completion order?
+- On cancellation, what is the exact sequence that delivers exactly one terminal result per input slot, with no duplicates, while the driver waits for the running processor to return?
+- What is the contract the injected processing function honours so tests can drive out-of-order completion without timing waits?
 
 ## 13. Implementation Milestones
 
@@ -93,24 +171,99 @@ Who closes the jobs channel, and when; and who closes the results channel, and a
 
 ## 14. Verification Cases the Learner Must Write
 
-Worker count one with several jobs produces a result for every input identifier at the right source-position slot. Worker count many with several jobs produces a result for every input identifier at the right source-position slot. Worker count greater than the number of jobs produces results for the jobs and the extra workers exit cleanly. Worker count zero is rejected at preflight. Empty job list returns an empty slice and spawns no workers. Duplicate job identifier is rejected at preflight with no workers spawned. Non-positive job identifier is rejected at preflight with no workers spawned. Input values whose square would overflow the signed 64-bit range are reported as overflow error results at the affected identifiers' source-position slots and do not panic. The pool with the injected processing function releasing in a controlled out-of-order sequence produces a slice whose entries are in input order, not completion order. Every accepted job is processed exactly once on a non-cancelled run. Context cancellation delivers exactly one terminal result per input slot: already-committed results remain as recorded; not-yet-started and in-flight jobs become cancelled; no duplicate result is emitted. Channels are closed exactly once by the designated owner; no worker closes a channel. The coordinator closes the jobs channel exactly once when its send loop ends; the coordinator-owned waiter closes the results channel only after all workers exit. Running under `-race` produces no race report. Cancellation terminates cleanly: explicit done signals from the test show the workers have exited and the waiters have unblocked, and a bounded deadline fails on hang if termination does not occur; runtime goroutine counts before and after are not compared because they are flaky.
+### Required Cases
+
+- Worker count one with several jobs produces a result for every input identifier at the right source-position slot.
+- Worker count many with several jobs produces a result for every input identifier at the right source-position slot.
+- Worker count greater than the number of jobs produces results for the jobs and the extra workers exit cleanly.
+- Worker count zero is rejected at preflight.
+- Empty job list returns an empty slice and spawns no workers.
+- Duplicate job identifier is rejected at preflight with no workers spawned.
+- Non-positive job identifier is rejected at preflight with no workers spawned.
+- Input values whose square would overflow the signed 64-bit range are reported as overflow error results at the affected identifiers' source-position slots and do not panic.
+- The pool with the injected processing function releasing in a controlled out-of-order sequence produces a slice whose entries are in input order, not completion order.
+- Every accepted job is processed exactly once on a non-cancelled run.
+- Context cancellation delivers exactly one terminal result per input slot: already-committed results remain as recorded; not-yet-started and in-flight jobs become cancelled; no duplicate result is emitted.
+- Channels are closed exactly once by the designated owner; no worker closes a channel.
+- The coordinator closes the jobs channel exactly once when its send loop ends; the coordinator-owned waiter closes the results channel only after all workers exit.
+- Running under `-race` produces no race report.
+- Cancellation terminates cleanly: explicit done signals from the test show the workers have exited and the waiters have unblocked, and a bounded deadline fails on hang if termination does not occur; runtime goroutine counts before and after are not compared because they are flaky.
 
 ## 15. Common Mistakes to Watch For
 
-Using the job identifier as a sort key or as the slot index, instead of source position. Source position is the only key that respects input order; identifiers are identity and uniqueness fields. Letting a worker close the jobs or results channel. Only the coordinator and the coordinator-owned closer close. Closing the results channel before all workers have exited, which races with the workers. Reading from the jobs channel without ranging over it, which misses the close. Using the worker count as the buffer size of the results channel; this is unrelated and causes issues when worker count exceeds job count. Treating overflow as a batch preflight failure rather than as a per-job processing outcome. Detecting overflow by inspecting a wrapped product, or by `recover()` from a panic; this hides the bug at the caller and converts a recoverable error into a process abort. Adding identifiers into a `map` for "fast lookup" without remembering that map iteration order is not deterministic; the input order matters here. Assuming cancellation can magically terminate the running processor; the driver must wait for the running processor to return while preventing new work from starting. Comparing runtime goroutine counts before and after a run; the runtime and the test framework keep unrelated goroutines and the comparison is flaky. Forgetting that `Wait` does not provide an error channel; the pool must surface cancellation through the result entries, not through a separate channel. Confusing "all jobs delivered" with "all workers exited" — the close of the results channel waits on the workers, not on the jobs.
+- Using the job identifier as a sort key or as the slot index, instead of source position.
+- Source position is the only key that respects input order; identifiers are identity and uniqueness fields.
+- Letting a worker close the jobs or results channel.
+- Only the coordinator and the coordinator-owned closer close.
+- Closing the results channel before all workers have exited, which races with the workers.
+- Reading from the jobs channel without ranging over it, which misses the close.
+- Using the worker count as the buffer size of the results channel; this is unrelated and causes issues when worker count exceeds job count.
+- Treating overflow as a batch preflight failure rather than as a per-job processing outcome.
+- Detecting overflow by inspecting a wrapped product, or by `recover()` from a panic; this hides the bug at the caller and converts a recoverable error into a process abort.
+- Adding identifiers into a `map` for "fast lookup" without remembering that map iteration order is not deterministic; the input order matters here.
+- Assuming cancellation can magically terminate the running processor; the driver must wait for the running processor to return while preventing new work from starting.
+- Comparing runtime goroutine counts before and after a run; the runtime and the test framework keep unrelated goroutines and the comparison is flaky.
+- Forgetting that `Wait` does not provide an error channel; the pool must surface cancellation through the result entries, not through a separate channel.
+- Confusing "all jobs delivered" with "all workers exited" — the close of the results channel waits on the workers, not on the jobs.
 
 ## 16. Topics and References for Study
 
-The `sync` package documentation, especially `WaitGroup` and the placement of `Add`. The Go specification on channel close and the "close once, by designated owner" rule. The Go blog article on pipelines and cancellation for the canonical pipeline pattern. The Effective Go notes on buffered channels and backpressure. The `context` package documentation, especially `WithCancel`, `Done`, and `Err`. The Go specification on signed integer overflow and the documentation of the integer types, including the architecture-dependent size of `int` and the fixed width of `int64`.
+- The `sync` package documentation, especially `WaitGroup` and the placement of `Add`.
+- The Go specification on channel close and the "close once, by designated owner" rule.
+- The Go blog article on pipelines and cancellation for the canonical pipeline pattern.
+- The Effective Go notes on buffered channels and backpressure.
+- The `context` package documentation, especially `WithCancel`, `Done`, and `Err`.
+- The Go specification on signed integer overflow and the documentation of the integer types, including the architecture-dependent size of `int` and the fixed width of `int64`.
 
 ## 17. Self-Assessment Questions
 
-Which goroutine closes the jobs channel, and which closes the results channel, and what condition does each close wait on, and why is the rule "close once, by designated owner" rather than "only one goroutine may send"? Why is the result slice sorted by source position rather than by completion order, and how is this enforced at every code path? How is overflow detected without panicking and as a per-job processing outcome, and at what step in the processing boundary? What does "exactly once" mean for each accepted job, and what test proves it under non-cancelled runs, and what test proves the one-per-slot reconciliation under cancellation? Why is the worker count greater than the number of jobs a valid configuration, and what test proves the extra workers exit cleanly? How does the worker pool exit on cancellation, and what is the gap between "context cancelled" and "the worker is actually free", and how does the driver wait for the running processor to return while preventing new work from starting? Why is an injected processing function the right test seam, and what would timing-based testing miss? What would happen if a worker closed the results channel "to be helpful"? Why is comparing runtime goroutine counts before and after a run flaky, and what signals replace that comparison?
+1. Which goroutine closes the jobs channel, and which closes the results channel, and what condition does each close wait on, and why is the rule "close once, by designated owner" rather than "only one goroutine may send"?
+2. Why is the result slice sorted by source position rather than by completion order, and how is this enforced at every code path?
+3. How is overflow detected without panicking and as a per-job processing outcome, and at what step in the processing boundary?
+4. What does "exactly once" mean for each accepted job, and what test proves it under non-cancelled runs, and what test proves the one-per-slot reconciliation under cancellation?
+5. Why is the worker count greater than the number of jobs a valid configuration, and what test proves the extra workers exit cleanly?
+6. How does the worker pool exit on cancellation, and what is the gap between "context cancelled" and "the worker is actually free", and how does the driver wait for the running processor to return while preventing new work from starting?
+7. Why is an injected processing function the right test seam, and what would timing-based testing miss?
+8. What would happen if a worker closed the results channel "to be helpful"?
+9. Why is comparing runtime goroutine counts before and after a run flaky, and what signals replace that comparison?
 
 ## 18. Definition of Completion
 
-Every Functional Requirement is implemented and exercised by a passing test. The Behaviour Examples in this README hold. Tests run with `-race` and produce no race report. No `time.Sleep` or wall-clock `time.After` exists in any test. Every accepted job produces exactly one result on a non-cancelled run. The result slice is in input order regardless of completion order. Source position, not identifier, is the slot and sort key. Overflow is detected pre-multiplication as a signed-64-bit range check and reported as a per-job error result; never a panic, never a wrapped value, never a batch preflight failure. On cancellation, every input produces exactly one terminal result with no duplicates. The coordinator closes the jobs channel exactly once when its send loop ends. The coordinator-owned waiter closes the results channel only after every worker exits. Workers never close shared channels. Termination is proven by explicit done signals and waits, plus a bounded deadline as a deadlock guard; runtime goroutine counts are not compared. You can answer every Self-Assessment Question without consulting the README.
+- [ ] Every Functional Requirement is implemented and exercised by a passing test.
+- [ ] The Behaviour Examples in this README hold.
+- [ ] Tests run with `-race` and produce no race report.
+- [ ] No `time.Sleep` or wall-clock `time.After` exists in any test.
+- [ ] Every accepted job produces exactly one result on a non-cancelled run.
+- [ ] The result slice is in input order regardless of completion order.
+- [ ] Source position, not identifier, is the slot and sort key.
+- [ ] Overflow is detected pre-multiplication as a signed-64-bit range check and reported as a per-job error result; never a panic, never a wrapped value, never a batch preflight failure.
+- [ ] On cancellation, every input produces exactly one terminal result with no duplicates.
+- [ ] The coordinator closes the jobs channel exactly once when its send loop ends.
+- [ ] The coordinator-owned waiter closes the results channel only after every worker exits.
+- [ ] Workers never close shared channels.
+- [ ] Termination is proven by explicit done signals and waits, plus a bounded deadline as a deadlock guard; runtime goroutine counts are not compared.
+- [ ] You can answer every Self-Assessment Question without consulting the README.
 
 ## 19. Optional Extensions
 
-Add per-worker context propagation that lets the processing function observe the pool's context, with a test that proves the function reacts to cancellation. Add a small priority lane that lets one job precede others when the jobs channel is empty, with the priority lane bounded by a configurable capacity and proven with the same synchronization seams while preserving source-position ordering of the result slice.
+- Add per-worker context propagation that lets the processing function observe the pool's context, with a test that proves the function reacts to cancellation.
+- Add a small priority lane that lets one job precede others when the jobs channel is empty, with the priority lane bounded by a configurable capacity and proven with the same synchronization seams while preserving source-position ordering of the result slice.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 033 — Concurrent URL Checker](../../03-concurrency/033_concurrent_url_checker/README.md#20-prerequisite-based-documentation-guide), [Project 031 — Concurrent Timer](../../03-concurrency/031_concurrent_timer/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** bounded worker pools, backpressure, single-owner channel closure, ordered result slots, overflow checks, cancellation, and leak-free shutdown.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

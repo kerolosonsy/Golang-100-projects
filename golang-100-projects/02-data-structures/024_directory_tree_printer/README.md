@@ -2,7 +2,10 @@
 
 ## 1. Project Name and Number
 
-Project **024** — `024_directory_tree_printer`. The directory name and number must match exactly. This project builds a deterministic lexical tree printer rooted at an explicitly supplied directory. The printer walks the supplied root with `io/fs` and `path/filepath`, renders the tree into a string written to an injected `io.Writer`, marks symlinks without following them, and surfaces every error with its path context.
+- Project **024** — `024_directory_tree_printer`.
+- The directory name and number must match exactly.
+- This project builds a deterministic lexical tree printer rooted at an explicitly supplied directory.
+- The printer walks the supplied root with `io/fs` and `path/filepath`, renders the tree into a string written to an injected `io.Writer`, marks symlinks without following them, and surfaces every error with its path context.
 
 ## 2. Project Idea
 
@@ -14,9 +17,13 @@ Errors are explicit. A missing root, a root that is a file, an unreadable direct
 
 ## 3. Why This Project Now?
 
-Project 023 introduced a small language with a state machine and a pinned output layout. Project 024 revisits filesystem walking with a stricter determinism requirement: every sibling must be sorted, every error must carry its path, and the renderer must be decoupled enough from the walker that the renderer's output can be asserted against a synthetic tree. The project is also the first in the path that asks for a clear separation between "what to print" and "how to print it", with the split testable from both sides.
+- Project 023 introduced a small language with a state machine and a pinned output layout.
+- Project 024 revisits filesystem walking with a stricter determinism requirement: every sibling must be sorted, every error must carry its path, and the renderer must be decoupled enough from the walker that the renderer's output can be asserted against a synthetic tree.
+- The project is also the first in the path that asks for a clear separation between "what to print" and "how to print it", with the split testable from both sides.
 
-The project's discipline around symlinks is the same discipline as project 020: do not follow symlinked directories, do not loop on them, mark them visibly. Project 024 pins that discipline one more level by adding a visible mark and by adding explicit tests for symlink loops. The learner practices the same habit at a smaller scope.
+- The project's discipline around symlinks is the same discipline as project 020: do not follow symlinked directories, do not loop on them, mark them visibly.
+- Project 024 pins that discipline one more level by adding a visible mark and by adding explicit tests for symlink loops.
+- The learner practices the same habit at a smaller scope.
 
 ## 4. Prerequisites
 
@@ -35,7 +42,9 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Depth semantics
+### Concepts
+
+#### Depth semantics
 
 The printer accepts a non-negative integer `depth`. The meaning of `depth` is pinned:
 
@@ -46,13 +55,13 @@ The printer accepts a non-negative integer `depth`. The meaning of `depth` is pi
 
 The contract is "non-negative integer only". There is no unlimited-depth sentinel. A negative depth is a hard error, not an unlimited-depth request.
 
-### Lexical sibling sorting
+#### Lexical sibling sorting
 
 Before rendering a directory's children, the printer sorts the children's basenames lexicographically. Lexical order means byte-wise comparison, not case-insensitive comparison and not Unicode-aware collation. The test pins the exact order against known directory contents. The renderer's observable contract is "siblings appear in byte-wise lexicographic order"; the implementation may use any standard-library primitive that produces that order.
 
 The first rendered line is the root's basename. The second and later lines are the root's children, indented under the root. Each subsequent level of nesting is indented further by the pinned two-space unit.
 
-### Files, directories, and special files
+#### Files, directories, and special files
 
 Every regular file is rendered. Every directory is rendered. Special files (devices, sockets, named pipes) are rendered but never descended into. The marks are pinned by this README:
 
@@ -63,13 +72,13 @@ Every regular file is rendered. Every directory is rendered. Special files (devi
 
 The basename-and-mark rule keeps the output free of full paths and free of platform-specific path separators in normal lines.
 
-### Symlink handling
+#### Symlink handling
 
 A symlink is rendered with the trailing mark `@` immediately after the basename. The printer does not display the symlink's target in the rendered output. The printer never follows the symlink to its target; the symlink is recognized by `Type()&fs.ModeSymlink != 0` (with `Info()` consulted only when `Type()` is inconclusive and only in a non-following mode), and the walk does not descend into symlinked directories. This prevents loops. A symlink loop in the input is handled without hanging: the printer renders the symlink's basename with the `@` mark and stops descending at that point.
 
 `filepath.WalkDir` provides no-follow traversal behavior for symlinked directories. The walker still explicitly classifies a symlink by `Type()&fs.ModeSymlink != 0` so it can render the trailing `@` suffix. The symlink's target is never followed.
 
-### Rendering separated from traversal
+#### Rendering separated from traversal
 
 The printer's two responsibilities are split:
 
@@ -78,11 +87,11 @@ The printer's two responsibilities are split:
 
 This split makes both sides testable. The walker is tested with a per-test temporary directory and a small known tree, or with an injected filesystem boundary. The renderer is tested by feeding it a synthetic node list and asserting on its output. The renderer does not read from the filesystem.
 
-### Output written to an injected writer
+#### Output written to an injected writer
 
 The printer writes the rendered tree to an `io.Writer`. The walker does not write to the writer; the renderer does. A writer error during rendering is reported as a printer error and is never rendered as success. Because the walker finishes before rendering begins, a writer error stops the rendering step, not a walk that already completed.
 
-### Errors with path context
+#### Errors with path context
 
 Every error the printer can produce carries enough context to identify the affected path or the affected input:
 
@@ -125,20 +134,23 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A root directory path. The path must exist; the root must be a directory or the printer returns an error. The directory may be empty or contain a mix of regular files, subdirectories, symlinks, and special files.
 - A non-negative integer `depth`.
 - An `io.Writer` to receive the rendered tree.
 
-### Outputs
+#### Outputs
 
 - The rendered tree on the injected writer. The format includes the root on the first line, then one line per entry in lexicographic order at each level, indented by two ASCII spaces per depth level. The output uses basenames and indentation; it does not embed full paths or platform-specific separators in normal lines.
 - An error returned to the caller for any of the failure modes listed in section 8.
 
-### Example text-only success run
+#### Example text-only success run
 
 Input root:
+
 ```
 project/
 ├── README.md
@@ -148,6 +160,7 @@ project/
 ```
 
 Output for `depth = 2`:
+
 ```
 project
   README.md
@@ -157,11 +170,13 @@ project
 ```
 
 Output for `depth = 0`:
+
 ```
 project
 ```
 
 Output for `depth = 1`:
+
 ```
 project
   README.md
@@ -169,9 +184,10 @@ project
   go.mod
 ```
 
-### Example text-only symlink run
+#### Example text-only symlink run
 
 Input root:
+
 ```
 project/
 ├── real/
@@ -180,6 +196,7 @@ project/
 ```
 
 Output:
+
 ```
 project
   link@
@@ -189,7 +206,7 @@ project
 
 (The symlink `link` is rendered as `link@`. The target path is not displayed.)
 
-### Example text-only error runs
+#### Example text-only error runs
 
 ```
 $ tree --depth=-1 /tmp/empty
@@ -261,15 +278,17 @@ Error: root is not a directory: /tmp/somefile.txt.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Walker tests use a per-test temporary directory; renderer tests use a synthetic node tree and a `bytes.Buffer`. Tests that would otherwise depend on permission tricks or platform-sensitive behavior use an injectable filesystem boundary and are marked "where practical".
 
-### Ordering and indentation
+#### Ordering and indentation
 
 - A test creates a temporary root with files and directories whose basenames are intentionally non-alphabetical on disk (created in random order) and runs the printer. The output lists the children in lexicographic order, indented by two ASCII spaces per level.
 - A test creates a temporary root with files whose names differ only in case (for example `a.txt` and `A.txt`). The output uses byte-wise order, with the uppercase letter sorting before the lowercase letter because of ASCII byte values. The test pins the exact order.
 - A test creates a temporary root with a mix of files and directories at the same level. The output lists all of them in the sorted order, with the indentation applied to every entry regardless of kind.
 
-### Depth 0, 1, deeper
+#### Depth 0, 1, deeper
 
 - A test creates a temporary root with three levels of nesting. With `depth = 0`, the output contains only the root line.
 - With `depth = 1`, the output contains the root and every direct child. No grandchildren are present.
@@ -277,58 +296,58 @@ Each case is described in natural language. Walker tests use a per-test temporar
 - With `depth = N` for a large `N`, the entire tree is rendered.
 - With `depth = -1`, the printer returns an error and writes nothing.
 
-### Empty root
+#### Empty root
 
 - A test creates an empty temporary directory and runs the printer with `depth = 0`. The output contains only the root's basename on a single line. No error is returned.
 - The same test with `depth = 1` produces the same single-line output. No children are listed because the directory is empty.
 
-### Files and directories
+#### Files and directories
 
 - A test creates a temporary root with regular files and subdirectories. The output renders both kinds as their basenames, indented two ASCII spaces per depth level.
 - A test creates a temporary root with a deeply nested directory. The output renders every entry along the path with progressively deeper two-space indentation.
 
-### Symlink no-loop
+#### Symlink no-loop
 
 - A test creates a temporary root with a symlink to a regular file inside the root. The output renders the symlink as `basename@`. The walk does not descend into the symlink.
 - A test creates a temporary root with a symlink to a directory inside the root. The output renders the symlink as `basename@` and does not descend into it. The symlink's target's contents do not appear in the output.
 - A test creates a temporary root with a symlink whose target is the root's parent (a symlink loop). The walk completes without hanging. The output renders the symlink as `basename@` and does not loop.
 - A test creates a temporary root with a symlink whose target is a directory outside the root (for example, a sibling temporary directory). The output renders the symlink as `basename@` and does not include any entry from the target.
 
-### Special files
+#### Special files
 
 - Where practical, a test creates a temporary root containing a named pipe or other special entry. The output renders the entry with the trailing `!` mark. The walk does not descend into it. (Where the test platform does not allow creating the special entry, the case is marked "where practical".)
 
-### Invalid depth
+#### Invalid depth
 
 - A test calls the printer with `depth = -1`. The printer returns an error and writes nothing. The error identifies the depth as invalid.
 
-### Missing root
+#### Missing root
 
 - A test calls the printer with a path that does not exist. The printer returns an error naming the missing path.
 - A test calls the printer with a path that exists but is a regular file. The printer returns an error naming the path and identifying the kind.
 
-### Writer error
+#### Writer error
 
 - A test injects an `io.Writer` that returns an error on the first write. The printer returns an error identifying the renderer and the underlying writer failure.
 - A test injects an `io.Writer` that returns an error after a few successful writes. The printer returns an error. The walk has already finished; the renderer stops.
 
-### Permission and disappearing-entry behavior (where practical)
+#### Permission and disappearing-entry behavior (where practical)
 
 - Where practical, a test uses an injectable filesystem boundary to simulate an unreadable directory. The printer returns an error naming the directory path.
 - Where practical, a test uses an injectable filesystem boundary to simulate a disappearing entry. The printer returns an error naming the entry's path.
 - Where neither simulation is practical, the test marks the case "where practical" and pins the behavior through code review of the walker's error surfacing, rather than through a runtime test.
 
-### Renderer separation
+#### Renderer separation
 
 - A test feeds a synthetic node tree directly to the renderer and asserts on the rendered output. The test does not use the filesystem.
 - A test feeds a synthetic node tree whose entries include a regular file, a directory with children, a symlink, and a special file. The output marks each kind according to the pinned rules.
 
-### Determinism
+#### Determinism
 
 - A test runs the printer twice against the same temporary root. The two outputs are byte-identical.
 - A test runs the printer against a temporary root whose entries are created in randomized order across many runs. The output is always the same.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary against a per-test temporary directory and confirms the exit code is zero and the rendered tree is on standard output.
 - An integration test runs the compiled binary with `--depth=-1` and confirms the exit code is non-zero and standard error names the invalid depth.
@@ -380,23 +399,41 @@ Each case is described in natural language. Walker tests use a per-test temporar
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, with walker tests and renderer tests split. Permission and disappearing-entry tests use an injectable filesystem boundary or are marked "where practical".
-- Depth is a non-negative integer. Negative depths return an error and write nothing.
-- Sibling basenames are sorted byte-wise before rendering. The output is deterministic.
-- Symlinks are rendered as `basename@` and never followed. Symlink loops are handled without hanging.
-- Every error carries its path or context. No error is silently hidden or rendered as success.
-- A writer error stops the renderer; the walk, which has already finished, is not restarted.
-- The renderer does not call the filesystem. The walker does not write to the output writer.
-- Indentation is two ASCII spaces per depth level. Normal lines contain basenames and (where applicable) the kind mark; they do not embed full paths or platform-specific path separators.
-- Two runs against the same root produce byte-identical output.
-- The package documentation states the depth contract, the lexical sort contract, the symlink mark and no-follow rule, the special-file rule, the indentation unit, and the error-context rule.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, with walker tests and renderer tests split. Permission and disappearing-entry tests use an injectable filesystem boundary or are marked "where practical".
+- [ ] Depth is a non-negative integer. Negative depths return an error and write nothing.
+- [ ] Sibling basenames are sorted byte-wise before rendering. The output is deterministic.
+- [ ] Symlinks are rendered as `basename@` and never followed. Symlink loops are handled without hanging.
+- [ ] Every error carries its path or context. No error is silently hidden or rendered as success.
+- [ ] A writer error stops the renderer; the walk, which has already finished, is not restarted.
+- [ ] The renderer does not call the filesystem. The walker does not write to the output writer.
+- [ ] Indentation is two ASCII spaces per depth level. Normal lines contain basenames and (where applicable) the kind mark; they do not embed full paths or platform-specific path separators.
+- [ ] Two runs against the same root produce byte-identical output.
+- [ ] The package documentation states the depth contract, the lexical sort contract, the symlink mark and no-follow rule, the special-file rule, the indentation unit, and the error-context rule.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Directory summary at the bottom.** Append a single summary line at the end of the rendered tree counting the regular files and directories shown in the tree. The summary line is omitted on error and is omitted when the writer fails before completion. Do not add counts for symlinks, special files, or sub-totals per directory.
-- **Hidden-file filter flag.** Accept a `--all` flag that controls whether entries whose names begin with `.` are rendered. Without the flag, dot-files are skipped from rendering but their parent directory is still rendered. The flag does not change symlink handling or depth semantics. Do not add per-pattern filters or regex-based filters.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 023 — Markdown to HTML Converter (Tiny Subset)](../../02-data-structures/023_mark_to_html_converter/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** recursive traversal, depth semantics, lexical ordering, symlink safety, special files, injectable filesystems, and writer errors.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

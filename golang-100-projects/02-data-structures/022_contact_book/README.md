@@ -2,7 +2,10 @@
 
 ## 1. Project Name and Number
 
-Project **022** — `022_contact_book`. The directory name and number must match exactly. This project builds an in-memory contact book with create, read, update, delete, case-insensitive substring search, and JSON-file persistence. A small storage boundary isolates the in-memory logic from disk so behavior tests do not need a real file, while a separate JSON-file implementation preserves the safe-save pattern introduced in project 017.
+- Project **022** — `022_contact_book`.
+- The directory name and number must match exactly.
+- This project builds an in-memory contact book with create, read, update, delete, case-insensitive substring search, and JSON-file persistence.
+- A small storage boundary isolates the in-memory logic from disk so behavior tests do not need a real file, while a separate JSON-file implementation preserves the safe-save pattern introduced in project 017.
 
 ## 2. Project Idea
 
@@ -14,9 +17,11 @@ The contact book holds contacts in a stable, predictable order. Listings and sea
 
 ## 3. Why This Project Now?
 
-Project 021 brought streaming parsing discipline. Project 022 revisits the CRUD-plus-persistence pair from project 017 with a different domain and adds three disciplines the previous pair did not need: case-insensitive substring search across multiple fields, a small storage boundary that lets the in-memory logic be tested without disk, and a persisted next-ID counter that is the source of truth rather than a derived value.
+- Project 021 brought streaming parsing discipline.
+- Project 022 revisits the CRUD-plus-persistence pair from project 017 with a different domain and adds three disciplines the previous pair did not need: case-insensitive substring search across multiple fields, a small storage boundary that lets the in-memory logic be tested without disk, and a persisted next-ID counter that is the source of truth rather than a derived value.
 
-The project also forces the learner to think about validation deliberately and about the boundary between in-memory mutation and persistence deliberately. Pinning modest rules, and pinning the limits of those rules in writing, is the project's contribution to the learner's growing habit of "what does this code promise, and what does it explicitly not promise".
+- The project also forces the learner to think about validation deliberately and about the boundary between in-memory mutation and persistence deliberately.
+- Pinning modest rules, and pinning the limits of those rules in writing, is the project's contribution to the learner's growing habit of "what does this code promise, and what does it explicitly not promise".
 
 ## 4. Prerequisites
 
@@ -41,7 +46,9 @@ No prior knowledge of HTTP, databases, generics, or concurrency.
 
 ## 6. Explanation of New Concepts
 
-### The contact record
+### Concepts
+
+#### The contact record
 
 A contact has four fields:
 
@@ -50,53 +57,53 @@ A contact has four fields:
 - **Email.** A string that contains exactly one `@`, with a non-empty local part and a non-empty domain part, and no whitespace anywhere. This is deliberately modest: the rule is enough to catch obvious mistakes, and it is explicitly not a full RFC 5321/5322 implementation.
 - **Phone.** A string consisting of digits and the allowed punctuation characters `+`, `-`, `(`, `)`, and spaces. The string must contain at least one digit. International formats are out of scope; the rule accepts a wide range of everyday formats without claiming correctness for any specific region.
 
-### The persisted next-ID counter
+#### The persisted next-ID counter
 
 The next ID to assign is a counter that the book owns. It is the source of truth for the next `Add` and is persisted alongside the contacts in the JSON file. The counter is not derived from the stored IDs and is not recomputed from a maximum on load or on `Add`.
 
 Three rules together define the next-ID contract:
 
-1. **Persisted exactly.** The JSON file contains both the contacts and the next-ID counter. Save writes both. Load reads both.
-2. **Validated on load.** A loaded next-ID value must be strictly positive and strictly greater than every stored contact ID. A duplicate stored ID, a non-positive stored ID, a non-positive next ID, or a next ID that is not greater than every stored ID is a load error. The contact book is not usable until the load error is resolved (for example, by fixing the file or starting from an empty book).
-3. **Incremented on commit.** `Add` reserves the current next ID for the new contact and increments the counter by one. The increment happens as part of committing the change, never as a pre-reservation.
+- **Persisted exactly.** The JSON file contains both the contacts and the next-ID counter. Save writes both. Load reads both.
+- **Validated on load.** A loaded next-ID value must be strictly positive and strictly greater than every stored contact ID. A duplicate stored ID, a non-positive stored ID, a non-positive next ID, or a next ID that is not greater than every stored ID is a load error. The contact book is not usable until the load error is resolved (for example, by fixing the file or starting from an empty book).
+- **Incremented on commit.** `Add` reserves the current next ID for the new contact and increments the counter by one. The increment happens as part of committing the change, never as a pre-reservation.
 
 Because the counter is the source of truth and is incremented only on commit, deleting a contact never changes the counter. The next `Add` receives the counter's current, greater value, which is the same value the counter held before the delete. The deleted ID is never reused. IDs are monotonically increasing and never reused across the lifetime of a single contact book instance. A loaded empty book whose contacts were deleted before save may have next ID `50` because the persisted counter was `50` when the last contact was deleted and the file was saved; the counter does not retroactively shrink. The contact book does not promise that every assigned ID is currently in use; it only promises that every currently-stored ID is unique and that the next ID to assign is the persisted counter value.
 
-### Case-insensitive substring search
+#### Case-insensitive substring search
 
 The search operates on three fields: name, email, and phone. The query is lowered with `strings.ToLower`. Each field is lowered with the same function. A match is reported if the lowered query appears as a substring in any of the three lowered fields. The result list is ordered by ascending ID. A search with no match returns an empty list, not an error.
 
 The search is documented as Unicode-lowercase-based, not full Unicode case folding. The Turkish dotless-I case and similar locale-specific rules are not applied. Two strings that are visually identical but differ in precomposed vs decomposed form are not guaranteed to match. The README documents this caveat; the test does not assert on it.
 
-### The small storage boundary
+#### The small storage boundary
 
 The contact book depends on a small storage interface with two methods, conceptually answering two questions: "give me the persisted contacts and the next-ID counter" and "replace the persisted contacts and the next-ID counter". The in-memory implementation returns empty results and next ID `1` until something has been added, and accepts any save without touching disk. The JSON-file implementation writes to a temporary file in the same directory, closes it, and renames over the target; on load it parses the file and validates both the ID contract and the next-ID invariant before returning.
 
 The discipline this boundary enforces is testability. The contact book's CRUD and search logic is exercised through the in-memory store in unit tests, with no disk and no temporary directory. The JSON-file implementation is exercised in a separate set of integration tests against a per-test temporary directory, with the contact book's CRUD logic held fixed.
 
-### Transactional mutation and persistence
+#### Transactional mutation and persistence
 
 Mutating operations (`Add`, `Update`, `Delete`) commit in two phases: build the candidate in-memory state, persist it through the store, then publish the in-memory state. The order is pinned:
 
-1. **Validate.** Validate the candidate state without touching the store or the in-memory collection.
-2. **Persist.** Call the store to write the candidate. If the store returns an error, abandon the candidate. The previous in-memory state and the previous persisted file remain visible.
-3. **Publish.** Replace the in-memory state with the candidate. Return success.
+- **Validate.** Validate the candidate state without touching the store or the in-memory collection.
+- **Persist.** Call the store to write the candidate. If the store returns an error, abandon the candidate. The previous in-memory state and the previous persisted file remain visible.
+- **Publish.** Replace the in-memory state with the candidate. Return success.
 
 A failed persist leaves the prior memory and the prior file intact. The caller sees the in-memory state matching the persisted file at every moment between operations; a partial publish is not observable.
 
 For tests, the project requires an injected failure seam at the persistence boundary rather than read-only permission tricks. The JSON-file store is exercised through a small interface so a test can inject a store that returns a planned error from save and confirm that the prior in-memory state and the prior file are still visible after the failed save.
 
-### The safe-save pattern reused
+#### The safe-save pattern reused
 
 The JSON-file save follows the narrow pattern introduced in project 017: open a temporary file in the same directory as the target, write the document, close the file with the close error checked, then rename the temporary file over the target. On any failure before a successful rename, the previous target file is left untouched and the temporary file is removed. The pattern provides atomic visibility during normal operation: a successful rename replaces the previous target file in a single observable step. Without explicitly syncing the temporary file and the parent directory, the pattern does not guarantee crash durability; a power loss can lose or reorder the newest persisted update. The README documents this honestly; the test pins only the behavior the pattern guarantees during normal operation.
 
 There is no copy fallback in the required scope and no remove-then-rename scheme. The rename is the atomic step; everything before it is fail-safe cleanup.
 
-### Stable order
+#### Stable order
 
 Every list-shaped result — listings, search results, and the results of any "all contacts" operation — is ordered by ascending ID. Two runs of the same operation against the same contact book return results in the same order.
 
-### Missing and malformed storage
+#### Missing and malformed storage
 
 A missing storage file is not an error. It means the contact book starts empty with next ID `1`. A malformed JSON file is a hard error: the contact book does not silently overwrite the file with an empty book, and the caller is informed of the failure. A file with the right shape but with duplicate IDs, non-positive IDs, or a next-ID value that does not satisfy the persisted-counter invariant is also a hard error.
 
@@ -132,18 +139,20 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - For the in-memory behavior tests: a fresh contact book (or a book pre-loaded with known contacts), a sequence of CRUD and search calls, and assertions on the returned contacts and errors.
 - For the JSON-file tests: a per-test temporary directory, a JSON file produced by the encoder (or written by the test directly), and the contact book's load and save operations against that file.
 - For the command-line integration: a JSON file path and CRUD/search commands on standard input or as command-line arguments. The exact CLI shape is the learner's choice; the test pins the learner's chosen shape.
 
-### Outputs
+#### Outputs
 
 - CRUD and search return contacts, lists, or errors. Errors carry enough context to identify the cause (for example, "missing name", "duplicate ID 5 in file", "next ID must be greater than every stored ID").
 - The JSON file produced by the encoder contains every contact's ID, name, email, and phone, plus the next-ID counter.
 
-### Example text-only search
+#### Example text-only search
 
 ```
 $ contactbook search alice
@@ -151,14 +160,14 @@ $ contactbook search alice
 7: Charlie Mallory-Alice  <cmallory@example.com>  +1-555-0107
 ```
 
-### Example text-only validation error
+#### Example text-only validation error
 
 ```
 $ contactbook add "" "not-an-email" "abc"
 Error: name is empty.
 ```
 
-### Example text-only load error
+#### Example text-only load error
 
 ```
 $ contactbook --file contacts.json list
@@ -240,9 +249,11 @@ Error: contact id 0 is not positive.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. In-memory tests use a fresh contact book or one pre-loaded with known contacts. JSON-file tests use a per-test temporary directory. Persistence failure tests use an injected store that returns a planned error from save.
 
-### CRUD and validation
+#### CRUD and validation
 
 - `Add` with valid fields assigns ID `1`, `2`, `3` in three successive calls on a fresh book, and the counter holds `4` after the third `Add`.
 - `Add` with empty name returns an error naming the name field. The book is unchanged and the counter is unchanged.
@@ -262,21 +273,21 @@ Each case is described in natural language. In-memory tests use a fresh contact 
 - `Delete` on an existing ID removes the contact. `Get` on that ID afterwards returns an error. The next-ID counter is unchanged.
 - `Delete` on a missing ID returns an error naming the ID.
 
-### Next-ID policy
+#### Next-ID policy
 
 - After `Add` assigns IDs `1`, `2`, `3`, the counter holds `4`. After `Delete` of contact `2`, the counter still holds `4` and `Add` produces a new contact with ID `4`, then the counter holds `5`. The deleted ID `2` is never reused; the new contact is assigned the counter's current, greater value.
 - After loading a file whose next-ID counter is `42` and adding one new contact, the new contact has ID `42` and the counter holds `43`.
 - A file that persists an empty contact list with next ID `50` loads to a book with zero contacts and next ID `50`. The next `Add` assigns ID `50`.
 - The next-ID counter is never derived from the stored IDs at any point. Adding a contact does not recompute the counter from the maximum stored ID; it uses the current counter value.
 
-### Load validation
+#### Load validation
 
 - A file with a duplicate stored ID (two records with ID `5`) returns a load error naming the duplicate ID. The in-memory state is unchanged.
 - A file with a non-positive stored ID (a record with ID `0` or `-1`) returns a load error naming the offending ID. The in-memory state is unchanged.
 - A file with a non-positive next ID (counter `0` or `-1`) returns a load error naming the offending next-ID value. The in-memory state is unchanged.
 - A file whose next ID is not strictly greater than every stored ID (for example, counter `5` when a contact has ID `7`) returns a load error naming the offending next-ID value. The in-memory state is unchanged.
 
-### Listing and search
+#### Listing and search
 
 - `List` on an empty book returns an empty slice.
 - `List` on a book with contacts `3`, `1`, `2` returns them in order `1`, `2`, `3`.
@@ -287,21 +298,21 @@ Each case is described in natural language. In-memory tests use a fresh contact 
 - `Search` with an empty query returns every contact, in ascending ID order.
 - Two identical searches against the same book return results in the same order.
 
-### JSON persistence
+#### JSON persistence
 
 - Save an empty book (next ID `1`) to a temporary directory, then load it. The book is empty with next ID `1`.
 - Save a book with three contacts and next ID `4`, load it, and verify the three contacts plus next ID `4`.
 - Save a book whose current contact list is empty but whose next-ID counter is `50`, load it, and verify the next-ID counter is `50` and the contact list is empty. The counter is not reset on save.
 - Round-trip: save, load, save again. The two saved documents are semantically equivalent (the contacts and the next-ID counter match). Whitespace or representation differences the encoder is allowed to make are normalized by the test.
 
-### Transactional mutation
+#### Transactional mutation
 
 - A test injects a store that returns a planned error from save. `Add` returns the error. The prior in-memory state is unchanged and the prior persisted file (if any) is unchanged.
 - A test injects a store that returns a planned error from save after several successful operations. `Update` returns the error; the contact's stored fields and the persisted file are unchanged.
 - A test injects a store that returns a planned error from save. `Delete` returns the error; the contact is still present in memory and the persisted file still records it.
 - After a failed injected save, the next `Add` succeeds and uses the same next-ID counter the book held before the failed save.
 
-### Failure modes
+#### Failure modes
 
 - A missing JSON file at load time is not an error; the book is empty with next ID `1`.
 - A malformed JSON file at load time returns a parse error; the contact book's in-memory state is unchanged and the file is not overwritten.
@@ -309,7 +320,7 @@ Each case is described in natural language. In-memory tests use a fresh contact 
 - A JSON file with a non-positive ID returns an error naming the ID; the in-memory state is unchanged and the file is not overwritten.
 - A JSON file with a non-positive next ID returns an error naming the offending next-ID value; the in-memory state is unchanged and the file is not overwritten.
 
-### Process
+#### Process
 
 - An integration test runs the compiled CLI against a temporary JSON file with a small set of known contacts and exercises `list` and `search` to confirm exit code zero and stable output.
 - An integration test runs the compiled CLI against a malformed JSON file and confirms the exit code is non-zero and standard error names the parse failure.
@@ -361,21 +372,39 @@ Each case is described in natural language. In-memory tests use a fresh contact 
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, with in-memory tests and JSON-file tests separated.
-- The next-ID counter is the source of truth. It is not derived from stored IDs at any point. It is persisted as-is and loaded as-is. It is validated on load against the rule "positive and strictly greater than every stored ID". The contact book does not promise that every assigned ID is currently in use.
-- A missing storage file is not an error; a malformed JSON file is a hard error. A failed load leaves the current in-memory state unchanged.
-- The JSON-file implementation uses the narrow safe-save pattern from project 017 (temp file in same directory, checked close, rename over target). The pattern provides atomic visibility during normal operation but does not guarantee crash durability; no `fsync` is required; there is no copy fallback and no remove-then-rename scheme.
-- Mutating operations commit in two phases: persist, then publish. A failed persist leaves prior in-memory state and prior persisted file unchanged. The injected-failure test pins this deterministically.
-- `List` and `Search` return results in ascending ID order with no other ordering.
-- Validation happens before any state mutation. A rejected `Add` or `Update` leaves the book unchanged.
-- The package documentation states the modest validation rules, the next-ID policy, the search semantics, the storage boundary, the two-phase commit contract, and the limits of `strings.ToLower`.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, with in-memory tests and JSON-file tests separated.
+- [ ] The next-ID counter is the source of truth. It is not derived from stored IDs at any point. It is persisted as-is and loaded as-is. It is validated on load against the rule "positive and strictly greater than every stored ID". The contact book does not promise that every assigned ID is currently in use.
+- [ ] A missing storage file is not an error; a malformed JSON file is a hard error. A failed load leaves the current in-memory state unchanged.
+- [ ] The JSON-file implementation uses the narrow safe-save pattern from project 017 (temp file in same directory, checked close, rename over target). The pattern provides atomic visibility during normal operation but does not guarantee crash durability; no `fsync` is required; there is no copy fallback and no remove-then-rename scheme.
+- [ ] Mutating operations commit in two phases: persist, then publish. A failed persist leaves prior in-memory state and prior persisted file unchanged. The injected-failure test pins this deterministically.
+- [ ] `List` and `Search` return results in ascending ID order with no other ordering.
+- [ ] Validation happens before any state mutation. A rejected `Add` or `Update` leaves the book unchanged.
+- [ ] The package documentation states the modest validation rules, the next-ID policy, the search semantics, the storage boundary, the two-phase commit contract, and the limits of `strings.ToLower`.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Group-by initial letter.** Add a `Groups` operation that returns contacts grouped by the first letter of their name, with each group ordered by ascending ID and the groups themselves ordered alphabetically. The group operation does not mutate the book. Do not add further breakdowns (per-domain, per-phone-prefix) or a count summary per group.
-- **Backup file on save.** Configure the JSON-file store to keep a single rolling backup (for example, `contacts.json.bak`) updated alongside each successful save. The backup is overwritten by the same safe-save pattern and is not consulted by `Load`. Do not add a backup history, restore command, or multi-file backup scheme.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 021 — Log File Analyzer](../../02-data-structures/021_log_file_analyzer/README.md#20-prerequisite-based-documentation-guide), [Project 014 — Input Validator](../../01-foundations/014_input_validator/README.md#20-prerequisite-based-documentation-guide), [Project 017 — JSON Todo Persister](../../02-data-structures/017_json_todo_persister/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** CRUD invariants, modest validation, case-insensitive search, transactional mutation, safe file replacement, and schema evolution.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

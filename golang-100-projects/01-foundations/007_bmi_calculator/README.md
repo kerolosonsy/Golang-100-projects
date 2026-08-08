@@ -1,25 +1,30 @@
 # Project 007 — BMI Calculator
 
 ## 1. Project Name and Number
+
 - Number: **007**, level 1 (language basics and CLI).
 - Folder name in the table: **`007_bmi_calculator`**, matching `01-foundations/007_bmi_calculator/`.
 - Kind: a small terminal program that asks for height and weight, computes a body-mass index, classifies the result into a category, and prints a clear, rounded value. The program is for educational practice, not medical advice.
 
 ## 2. Project Idea
+
 Build a terminal program that prompts for height and weight, validates that both are positive numbers in their respective units, computes the index using the standard formula, and prints the value along with a category drawn from a documented set of thresholds. The required baseline covers: read two inputs, parse them to floating-point values, validate positivity, compute the index, classify it, and present a rounded result without losing intermediate precision.
 
 ## 3. Why This Project Now?
+
 - First project in the path that uses `float64` end-to-end, exposing the usual pitfalls of floating-point arithmetic: rounding decisions, equality comparisons, and display formatting.
 - Reuses the input-validation habit from 001, 002, and 014 (already a habit even though 014 is later in the path), but adds a numeric range check rather than just a parse check.
 - Introduces the pattern of separating pure computation from input and output, a separation that becomes structural from project 011 onward.
 - Sets the stage for later projects that reason about thresholds and categories (rate limiter in 036, search ranking in 069, scheduler priorities in 090).
 
 ## 4. Prerequisites
+
 - Project **006** (`006_string_reverser`). Comfort with functions, slices, and clean input handling should already be in place.
 - Familiarity with `int` and the basic distinction between integer and floating-point arithmetic.
 - No new tools or libraries beyond the standard library used in earlier projects.
 
 ## 5. What You Must Know Before Starting
+
 - The `float64` type is a 64-bit IEEE 754 binary floating-point value. Most decimal fractions cannot be represented exactly, and any computation that would produce an exact decimal result will produce a nearby binary approximation instead.
 - The body-mass index used here is `weight / (height * height)` with weight in kilograms and height in metres. The formula is the same worldwide; the categories are conventional thresholds, not physiological truths.
 - A common display convention is one or two decimal places. Rounding is a presentation decision; the underlying value should not be re-rounded at every step of the computation.
@@ -29,6 +34,9 @@ Build a terminal program that prompts for height and weight, validates that both
 - This program is educational. It does not diagnose, treat, or recommend anything. The wording around the result must not claim medical certainty.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 - The standard library's `strconv.ParseFloat`: where it lives, what error it returns, and how to react to it. Treat any parse failure as invalid input, not as a value of zero.
 - The `fmt` verb families for floating-point output: some default to scientific notation, some to fixed-point, some to "shortest representation that round-trips". Pick a verb whose defaults match the rounding convention you documented.
 - Floating-point rounding policy: rounding only when printing, not when computing, prevents compounding rounding error. The intermediate value is kept at full precision; the displayed value is rounded.
@@ -37,6 +45,7 @@ Build a terminal program that prompts for height and weight, validates that both
 - Program boundaries: the part of the program that parses input, the part that computes, and the part that prints are three distinct concerns. Keeping them in separate functions makes each one independently testable.
 
 ## 7. Learning Objective
+
 By the end of the project you should be able to:
 - Read two numeric inputs from the terminal and convert them to `float64` safely.
 - Apply a documented positivity check to both values and reject zero or negative values with a clear message.
@@ -46,21 +55,28 @@ By the end of the project you should be able to:
 - Distinguish three concerns: input parsing, computation, and presentation.
 
 ## 8. Functional Requirements
-- F1: The program prompts for and reads a height in metres and a weight in kilograms. The wording of the prompts and the order of the prompts is your choice; the values themselves are unambiguous.
-- F2: Both inputs are parsed to `float64`. A parse failure is handled with a clear message; the program does not silently treat invalid input as zero.
-- F3: Both values must be strictly positive. Zero, negative, or non-finite values (infinity, NaN) are rejected with a clear message before any division takes place.
-- F4: The index is computed as `weight / (height * height)`. The computation uses `float64`. The intermediate value is not rounded.
-- F5: The computed value is classified into one of four categories: underweight (BMI strictly less than 18.5), normal (BMI at least 18.5 and strictly less than 25), overweight (BMI at least 25 and strictly less than 30), and obese (BMI at least 30). Exactly 18.5 is normal, exactly 25 is overweight, and exactly 30 is obese.
-- F6: The program prints the computed value, rounded to a documented number of decimal places, followed by the category. The category wording is your choice but must be consistent with the threshold table.
-- F7: The wording around the result makes it clear that this is an educational calculation, not a medical diagnosis.
+
+1. F1: The program prompts for and reads a height in metres and a weight in kilograms. The wording of the prompts and the order of the prompts is your choice; the values themselves are unambiguous.
+2. F2: Both inputs are parsed to `float64`. A parse failure is handled with a clear message; the program does not silently treat invalid input as zero.
+3. F3: Both values must be strictly positive. Zero, negative, or non-finite values (infinity, NaN) are rejected with a clear message before any division takes place.
+4. F4: The index is computed as `weight / (height * height)`. The computation uses `float64`. The intermediate value is not rounded.
+5. F5: The computed value is classified into one of four categories: underweight (BMI strictly less than 18.5), normal (BMI at least 18.5 and strictly less than 25), overweight (BMI at least 25 and strictly less than 30), and obese (BMI at least 30). Exactly 18.5 is normal, exactly 25 is overweight, and exactly 30 is obese.
+6. F6: The program prints the computed value, rounded to a documented number of decimal places, followed by the category. The category wording is your choice but must be consistent with the threshold table.
+7. F7: The wording around the result makes it clear that this is an educational calculation, not a medical diagnosis.
 
 ## 9. Inputs and Outputs
-**Inputs**:
+
+### Interface Contract
+
+#### Inputs
+
 - Height in metres, as a decimal number. Typical educational values are between 0.5 and 2.5 metres.
 - Weight in kilograms, as a decimal number. Typical educational values are between 10 and 300 kilograms.
 - Both inputs may be integers in textual form ("1" rather than "1.0"); both must be accepted.
 
-**Outputs**: text printed to standard output. Text-only examples:
+#### Outputs
+
+Text printed to standard output. Text-only examples:
 
 - A normal adult, height 1.75 m, weight 70 kg:
   - Program prints a single line containing the computed value, rounded to one or two decimal places as you documented, and the corresponding category.
@@ -81,6 +97,7 @@ By the end of the project you should be able to:
   - Program rejects the input with a clear message; no division is performed.
 
 ## 10. Rules and Edge Cases
+
 - Height and weight must both be strictly positive. Zero, negative, and non-finite values are invalid.
 - Parse failure is invalid input. The program does not coerce invalid input to zero or to any other value.
 - The threshold table is, in the version used here, the conventional four-band table with thresholds at 18.5, 25, and 30. The bands are defined explicitly as:
@@ -95,6 +112,7 @@ By the end of the project you should be able to:
 - The output never claims a medical diagnosis. Wording such as "according to the conventional thresholds", "educational result", or "for practice only" satisfies this requirement; wording such as "you are underweight" used in a clinical sense does not.
 
 ## 11. Project Constraints
+
 - Libraries: the standard library only. `strconv.ParseFloat` for parsing, `fmt` for printing with a fixed-point verb, `math` if you choose to use it for explicit NaN/Inf checks.
 - Prohibited: any external package. No third-party BMI library; the formula is two lines of arithmetic.
 - Persistence: none. The program reads, computes, prints, and exits.
@@ -102,6 +120,7 @@ By the end of the project you should be able to:
 - Tests: optional in code; the verification section below lists scenarios the learner runs manually or as table-driven tests if tests are added.
 
 ## 12. Design Questions Before Coding
+
 - Will you keep the parsing, the computation, and the printing in three separate functions, or will you combine some of them? Three separate functions is the easier-to-test design.
 - How will you represent a category? A string is the simplest representation. An integer constant per category, or a typed enum-like type, has its own advantages; the choice is yours.
 - Where will the threshold table live? As a slice of `(upperBound, category)` pairs, as a `switch` over ranges, or in another shape? Each shape has different readability and testability trade-offs.
@@ -110,6 +129,7 @@ By the end of the project you should be able to:
 - How will you handle inputs that parse correctly but are nonsense, such as `1e308` for the weight? A range check is part of the validation; without it, parse-only validation accepts absurd values.
 
 ## 13. Implementation Milestones
+
 1. M1: Create the source file with the minimum required for a Go program to compile and run; verify with a build and run cycle.
 2. M2: Read height and weight as text and parse each into a `float64`. Confirm that both valid and invalid inputs are handled.
 3. M3: Validate that both values are strictly positive and finite. Reject zero, negative, NaN, and ±Inf with a clear message.
@@ -120,6 +140,9 @@ By the end of the project you should be able to:
 8. M8: Run every verification scenario from section 14 and confirm the program behaves as your design specifies.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - A normal adult: height 1.75 m, weight 70 kg. The computed value, rounded to your documented precision, is in the conventional "normal" band.
 - A clearly underweight example: height 1.75 m, weight 50 kg. The category is the lowest band in your table.
 - A clearly overweight example: height 1.70 m, weight 80 kg. The category matches the upper bands of your table.
@@ -134,6 +157,7 @@ By the end of the project you should be able to:
 - Output wording: contains an explicit non-medical framing; contains no claim of clinical diagnosis.
 
 ## 15. Common Mistakes to Watch For
+
 - Rounding the intermediate value as soon as it is computed. This compounds the rounding error across the formula. Round once, when printing.
 - Comparing a `float64` to another `float64` with `==`. The threshold tables do not require equality comparisons; they require ordering comparisons. Use `<`, `<=`, `>`, `>=`, and document the boundary rule.
 - Treating invalid input as zero. Zero is a valid value to reject; it is not a valid value to assume silently. A parse failure must produce a clear message and a non-result.
@@ -144,6 +168,7 @@ By the end of the project you should be able to:
 - Returning a category as a bare string without a type. A typed category makes accidental misuse harder, but if you choose a bare string, document the set of values you use.
 
 ## 16. Topics and References for Study
+
 - A Tour of Go: Type inference, basic types, and the introduction to floating-point numbers.
 - Effective Go: Names, control structures, and the section on printing.
 - The `strconv` package documentation: `ParseFloat` and its error reporting.
@@ -153,6 +178,7 @@ By the end of the project you should be able to:
 - Search terms: `Go ParseFloat error handling`, `Go fmt float precision`, `float64 comparison pitfalls`, `BMI category thresholds conventional`.
 
 ## 17. Self-Assessment Questions
+
 1. Why is rounding only the printed value safer than rounding the intermediate result? Describe the failure mode that the project avoids by rounding once.
 2. A user enters `1.70` for the height and `70.0000001` for the weight. The computed value, in `float64`, is very close to a boundary. Walk through what your program does, and explain whether your boundary rule can be defeated by a value that is one ulp away.
 3. The conventional rule in section 10 says exactly 25 belongs to "overweight". A reviewer suggests instead that exactly 25 should be classified as "normal", arguing that the boundary should belong to the lower band. What changes in the program, what stays the same, and which alignment with section 10 is the right one for this project?
@@ -162,14 +188,34 @@ By the end of the project you should be able to:
 7. Walk through the case where the user enters `0` for the height. Where in your program does the rejection happen, and what does the user see?
 
 ## 18. Definition of Completion
-- The program compiles and runs without compile errors.
-- Every scenario in section 14 produces the behaviour documented in your code.
-- No panic occurs in any documented scenario, including division-by-zero and absurd input.
-- The threshold table in code matches the threshold table in this README, with exactly 18.5 normal, exactly 25 overweight, and exactly 30 obese.
-- The intermediate computation is not rounded; rounding happens only at print time.
-- The output includes an explicit non-medical framing; no clinical diagnosis is claimed.
-- You can explain, in plain language, why the program is educational and not diagnostic.
+
+- [ ] The program compiles and runs without compile errors.
+- [ ] Every scenario in section 14 produces the behaviour documented in your code.
+- [ ] No panic occurs in any documented scenario, including division-by-zero and absurd input.
+- [ ] The threshold table in code matches the threshold table in this README, with exactly 18.5 normal, exactly 25 overweight, and exactly 30 obese.
+- [ ] The intermediate computation is not rounded; rounding happens only at print time.
+- [ ] The output includes an explicit non-medical framing; no clinical diagnosis is claimed.
+- [ ] You can explain, in plain language, why the program is educational and not diagnostic.
 
 ## 19. Optional Extensions
+
 - Optional 1: Accept either metric or imperial inputs (centimetres, or feet and inches, for height; kilograms or pounds for weight) and document the conversion rule. The category rule still uses the same body-mass index thresholds.
-- Optional 2: Print a short, plain-language description of where the computed value sits between the two nearest thresholds, expressed in your own words. The description is educational and explicitly non-medical.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 006 — String Reverser](../../01-foundations/006_string_reverser/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [CDC adult BMI categories](https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html).
+
+### Project-specific learning focus
+
+- **Learn now:** input validation, boundary tests, unit conversion, floating-point formatting, and keeping the result explicitly non-diagnostic.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

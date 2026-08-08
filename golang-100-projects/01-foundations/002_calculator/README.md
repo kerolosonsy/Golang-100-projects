@@ -1,24 +1,29 @@
 # Project 002 — Calculator
 
 ## 1. Project Name and Number
+
 - Number: **002**, level 1 (language basics and CLI).
 - Folder name in the table: **`002_calculator`**, matching `01-foundations/002_calculator/`.
 - Kind: a small one-shot terminal calculator that takes two numbers and an operator, applies one of the four basic arithmetic operations, and prints the result.
 
 ## 2. Project Idea
+
 Build a terminal program that reads two numbers and an operator, then prints the result of applying that operator to the two numbers. The required baseline covers the four basic operations, identifies an operator it does not recognise, and handles division by zero explicitly rather than producing an undefined or special value. After the program completes (whether successfully or with a reported error), it ends the run; the baseline is a single operation per run.
 
 ## 3. Why This Project Now?
+
 - Reuses the input and printing habits from 001 and layers in two central Go ideas: small functions as logical units, and errors as explicit return values rather than exceptions.
 - Introduces the switch construct as a clean way to dispatch on a small set of cases; the same shape reappears in every later project.
 - Establishes the habit of checking errors rather than ignoring them, which carries into validators, parsers, and network code later.
 - Reinforces the separation of computation from input and output, a theme that deepens in 003.
 
 ## 4. Prerequisites
+
 - 001 must be complete, especially the reading-conversion-error pattern learned there.
 - Environment: Go installed and on `PATH`.
 
 ## 5. What You Must Know Before Starting
+
 - Functions returning a value and functions returning an error: understand when a function should return only a number versus when it should also return an error value, and why the latter is sometimes the only honest signature.
 - Floating-point behaviour for division by zero: a floating-point division by zero does not necessarily produce a runtime error in the language; the result depends on the dividend's sign. This means the divisor must be checked explicitly before the operation.
 - switch in Go: each case ends by default without explicit break statements. Understand when fallthrough behaviour is appropriate (likely not in this project).
@@ -27,6 +32,9 @@ Build a terminal program that reads two numbers and an operator, then prints the
 - Output formatting for floats: several conventions exist; the choice is yours and should suit a calculator's purpose.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 - Multiple return values: a Go function can return more than one value. The idiomatic pattern for "I tried to compute, but here is what went wrong" is to return both. This keeps failure visible at the call site instead of hidden in exception machinery.
 - The error interface: a built-in interface that any value implementing a single method satisfies. It is how Go's standard library signals recoverable failures; understanding it removes much of the mystery around how errors propagate.
 - switch as a dispatch tool: when the control flow is "given a value, branch to one of several actions", switch is clearer than a chain of if and else. Tools and readmes also treat it well.
@@ -34,6 +42,7 @@ Build a terminal program that reads two numbers and an operator, then prints the
 - The "stop processing and explain" habit: when input is invalid, the program should respond with a clear message and end the run cleanly, never silently substituting a placeholder value for the bad input.
 
 ## 7. Learning Objective
+
 By the end of the project you should be able to:
 - Define a function that returns a numeric result plus an error value.
 - Use switch to dispatch on a string.
@@ -43,21 +52,28 @@ By the end of the project you should be able to:
 - Organise the code into small functions instead of one large block.
 
 ## 8. Functional Requirements
-- F1: The program accepts two numeric operands and an operator string.
-- F2: The program applies the operator to the operands using one of the four basic arithmetic operations.
-- F3: For an unknown operator (anything outside the four supported operations), the program prints a message identifying the operator as unrecognised and does not print a numeric result.
-- F4: For division, the program rejects a zero divisor with an explicit message before performing the operation; it does not produce a special-value output.
-- F5: For an operand that cannot be parsed as a number, the program reports the failure clearly and ends the run.
-- F6: On a successful operation, the program prints the result, then ends the run.
-- F7: After any outcome, the program ends the run; the baseline does not include a repeat loop.
+
+1. F1: The program accepts two numeric operands and an operator string.
+2. F2: The program applies the operator to the operands using one of the four basic arithmetic operations.
+3. F3: For an unknown operator (anything outside the four supported operations), the program prints a message identifying the operator as unrecognised and does not print a numeric result.
+4. F4: For division, the program rejects a zero divisor with an explicit message before performing the operation; it does not produce a special-value output.
+5. F5: For an operand that cannot be parsed as a number, the program reports the failure clearly and ends the run.
+6. F6: On a successful operation, the program prints the result, then ends the run.
+7. F7: After any outcome, the program ends the run; the baseline does not include a repeat loop.
 
 ## 9. Inputs and Outputs
-**Inputs**:
+
+### Interface Contract
+
+#### Inputs
+
 - A string representing the first operand.
 - A string representing the second operand.
 - A short string representing the operator.
 
-**Outputs**: text printed to standard output. Text-only examples:
+#### Outputs
+
+Text printed to standard output. Text-only examples:
 
 - Successful addition:
   - User enters the first operand, then the second, then a recognised addition operator.
@@ -76,6 +92,7 @@ By the end of the project you should be able to:
   - Program prints a message indicating the operand was not a valid number, and the program ends.
 
 ## 10. Rules and Edge Cases
+
 - An operator string with extra surrounding whitespace: your normalisation policy applies before matching.
 - An operator in a different case (upper versus lower): your matching policy.
 - Very large or very small operands: the program must react so that the user sees a readable output rather than unreadable artefacts; the policy is yours.
@@ -83,6 +100,7 @@ By the end of the project you should be able to:
 - A request that arrives with the operands in either order: same behaviour regardless of order.
 
 ## 11. Project Constraints
+
 - Libraries: the standard library only. The formatted I/O package and the package that supports string-to-number conversion are sufficient.
 - Prohibited: any external package.
 - Persistence: none. No file I/O.
@@ -91,6 +109,7 @@ By the end of the project you should be able to:
 - `panic` and `recover` are not valid tools for handling the failure modes above; use error values instead.
 
 ## 12. Design Questions Before Coding
+
 - Do you use the same numeric type for both operands and all operations, or separate types per operation? Each choice has trade-offs in clarity and behaviour.
 - Do you write one function per operation, or a single function that switches internally? What does each choice buy you in testability?
 - Does your operation function return only a result, or a result plus an error? How do you decide?
@@ -99,6 +118,7 @@ By the end of the project you should be able to:
 - After reporting an operand-parsing failure, does your program end the run immediately? The plan does not require otherwise; decide and apply it.
 
 ## 13. Implementation Milestones
+
 1. M1: Create the source file in the project folder with the minimum required for a Go program to compile and run; verify with a build and run cycle.
 2. M2: Read one operand from the terminal as text first, then perform a safe conversion, with a clear reaction when conversion fails.
 3. M3: Read the second operand with the same approach.
@@ -110,6 +130,9 @@ By the end of the project you should be able to:
 9. M9: Run every verification scenario in section 14 and confirm the documented behaviour.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Each of the four operators produces the mathematically correct result on representative inputs.
 - An unknown operator symbol is rejected without producing a numeric result.
 - Division by zero is rejected without producing a numeric or special value.
@@ -121,6 +144,7 @@ By the end of the project you should be able to:
 - Inputs that mix integers and decimals are handled per your chosen numeric type.
 
 ## 15. Common Mistakes to Watch For
+
 - Confusing integer division with floating-point division; the difference changes the result of division drastically for non-trivial inputs.
 - Letting division by zero yield a special value silently rather than checking the divisor explicitly before the operation.
 - Using exception-like control flow to handle operator or operand errors instead of returning error values.
@@ -130,6 +154,7 @@ By the end of the project you should be able to:
 - Relying on default print formatting that is unreadable for chosen numerical ranges.
 
 ## 16. Topics and References for Study
+
 - Effective Go: Multiple returns.
 - A Tour of Go: switch.
 - The official documentation for the standard error helpers and the formatted I/O package.
@@ -138,6 +163,7 @@ By the end of the project you should be able to:
 - Search terms: `Go multiple return values`, `Go switch fallthrough`, `Go float division by zero`, `Go strconv number parsing`.
 
 ## 17. Self-Assessment Questions
+
 1. Why does idiomatic Go prefer returning an error value over throwing an exception? Give a concrete benefit in this project.
 2. For the division operator, what is the difference in result between integer division and floating-point division? Give an example from this project.
 3. Why does the default switch in Go not require an explicit `break` at the end of each case?
@@ -146,13 +172,34 @@ By the end of the project you should be able to:
 6. If you later add a new operation, what changes do you make in the program structure, and what stays the same?
 
 ## 18. Definition of Completion
-- The program compiles and runs without compile errors.
-- Each of the four basic operations is implemented and produces the correct result on representative inputs.
-- Unknown operator and division-by-zero are handled with clear messages, not with crashes.
-- A non-numeric operand is handled with a clear message and the program ends cleanly.
-- The code is split into small functions with obvious responsibilities.
-- You can explain why you chose a numeric type, why you return an error, and how your switch matches.
+
+- [ ] The program compiles and runs without compile errors.
+- [ ] Each of the four basic operations is implemented and produces the correct result on representative inputs.
+- [ ] Unknown operator and division-by-zero are handled with clear messages, not with crashes.
+- [ ] A non-numeric operand is handled with a clear message and the program ends cleanly.
+- [ ] The code is split into small functions with obvious responsibilities.
+- [ ] You can explain why you chose a numeric type, why you return an error, and how your switch matches.
 
 ## 19. Optional Extensions
+
 - Optional 1: Wrap the operation in a repeat-calculation loop so the user can run multiple operations in one program run. Each iteration prints either the result or the matching error message, and the loop ends when the user indicates they are done.
-- Optional 2: Add one additional explicitly chosen operation (such as modulo, exponentiation, or square root) along with its matching error cases. For example, modulo by zero and square root of a negative number should each produce a clear, operation-specific message rather than a generic one.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 001 — Hello CLI](../../01-foundations/001_hello_cli/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`math`](https://pkg.go.dev/math), [`errors`](https://pkg.go.dev/errors).
+- **Standards and concept references:** [Go specification: operators](https://go.dev/ref/spec#Operators), [switch statements](https://go.dev/ref/spec#Switch_statements).
+
+### Project-specific learning focus
+
+- **Learn now:** numeric parsing, division-by-zero policy, floating-point edge cases, and operation-specific errors.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

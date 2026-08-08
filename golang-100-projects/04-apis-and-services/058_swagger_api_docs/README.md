@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project 058 — `swagger_api_docs`. Folder: `04-apis-and-services/058_swagger_api_docs/`. README only; the learner writes all source and tests.
+- Project 058 — `swagger_api_docs`.
+- Folder: `04-apis-and-services/058_swagger_api_docs/`.
+- README only; the learner writes all source and tests.
 
 ## 2. Project Idea
 
@@ -10,11 +12,18 @@ Hand-author an OpenAPI 3.1 document that exactly describes the Notes API built i
 
 ## 3. Why This Project Now?
 
-Projects 046 through 057 produced an HTTP service with growing surface area: CRUD endpoints, a JSON envelope, a rate limiter, CORS. None of those projects had a single place where the contract was described. Project 058 introduces the discipline of writing the contract, validating the contract, and asserting that the application still matches it. Project 059 will add session-cookie auth, and its contract additions belong in the same OpenAPI document. Project 060 will add graceful shutdown, which is operational and therefore out of scope for OpenAPI but worth understanding as a boundary. By the end of Project 058 the learner can ship a documented API whose contract is enforced by tests.
+- Projects 046 through 057 produced an HTTP service with growing surface area: CRUD endpoints, a JSON envelope, a rate limiter, CORS.
+- None of those projects had a single place where the contract was described.
+- Project 058 introduces the discipline of writing the contract, validating the contract, and asserting that the application still matches it.
+- Project 059 will add session-cookie auth, and its contract additions belong in the same OpenAPI document.
+- Project 060 will add graceful shutdown, which is operational and therefore out of scope for OpenAPI but worth understanding as a boundary.
+- By the end of Project 058 the learner can ship a documented API whose contract is enforced by tests.
 
 ## 4. Prerequisites
 
-Required earlier projects: Project 057, Project 047, and Project 046. Earlier HTTP, JSON envelope, and middleware projects are useful review but are not formally required. The learner must already know the Notes API from Project 047 — its exact routes, methods, status codes, request fields, and response shapes — and must be comfortable reading and writing JSON.
+- Required earlier projects: Project 057, Project 047, and Project 046.
+- Earlier HTTP, JSON envelope, and middleware projects are useful review but are not formally required.
+- The learner must already know the Notes API from Project 047 — its exact routes, methods, status codes, request fields, and response shapes — and must be comfortable reading and writing JSON.
 
 ## 5. What You Must Know Before Starting
 
@@ -28,27 +37,54 @@ Required earlier projects: Project 057, Project 047, and Project 046. Earlier HT
 
 ## 6. Explanation of New Concepts
 
-**OpenAPI versus Swagger.** OpenAPI is a specification language for HTTP APIs. A document written in OpenAPI describes routes, methods, parameters, request and response bodies, status codes, headers, and authentication schemes in a structured JSON or YAML file. Swagger is the historical brand name and the family of tools that work with OpenAPI, including Swagger Editor, Swagger UI, Swagger Codegen, and others. The two names are often used interchangeably in casual writing, but in this project the learner must use "OpenAPI" for the document and the spec, and refer to "Swagger tooling" only when discussing specific tools.
+### Concepts
 
-**OpenAPI 3.1.** The 3.1 release aligns OpenAPI with JSON Schema 2020-12. The document starts with `openapi: 3.1.0`, then `info`, `servers`, `paths`, and `components`. Each path declares parameters and HTTP methods. Each operation declares `parameters`, `requestBody`, `responses`, and `operationId`. The schemas live under `components/schemas` and are referenced by `$ref`.
+- **OpenAPI versus Swagger.** OpenAPI is a specification language for HTTP APIs.
+- A document written in OpenAPI describes routes, methods, parameters, request and response bodies, status codes, headers, and authentication schemes in a structured JSON or YAML file.
+- Swagger is the historical brand name and the family of tools that work with OpenAPI, including Swagger Editor, Swagger UI, Swagger Codegen, and others.
+- The two names are often used interchangeably in casual writing, but in this project the learner must use "OpenAPI" for the document and the spec, and refer to "Swagger tooling" only when discussing specific tools.
 
-**Path ID parameter.** The Notes API has the path parameter `/notes/{id}`. The OpenAPI document declares it under `parameters` for that path with `in: path`, `name: id`, `required: true`, and a schema that declares `type: integer` with `minimum: 1`. The runtime's stricter rule — that the id must be a canonical decimal integer with no sign, no leading zeros, and no whitespace — is not captured by the JSON Schema `minimum` alone and remains in the description of the parameter and is exercised by the live tests.
+- **OpenAPI 3.1.** The 3.1 release aligns OpenAPI with JSON Schema 2020-12.
+- The document starts with `openapi: 3.1.0`, then `info`, `servers`, `paths`, and `components`.
+- Each path declares parameters and HTTP methods.
+- Each operation declares `parameters`, `requestBody`, `responses`, and `operationId`.
+- The schemas live under `components/schemas` and are referenced by `$ref`.
 
-**Schema pins.** `NoteWriteRequest` declares `title` as a required string and `body` as an optional string. The document records, in prose attached to the schema description, that the runtime trims whitespace from `title` and rejects an empty trimmed title, and that the runtime preserves `body` exactly as provided. `additionalProperties` is `false`. `Note` declares exactly the required fields `id`, `title`, `body`, `created_at`, `updated_at`, with `additionalProperties: false`. `id` is `type: integer` with `minimum: 1`. `created_at` and `updated_at` are `type: string` with `format: date-time`. `Error` declares exactly the required fields `code` and `message`, both strings, with `additionalProperties: false`.
+- **Path ID parameter.** The Notes API has the path parameter `/notes/{id}`.
+- The OpenAPI document declares it under `parameters` for that path with `in: path`, `name: id`, `required: true`, and a schema that declares `type: integer` with `minimum: 1`.
+- The runtime's stricter rule — that the id must be a canonical decimal integer with no sign, no leading zeros, and no whitespace — is not captured by the JSON Schema `minimum` alone and remains in the description of the parameter and is exercised by the live tests.
 
-**Responses and content types.** Each operation declares `responses` keyed by status code or `default`. Each body-bearing response declares `content` with the `application/json` media type. OpenAPI models the media type as `application/json`; the runtime emits the exact header value `application/json; charset=utf-8`. The document declares the model as `application/json`, and the live tests assert the runtime header value exactly. The `204 No Content` response declares no content map and the runtime emits no `Content-Type` header. `Content-Type` is owned by the content map and is not modelled separately as a response header. The statuses pinned in this project are: `listNotes` returns `200`; `createNote` returns `201` plus the `Location` response header and the error statuses `400`, `413`, `415`, `500`; `getNote` returns `200` plus `400`, `404`; `replaceNote` returns `200` plus `400`, `404`, `413`, `415`; `deleteNote` returns `204` with no content plus `400`, `404`.
+- **Schema pins.** `NoteWriteRequest` declares `title` as a required string and `body` as an optional string.
+- The document records, in prose attached to the schema description, that the runtime trims whitespace from `title` and rejects an empty trimmed title, and that the runtime preserves `body` exactly as provided. `additionalProperties` is `false`. `Note` declares exactly the required fields `id`, `title`, `body`, `created_at`, `updated_at`, with `additionalProperties: false`. `id` is `type: integer` with `minimum: 1`. `created_at` and `updated_at` are `type: string` with `format: date-time`. `Error` declares exactly the required fields `code` and `message`, both strings, with `additionalProperties: false`.
 
-**Stable error codes.** Every body-bearing error in the live API returns one of the stable codes `invalid_request`, `invalid_id`, `not_found`, `method_not_allowed`, `unsupported_media_type`, `payload_too_large`, `internal_error`, each with a documented exact message. The OpenAPI document declares the codes used by supported operations as `Error` examples for each applicable status; runtime-only `405` tests pin `method_not_allowed` separately. The exact mappings are: `invalid_request` → `invalid request`; `invalid_id` → `invalid note id`; `not_found` → `note not found`; `method_not_allowed` → `method not allowed`; `unsupported_media_type` → `unsupported media type`; `payload_too_large` → `payload too large`; `internal_error` → `internal server error`. Item-operation invalid-ID responses use `invalid_id`; invalid create or replacement documents use `invalid_request`.
+- **Responses and content types.** Each operation declares `responses` keyed by status code or `default`.
+- Each body-bearing response declares `content` with the `application/json` media type.
+- OpenAPI models the media type as `application/json`; the runtime emits the exact header value `application/json; charset=utf-8`.
+- The document declares the model as `application/json`, and the live tests assert the runtime header value exactly.
+- The `204 No Content` response declares no content map and the runtime emits no `Content-Type` header. `Content-Type` is owned by the content map and is not modelled separately as a response header.
+- The statuses pinned in this project are: `listNotes` returns `200`; `createNote` returns `201` plus the `Location` response header and the error statuses `400`, `413`, `415`, `500`; `getNote` returns `200` plus `400`, `404`; `replaceNote` returns `200` plus `400`, `404`, `413`, `415`; `deleteNote` returns `204` with no content plus `400`, `404`.
 
-**Examples.** The document declares at least one valid `Note` example and at least one valid `NoteWriteRequest` example. Every `example` declared in the document is validated against its referenced schema by the test suite.
+- **Stable error codes.** Every body-bearing error in the live API returns one of the stable codes `invalid_request`, `invalid_id`, `not_found`, `method_not_allowed`, `unsupported_media_type`, `payload_too_large`, `internal_error`, each with a documented exact message.
+- The OpenAPI document declares the codes used by supported operations as `Error` examples for each applicable status; runtime-only `405` tests pin `method_not_allowed` separately.
+- The exact mappings are: `invalid_request` → `invalid request`; `invalid_id` → `invalid note id`; `not_found` → `note not found`; `method_not_allowed` → `method not allowed`; `unsupported_media_type` → `unsupported media type`; `payload_too_large` → `payload too large`; `internal_error` → `internal server error`.
+- Item-operation invalid-ID responses use `invalid_id`; invalid create or replacement documents use `invalid_request`.
 
-**Validation dependency.** The pinned `kin-openapi` module loads and validates the document. The learner uses it to load `openapi.json`, validate it against the OpenAPI 3.1 meta-schema, validate representative request and response bodies against the schemas declared in the document, and validate every `example` against its referenced schema.
+- **Examples.** The document declares at least one valid `Note` example and at least one valid `NoteWriteRequest` example.
+- Every `example` declared in the document is validated against its referenced schema by the test suite.
 
-**Static versus dynamic validation.** Static schema validation proves that the document is structurally valid and that the examples conform to their schemas. It cannot prove that the running API actually returns the documented statuses for every input. The contract test therefore has two layers: the static layer loads and validates the document; the dynamic layer drives the live API via `httptest` and asserts that each documented route, method, status, and content type matches the document. Both layers are required. The honest statement in the test comments and in this README is that even the dynamic layer cannot prove every possible runtime behaviour, only the cases the tests exercise.
+- **Validation dependency.** The pinned `kin-openapi` module loads and validates the document.
+- The learner uses it to load `openapi.json`, validate it against the OpenAPI 3.1 meta-schema, validate representative request and response bodies against the schemas declared in the document, and validate every `example` against its referenced schema.
+
+- **Static versus dynamic validation.** Static schema validation proves that the document is structurally valid and that the examples conform to their schemas.
+- It cannot prove that the running API actually returns the documented statuses for every input.
+- The contract test therefore has two layers: the static layer loads and validates the document; the dynamic layer drives the live API via `httptest` and asserts that each documented route, method, status, and content type matches the document.
+- Both layers are required.
+- The honest statement in the test comments and in this README is that even the dynamic layer cannot prove every possible runtime behaviour, only the cases the tests exercise.
 
 ## 7. Learning Objective
 
-After finishing this project, the learner can write an OpenAPI 3.1 document by hand, validate it with one pinned dependency, drive the live API to confirm the contract on every documented status, and articulate the boundary between static schema validation and dynamic behaviour tests. The learner can also state the difference between OpenAPI and Swagger without conflating them.
+- After finishing this project, the learner can write an OpenAPI 3.1 document by hand, validate it with one pinned dependency, drive the live API to confirm the contract on every documented status, and articulate the boundary between static schema validation and dynamic behaviour tests.
+- The learner can also state the difference between OpenAPI and Swagger without conflating them.
 
 ## 8. Functional Requirements
 
@@ -72,6 +108,8 @@ After finishing this project, the learner can write an OpenAPI 3.1 document by h
 18. The contract tests separately cover the Project 047 runtime behaviour for unsupported methods on a path (`405 Method Not Allowed` plus the `Allow` response header) and for `HEAD` requests, because these are part of the runtime contract even though they are not OpenAPI operations.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
 
 Inputs: the `openapi.json` file, the `kin-openapi` validator, the running Notes API under `httptest`, the route/status manifest, and representative request and response bodies. Outputs: a contract test report that either passes or fails with a clear message naming the operation, route, status, or schema that does not match. Example textual inputs and expected textual outputs:
 
@@ -146,6 +184,8 @@ Inputs: the `openapi.json` file, the `kin-openapi` validator, the running Notes 
 11. Review the verification list and confirm every item is covered before declaring the project complete.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
 
 Each item is a behavioural specification. The learner writes the corresponding `go test` code.
 
@@ -240,16 +280,35 @@ Each item is a behavioural specification. The learner writes the corresponding `
 
 The project is complete when, in addition to the rules above:
 
-- Every item in the verification list is a passing test that the learner wrote themselves.
-- The tests pass under `go test ./...` from the project folder.
-- The only third-party dependency in `go.mod` is `github.com/getkin/kin-openapi` at version `v0.145.0`.
-- `openapi.json` lives at a documented location, is hand-authored, and is loaded from disk in the tests.
-- The learner can answer every self-assessment question without rereading the README.
-- The README or the test comments include the honest statement that static validation proves document structure only, that live tests prove selected runtime cases, and that even live tests cannot prove all runtime behaviour.
+- [ ] Every item in the verification list is a passing test that the learner wrote themselves.
+- [ ] The tests pass under `go test ./...` from the project folder.
+- [ ] The only third-party dependency in `go.mod` is `github.com/getkin/kin-openapi` at version `v0.145.0`.
+- [ ] `openapi.json` lives at a documented location, is hand-authored, and is loaded from disk in the tests.
+- [ ] The learner can answer every self-assessment question without rereading the README.
+- [ ] The README or the test comments include the honest statement that static validation proves document structure only, that live tests prove selected runtime cases, and that even live tests cannot prove all runtime behaviour.
 
 ## 19. Optional Extensions
 
 At most two. Pick one only if the core project is already complete and tested. Optional extensions must not add speculative OpenAPI paths or another dependency.
 
 - Add a coverage report per operation that prints, after the contract tests run, which documented statuses were exercised by live tests and which were only verified statically.
-- Add a test that asserts the document's prose descriptions do not contradict the documented stable error codes by parsing each `Error` example and confirming the `message` field starts with the documented prefix for that code.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 057 — Rate Limited API](../../04-apis-and-services/057_rate_limited_api/README.md#20-prerequisite-based-documentation-guide), [Project 047 — REST API CRUD](../../04-apis-and-services/047_rest_api_crud/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`github.com/getkin/kin-openapi`](https://pkg.go.dev/github.com/getkin/kin-openapi).
+- **Standards and concept references:** [OpenAPI 3.1 specification](https://spec.openapis.org/oas/v3.1.1.html), [JSON Schema 2020-12](https://json-schema.org/draft/2020-12).
+
+### Project-specific learning focus
+
+- **Learn now:** paths and operations, reusable schemas, request and response examples, error contracts, validation, runtime-versus-documentation parity, and pinned tooling.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

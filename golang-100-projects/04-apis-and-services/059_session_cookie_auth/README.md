@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project 059 — `session_cookie_auth`. Folder: `04-apis-and-services/059_session_cookie_auth/`. README only; the learner writes all source and tests.
+- Project 059 — `session_cookie_auth`.
+- Folder: `04-apis-and-services/059_session_cookie_auth/`.
+- README only; the learner writes all source and tests.
 
 ## 2. Project Idea
 
@@ -10,11 +12,18 @@ Build server-side opaque sessions on top of `net/http` for a small JSON API. The
 
 ## 3. Why This Project Now?
 
-Projects 046 through 058 produced a documented HTTP API with a rate limiter and an OpenAPI contract. None of those projects decided what counts as "logged in". Project 059 introduces session state, secret material in cookies, password verification with the bcrypt dependency introduced in Project 050, and CSRF defence. Project 060 will compose the resulting service with graceful shutdown, where session cleanup at shutdown becomes important. By the end of Project 059 the learner can ship a logged-in web application whose auth model is conservative and well documented.
+- Projects 046 through 058 produced a documented HTTP API with a rate limiter and an OpenAPI contract.
+- None of those projects decided what counts as "logged in".
+- Project 059 introduces session state, secret material in cookies, password verification with the bcrypt dependency introduced in Project 050, and CSRF defence.
+- Project 060 will compose the resulting service with graceful shutdown, where session cleanup at shutdown becomes important.
+- By the end of Project 059 the learner can ship a logged-in web application whose auth model is conservative and well documented.
 
 ## 4. Prerequisites
 
-Required earlier projects: Project 058, Project 050, and Project 046. Earlier HTTP, JSON envelope, middleware, and bcrypt projects are useful review but are not formally required. The learner must already understand `net/http` cookies, the JSON envelope from Project 049, middleware composition from Project 048, and the bcrypt usage from Project 050. The learner must also be comfortable with `crypto/rand`, `time`, and concurrency-safe maps.
+- Required earlier projects: Project 058, Project 050, and Project 046.
+- Earlier HTTP, JSON envelope, middleware, and bcrypt projects are useful review but are not formally required.
+- The learner must already understand `net/http` cookies, the JSON envelope from Project 049, middleware composition from Project 048, and the bcrypt usage from Project 050.
+- The learner must also be comfortable with `crypto/rand`, `time`, and concurrency-safe maps.
 
 ## 5. What You Must Know Before Starting
 
@@ -32,33 +41,69 @@ Required earlier projects: Project 058, Project 050, and Project 046. Earlier HT
 
 ## 6. Explanation of New Concepts
 
-**Opaque server-side sessions.** A session is a record held by the server that maps an opaque ID to a user ID, an expiry, and a CSRF token. The cookie carries only the opaque ID. Anyone who steals the cookie impersonates the user, so the ID has 32 bytes of entropy from `crypto/rand`.
+### Concepts
 
-**Session and CSRF generation.** Two independent 32-byte values are generated from `crypto/rand`. The session ID is the lookup key. The CSRF token is bound to the session. Both are encoded with unpadded URL-safe base64 so they are safe in URLs and headers without further escaping. The generator is injected in tests so collisions and failures are deterministic.
+- **Opaque server-side sessions.** A session is a record held by the server that maps an opaque ID to a user ID, an expiry, and a CSRF token.
+- The cookie carries only the opaque ID.
+- Anyone who steals the cookie impersonates the user, so the ID has 32 bytes of entropy from `crypto/rand`.
 
-**Cookie attributes.** The cookie name is exactly `__Host-session`. The cookie value is the encoded session ID only. `HttpOnly` is `true`. `Secure` is `true`. `SameSite` is `Lax`. `Path` is `/`. `Max-Age` is `3600`. `Expires` is the injected clock value plus one hour. `Domain` is unset. Tests that use a cookie jar use `httptest.NewTLSServer` so `Secure` is honoured; `Secure` is never turned off in tests.
+- **Session and CSRF generation.** Two independent 32-byte values are generated from `crypto/rand`.
+- The session ID is the lookup key.
+- The CSRF token is bound to the session.
+- Both are encoded with unpadded URL-safe base64 so they are safe in URLs and headers without further escaping.
+- The generator is injected in tests so collisions and failures are deterministic.
 
-**Deletion cookie.** When the session ends through logout or detected expiry, the server sends a deletion cookie with the same name and path, the same `Secure`, `HttpOnly`, and `SameSite=Lax` attributes, an empty value, an `Expires` value strictly in the past relative to the injected clock, and `Domain` unset. In the Go `http.Cookie` value the `MaxAge` field is set to `-1`. When `net/http` serialises that cookie, the wire attribute is `Max-Age=0`, which instructs the browser to delete the cookie immediately. The wire header is therefore `Max-Age=0`; the Go object's `MaxAge` field is `-1`. Tests assert both forms: the parsed `Cookie.MaxAge` is less than `0`, and the raw `Set-Cookie` header on the wire contains `Max-Age=0`.
+- **Cookie attributes.** The cookie name is exactly `__Host-session`.
+- The cookie value is the encoded session ID only. `HttpOnly` is `true`. `Secure` is `true`. `SameSite` is `Lax`. `Path` is `/`. `Max-Age` is `3600`. `Expires` is the injected clock value plus one hour. `Domain` is unset.
+- Tests that use a cookie jar use `httptest.NewTLSServer` so `Secure` is honoured; `Secure` is never turned off in tests.
 
-**Password comparison boundary.** The bcrypt comparison happens at the credential boundary for every login attempt. For the known user `learner`, the comparison is against the stored hash. For any other username, the comparison is against a fixed dummy hash so that bcrypt runs in both cases and the public behaviour is identical. The login handler returns the same status and the same JSON envelope for both branches. The bcrypt comparison result, the password, the session ID, and the CSRF token are not logged.
+- **Deletion cookie.** When the session ends through logout or detected expiry, the server sends a deletion cookie with the same name and path, the same `Secure`, `HttpOnly`, and `SameSite=Lax` attributes, an empty value, an `Expires` value strictly in the past relative to the injected clock, and `Domain` unset.
+- In the Go `http.Cookie` value the `MaxAge` field is set to `-1`.
+- When `net/http` serialises that cookie, the wire attribute is `Max-Age=0`, which instructs the browser to delete the cookie immediately.
+- The wire header is therefore `Max-Age=0`; the Go object's `MaxAge` field is `-1`.
+- Tests assert both forms: the parsed `Cookie.MaxAge` is less than `0`, and the raw `Set-Cookie` header on the wire contains `Max-Age=0`.
 
-**Session rotation on login.** When a client logs in successfully, the server creates a fresh session first (with a new ID and a new CSRF token), then atomically deletes the incoming old session and installs the fresh one. The new ID and the new CSRF token must differ from the old values. The fresh session is what the client receives in the cookie.
+- **Password comparison boundary.** The bcrypt comparison happens at the credential boundary for every login attempt.
+- For the known user `learner`, the comparison is against the stored hash.
+- For any other username, the comparison is against a fixed dummy hash so that bcrypt runs in both cases and the public behaviour is identical.
+- The login handler returns the same status and the same JSON envelope for both branches.
+- The bcrypt comparison result, the password, the session ID, and the CSRF token are not logged.
 
-**Collision handling.** If the freshly generated session ID or CSRF token collides with an existing record, the server regenerates up to three times in total. After three collisions, or after the injected generator returns an error, the login returns `500` and does not create a new cookie. Any prior valid session for the same user is unchanged.
+- **Session rotation on login.** When a client logs in successfully, the server creates a fresh session first (with a new ID and a new CSRF token), then atomically deletes the incoming old session and installs the fresh one.
+- The new ID and the new CSRF token must differ from the old values.
+- The fresh session is what the client receives in the cookie.
 
-**CSRF token.** Each session carries a server-side CSRF token. The state-changing `POST /action` and `POST /logout` endpoints require a custom header (named exactly `X-CSRF-Token`) whose value matches the server-side token under constant-time comparison. The server rejects the request with `403 Forbidden` if the header is missing or wrong and does not mutate state. `GET /me` does not require the header. `SameSite=Lax` is defence in depth; it is not the primary defence.
+- **Collision handling.** If the freshly generated session ID or CSRF token collides with an existing record, the server regenerates up to three times in total.
+- After three collisions, or after the injected generator returns an error, the login returns `500` and does not create a new cookie.
+- Any prior valid session for the same user is unchanged.
 
-**Login CSRF.** The login endpoint is, by design, vulnerable to login CSRF. The mitigation in this project is session rotation plus the CORS policy from Project 056. The README states this honestly. Login CSRF is not "fixed" by `SameSite` alone.
+- **CSRF token.** Each session carries a server-side CSRF token.
+- The state-changing `POST /action` and `POST /logout` endpoints require a custom header (named exactly `X-CSRF-Token`) whose value matches the server-side token under constant-time comparison.
+- The server rejects the request with `403 Forbidden` if the header is missing or wrong and does not mutate state. `GET /me` does not require the header. `SameSite=Lax` is defence in depth; it is not the primary defence.
 
-**Session store cleanup.** A `Cleanup(now)` function removes all sessions whose expiry is at or before `now`. The function is explicit and invoked by the application. No background goroutines. Expired sessions are also removed lazily on access.
+- **Login CSRF.** The login endpoint is, by design, vulnerable to login CSRF.
+- The mitigation in this project is session rotation plus the CORS policy from Project 056.
+- The README states this honestly.
+- Login CSRF is not "fixed" by `SameSite` alone.
 
-**Store capacity.** The store is bounded at exactly `1000` sessions. When the store is at capacity, a login without a replaceable old session returns `503` and does not evict an existing session. Reclaiming capacity requires the application to call `Cleanup` explicitly.
+- **Session store cleanup.** A `Cleanup(now)` function removes all sessions whose expiry is at or before `now`.
+- The function is explicit and invoked by the application.
+- No background goroutines.
+- Expired sessions are also removed lazily on access.
 
-**Login CSRF honestly.** The login endpoint accepts a JSON body over `application/json`. Combined with the CORS policy from Project 056, ordinary cross-origin JavaScript in a browser cannot complete the login request: the preflight fails for origins outside the Project 056 allowlist, and the simple request path does not include the credentials cookie cross-origin. `SameSite=Lax` is defence in depth. Despite these mitigations, robust pre-login CSRF and `Origin` validation remain a documented limitation of this design. Session rotation prevents session fixation; it does not by itself prevent login CSRF, and the README does not claim otherwise.
+- **Store capacity.** The store is bounded at exactly `1000` sessions.
+- When the store is at capacity, a login without a replaceable old session returns `503` and does not evict an existing session.
+- Reclaiming capacity requires the application to call `Cleanup` explicitly.
+
+- **Login CSRF honestly.** The login endpoint accepts a JSON body over `application/json`.
+- Combined with the CORS policy from Project 056, ordinary cross-origin JavaScript in a browser cannot complete the login request: the preflight fails for origins outside the Project 056 allowlist, and the simple request path does not include the credentials cookie cross-origin. `SameSite=Lax` is defence in depth.
+- Despite these mitigations, robust pre-login CSRF and `Origin` validation remain a documented limitation of this design.
+- Session rotation prevents session fixation; it does not by itself prevent login CSRF, and the README does not claim otherwise.
 
 ## 7. Learning Objective
 
-After finishing this project, the learner can explain in their own words why the session ID is opaque, why it must come from `crypto/rand`, why the cookie carries only the ID, why sessions are rotated on login, what each cookie attribute is for, what CSRF is and why a custom header is the primary defence, why `SameSite` is defence in depth, why the deletion cookie uses `Max-Age: 0` on the wire and `Max-Age: -1` in the Go object, and what login CSRF is and why the design documents it honestly. The learner can also implement an `httptest` test suite that drives the full flow with a cookie jar or explicit cookies.
+- After finishing this project, the learner can explain in their own words why the session ID is opaque, why it must come from `crypto/rand`, why the cookie carries only the ID, why sessions are rotated on login, what each cookie attribute is for, what CSRF is and why a custom header is the primary defence, why `SameSite` is defence in depth, why the deletion cookie uses `Max-Age: 0` on the wire and `Max-Age: -1` in the Go object, and what login CSRF is and why the design documents it honestly.
+- The learner can also implement an `httptest` test suite that drives the full flow with a cookie jar or explicit cookies.
 
 ## 8. Functional Requirements
 
@@ -79,6 +124,8 @@ After finishing this project, the learner can explain in their own words why the
 15. The CSRF token comparison uses constant-time comparison. The behaviour test asserts that wrong-length and wrong-value CSRF inputs both receive the identical `403` body and that no state mutation occurs. The test cannot prove the absence of a timing side channel; constant-time primitive use is a code-review and design requirement, not an observable property.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
 
 Inputs: HTTP requests to the four endpoints. Cookies are read by name; the CSRF header is read by name. Outputs: documented JSON bodies, cookies with the documented attributes, and the documented status codes. Example textual inputs and expected textual outputs:
 
@@ -151,6 +198,8 @@ Inputs: HTTP requests to the four endpoints. Cookies are read by name; the CSRF 
 12. Review the verification list and confirm every item is covered before declaring the project complete.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
 
 Each item is a behavioural specification. The learner writes the corresponding `go test` code.
 
@@ -239,17 +288,36 @@ Each item is a behavioural specification. The learner writes the corresponding `
 
 The project is complete when, in addition to the rules above:
 
-- Every item in the verification list is a passing test that the learner wrote themselves.
-- The tests pass under `go test -race ./...` from the project folder.
-- The only third-party dependency in `go.mod` is `golang.org/x/crypto` at version `v0.54.0`, used through the bcrypt package.
-- The session store contains no background goroutines and no real wall clock.
-- The cookie attributes are asserted in tests, including `Secure` asserted as present on every cookie the server emits.
-- The learner can answer every self-assessment question without rereading the README.
-- The README or the test comments include the honest statement that login CSRF is a known limitation of the design. The mitigations are `application/json` plus the CORS policy from Project 056 plus `SameSite=Lax` as defence in depth. Session rotation prevents fixation, not login CSRF, and the README does not claim otherwise.
+- [ ] Every item in the verification list is a passing test that the learner wrote themselves.
+- [ ] The tests pass under `go test -race ./...` from the project folder.
+- [ ] The only third-party dependency in `go.mod` is `golang.org/x/crypto` at version `v0.54.0`, used through the bcrypt package.
+- [ ] The session store contains no background goroutines and no real wall clock.
+- [ ] The cookie attributes are asserted in tests, including `Secure` asserted as present on every cookie the server emits.
+- [ ] The learner can answer every self-assessment question without rereading the README.
+- [ ] The README or the test comments include the honest statement that login CSRF is a known limitation of the design. The mitigations are `application/json` plus the CORS policy from Project 056 plus `SameSite=Lax` as defence in depth. Session rotation prevents fixation, not login CSRF, and the README does not claim otherwise.
 
 ## 19. Optional Extensions
 
 At most two. Pick one only if the core project is already complete and tested. Optional extensions must not change the documented contracts.
 
 - Add a documented "active sessions" endpoint that lists the current user's sessions and supports explicit revocation. The endpoint is CSRF-protected on state-changing actions.
-- Add a per-user "last login at" timestamp returned in the `GET /me` body. The timestamp comes from the injected clock and is not persisted.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 058 — Swagger API Docs](../../04-apis-and-services/058_swagger_api_docs/README.md#20-prerequisite-based-documentation-guide), [Project 050 — JWT Auth Server](../../04-apis-and-services/050_jwt_auth_server/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`crypto/subtle`](https://pkg.go.dev/crypto/subtle).
+- **Standards and concept references:** [RFC 6265: HTTP cookies](https://www.rfc-editor.org/rfc/rfc6265.html), [OWASP Session Management guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+
+### Project-specific learning focus
+
+- **Learn now:** opaque session tokens, cookie prefixes and attributes, expiration, constant-time comparisons, rotation and logout, CSRF boundaries, and generic login failures.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

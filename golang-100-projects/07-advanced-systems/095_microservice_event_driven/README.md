@@ -1,18 +1,28 @@
 # Project 095 — Microservice with Event-Driven Outbox
 
 ## 1. Project Name and Number
-Project 095, `095_microservice_event_driven`. The folder name is fixed by the curriculum table; do not rename the directory.
+
+- Project 095, `095_microservice_event_driven`.
+- The folder name is fixed by the curriculum table; do not rename the directory.
 
 ## 2. Project Idea
+
 An Orders service that, in the same PostgreSQL transaction that creates an Order, also writes a versioned Outbox row representing the event the order should produce. A separate Publisher polls committed unpublished outbox rows in a deterministic per-aggregate order, claims each row safely with PostgreSQL row locking that satisfies a head-of-line predicate per aggregate, publishes each row to an injected broker, and marks the row `Published` only after the broker's acknowledgement. A Consumer validates the event's schema and version, then in the same PostgreSQL transaction that performs the side effect, attempts to insert a unique inbox row and either performs the side effect or no-ops on duplicate. Delivery is at-least-once; duplicates are absorbed by the inbox. Ordering is guaranteed only per aggregate key through both publisher serialization and the pinned broker-key assumption. The broker is never called inside `PlaceOrder` or before commit. A poison message or unknown schema version becomes a consumer `DeadLettered` outcome after a bounded number of deliveries; this is separate from the outbox row's `Failed` publisher state.
 
 ## 3. Why This Project Now?
-This project is the transactional messaging capstone. It pulls the discipline of "atomic with the order" and the discipline of "publish after commit" into a single program, and forces honest accounting of what at-least-once delivery and per-aggregate ordering actually buy. The previous project pulled together the typed outcomes of a single-Redis lease and the absolute-secret rule for its token; this project pulls together transactional outbox semantics and conflict-aware inbox handling. The formal prerequisites — project 064 (database migrations), project 066 (transaction manager), and project 086 (distributed task queue) — each contribute one ingredient that this service combines. The immediate catalog predecessor, project 094, is optional context rather than a formal prerequisite.
+
+- This project is the transactional messaging capstone.
+- It pulls the discipline of "atomic with the order" and the discipline of "publish after commit" into a single program, and forces honest accounting of what at-least-once delivery and per-aggregate ordering actually buy.
+- The previous project pulled together the typed outcomes of a single-Redis lease and the absolute-secret rule for its token; this project pulls together transactional outbox semantics and conflict-aware inbox handling.
+- The formal prerequisites — project 064 (database migrations), project 066 (transaction manager), and project 086 (distributed task queue) — each contribute one ingredient that this service combines.
+- The immediate catalog predecessor, project 094, is optional context rather than a formal prerequisite.
 
 ## 4. Prerequisites
-The formal prerequisites are projects 064, 066, and 086; project 094 is the immediate catalog predecessor and remains useful as optional context rather than a formal prerequisite.
+
+- The formal prerequisites are projects 064, 066, and 086; project 094 is the immediate catalog predecessor and remains useful as optional context rather than a formal prerequisite.
 
 ## 5. What You Must Know Before Starting
+
 - That a database transaction is the only atomic boundary available without a distributed transaction coordinator, and that the Outbox pattern trades "publish and commit" for "commit then publish" by writing the publish intent into the same transaction.
 - That a unique constraint on the inbox table is the canonical way to make a side effect idempotent under at-least-once delivery.
 - That PostgreSQL row locking with `SELECT ... FOR UPDATE SKIP LOCKED` is the canonical way to let multiple publishers contend for outbox rows without stepping on each other.
@@ -23,6 +33,9 @@ The formal prerequisites are projects 064, 066, and 086; project 094 is the imme
 - That "publish before commit" and "mark before ack" are both bugs.
 
 ## 6. Explanation of New Concepts
+
+### Concepts
+
 - Transactional outbox: `PlaceOrder` writes an Order and one Outbox row in the same PostgreSQL transaction. The Outbox row is the durable intent to publish. The broker is never called inside `PlaceOrder` and never called before commit.
 - Pinned outbox row shape: each row carries a unique event identifier, an aggregate or order identifier, an aggregate-scoped sequence number, an event type, a schema version, an occurred-at timestamp, a JSON payload, a status chosen from `Pending`, `Published`, or `Failed`, a publisher attempt counter, and the necessary timestamps. `(aggregate_id, aggregate_sequence)` is unique. The event identifier is unique across rows.
 - Pinned outbox states: a row is in exactly one of `Pending`, `Published`, or `Failed`. No other state values exist. `Pending` rows are eligible for the publisher. `Published` rows are terminal for the publisher. `Failed` rows block later rows for the same aggregate until an explicit operator policy resolves them; no silent reordering.
@@ -36,9 +49,11 @@ The formal prerequisites are projects 064, 066, and 086; project 094 is the imme
 - Bounded delivery-attempt policy in the consumer: transient failures from the broker adapter retry; permanent or unknown-version failures become `DeadLettered` only after the bound, so there is no infinite hot loop. This delivery outcome is recorded by the consumer adapter or fake and is not a fourth outbox status. The publisher's attempt budget and the consumer's delivery-attempt budget are separate.
 
 ## 7. Learning Objective
-After completing this project you must be able to explain in your own words: why the Order and the `Pending` outbox row are atomic, why the broker is never called inside `PlaceOrder` or before commit, why the sequence is allocated under an aggregate-scoped lock, why the claim query must enforce a head-of-line predicate per aggregate, why a `Failed` outbox head blocks its aggregate, why `SKIP LOCKED` plus deterministic order is necessary, why at-least-once is the honest delivery model for this pattern, why the inbox makes the consumer idempotent, why ordering is per aggregate and not global, why schema versions exist on events, why a poison or unknown-version delivery becomes `DeadLettered` after the bound, why the broker can remain a deterministic fake in the optional integration test, and why the publisher's attempt budget and the consumer's attempt budget are separate.
+
+- After completing this project you must be able to explain in your own words: why the Order and the `Pending` outbox row are atomic, why the broker is never called inside `PlaceOrder` or before commit, why the sequence is allocated under an aggregate-scoped lock, why the claim query must enforce a head-of-line predicate per aggregate, why a `Failed` outbox head blocks its aggregate, why `SKIP LOCKED` plus deterministic order is necessary, why at-least-once is the honest delivery model for this pattern, why the inbox makes the consumer idempotent, why ordering is per aggregate and not global, why schema versions exist on events, why a poison or unknown-version delivery becomes `DeadLettered` after the bound, why the broker can remain a deterministic fake in the optional integration test, and why the publisher's attempt budget and the consumer's attempt budget are separate.
 
 ## 8. Functional Requirements
+
 1. The schema includes an `orders` table, an `outbox` table, and an `inbox` table. Migrations bring the schema up and down.
 2. `PlaceOrder` writes the Order and the `Pending` Outbox row in the same PostgreSQL transaction. The broker is never called inside `PlaceOrder` and never called before commit. The JSON payload is validated before insert.
 3. Each Outbox row carries the unique event identifier, the aggregate identifier, an aggregate-scoped sequence, the event type, the schema version, the occurred-at timestamp, the JSON payload, the status from `Pending`, `Published`, or `Failed`, the publisher attempt counter, and the necessary timestamps. `(aggregate_id, aggregate_sequence)` is unique. The event identifier is unique across rows.
@@ -55,6 +70,9 @@ After completing this project you must be able to explain in your own words: why
 14. The status values of an outbox row are exactly `Pending`, `Published`, `Failed`. No other values exist.
 
 ## 9. Inputs and Outputs
+
+### Interface Contract
+
 - `PlaceOrder` input: an order identifier and the order's contents. Output: a stored Order, a stored Outbox row with status `Pending`, and a transaction commit.
 - Publisher output: a sequence of broker publishes, each followed by a database update that sets `Published` and the published timestamp, after the broker has acknowledged. A failed publish leaves the row `Pending` and increments the publisher attempt; at the bound the row becomes `Failed`.
 - Consumer input: an event payload from the broker including the unique event identifier, the aggregate identifier, the per-aggregate sequence, the event type, the schema version, and the JSON payload.
@@ -65,6 +83,7 @@ After completing this project you must be able to explain in your own words: why
   - Deliver a message with an unknown schema version. The consumer rejects it before payload decoding and, after the delivery bound, records the consumer outcome `DeadLettered` without changing the outbox status model.
 
 ## 10. Rules and Edge Cases
+
 - `PlaceOrder` that fails inside the transaction leaves no Order and no outbox row.
 - The broker is never called inside `PlaceOrder`.
 - Concurrent orders for the same aggregate allocate distinct sequences in order under the aggregate-scoped lock.
@@ -77,6 +96,7 @@ After completing this project you must be able to explain in your own words: why
 - A `Failed` row blocks later rows for the same aggregate until an explicit operator policy resolves the failure.
 
 ## 11. Project Constraints
+
 - The database boundary is `database/sql` using the `pgx` standard-library adapter. At implementation time, select a currently supported `pgx` release and pin that version in the module; this guide does not invent a patch version.
 - The broker is injected. In unit tests and in the optional integration test the broker is a deterministic fake. Project 098 introduces a real broker; this project does not.
 - The publisher's invariants are enforced by code: "no publish before commit" is enforced by reading the outbox table after commit; "no mark before ack" is enforced by the control flow.
@@ -87,6 +107,7 @@ After completing this project you must be able to explain in your own words: why
 - No Kafka until project 098. The broker assumption is pinned to a deterministic per-aggregate-key ordering plus at-least-once delivery.
 
 ## 12. Design Questions Before Coding
+
 - Which event identifier format do you choose, and why does it support broker deduplication and inbox uniqueness?
 - Which JSON column type do you use, and at which boundary do you validate?
 - Which currently supported `pgx` version will you pin for its `database/sql` adapter, and how will you verify its PostgreSQL compatibility?
@@ -97,6 +118,7 @@ After completing this project you must be able to explain in your own words: why
 - How does the optional integration test prove head-of-line selection and concurrent publishers without a real broker?
 
 ## 13. Implementation Milestones
+
 1. Design the schema: `orders`, `outbox` with status from `Pending`, `Published`, `Failed`, and `inbox`. Write the up and down migrations. Include the uniqueness constraints on the event identifier and on `(aggregate_id, aggregate_sequence)`.
 2. Implement the aggregate-scoped sequence allocator that runs inside `PlaceOrder`'s transaction and prevents collision and out-of-order allocation.
 3. Implement `PlaceOrder` with payload validation before insert and the same-transaction write of Order plus `Pending` outbox row. The broker is never called.
@@ -111,6 +133,9 @@ After completing this project you must be able to explain in your own words: why
 12. Write the opt-in integration test against real PostgreSQL started with Compose. The broker remains a deterministic fake. The test proves transaction rollback, unique inbox insert, aggregate-sequence allocation, head-of-line selection, `FOR UPDATE SKIP LOCKED`, and concurrent publishers.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Atomic Order plus outbox: a successful `PlaceOrder` leaves both rows; a failure inside the transaction leaves neither.
 - Rollback: a simulated database failure during the transaction leaves the database in its prior state.
 - Sequence allocation: concurrent orders for the same aggregate allocate distinct sequences in order; concurrent orders for different aggregates do not contend.
@@ -129,6 +154,7 @@ After completing this project you must be able to explain in your own words: why
 - Integration opt-in: with the gating flag and the gating build tag set, real PostgreSQL proves transaction rollback, unique inbox insert, aggregate-sequence allocation, head-of-line selection, `FOR UPDATE SKIP LOCKED`, and concurrent publishers; the broker remains a fake.
 
 ## 15. Common Mistakes to Watch For
+
 - Calling the broker inside `PlaceOrder` or before commit.
 - Marking `Published` before the broker acknowledges.
 - Treating a duplicate event as an error rather than absorbing it through the inbox.
@@ -145,6 +171,7 @@ After completing this project you must be able to explain in your own words: why
 - Inventing a database driver version in the documentation; the learner selects and pins a currently supported version.
 
 ## 16. Topics and References for Study
+
 - The PostgreSQL documentation for `SELECT ... FOR UPDATE SKIP LOCKED`, transactional `INSERT`, and unique-constraint conflict handling.
 - The Chris Richardson "Microservices Patterns" chapter on the Transactional Outbox.
 - The Debezium documentation on change-data-capture-based outbox publishing, used only as background; this project uses polling.
@@ -152,20 +179,49 @@ After completing this project you must be able to explain in your own words: why
 - The migration discipline from project 064, applied to bring the schema up before any publisher or consumer runs.
 
 ## 17. Self-Assessment Questions
-- Why must the Order and the `Pending` outbox row be written in the same transaction, and why is the broker never called inside `PlaceOrder` or before commit?
-- Why is the sequence allocated under an aggregate-scoped lock so concurrent orders for the same aggregate cannot collide or allocate out of order?
-- Why does the claim query enforce a head-of-line predicate per aggregate together with `FOR UPDATE SKIP LOCKED` in deterministic order?
-- Why is the delivery model at-least-once and not exactly-once?
-- Why does the inbox make the consumer idempotent, why must it be conflict-aware, and what is wrong with catching a unique violation inside an aborted transaction?
-- Why is ordering per aggregate and not global?
-- Why is the broker message key the aggregate identifier?
-- Why does the schema version exist on each event?
-- Why is the `Failed` state terminal for the row and what blocks later rows for the same aggregate until an explicit operator policy resolves the failure?
-- Why must the publisher's and consumer's attempt budgets be separate?
+
+1. Why must the Order and the `Pending` outbox row be written in the same transaction, and why is the broker never called inside `PlaceOrder` or before commit?
+2. Why is the sequence allocated under an aggregate-scoped lock so concurrent orders for the same aggregate cannot collide or allocate out of order?
+3. Why does the claim query enforce a head-of-line predicate per aggregate together with `FOR UPDATE SKIP LOCKED` in deterministic order?
+4. Why is the delivery model at-least-once and not exactly-once?
+5. Why does the inbox make the consumer idempotent, why must it be conflict-aware, and what is wrong with catching a unique violation inside an aborted transaction?
+6. Why is ordering per aggregate and not global?
+7. Why is the broker message key the aggregate identifier?
+8. Why does the schema version exist on each event?
+9. Why is the `Failed` state terminal for the row and what blocks later rows for the same aggregate until an explicit operator policy resolves the failure?
+10. Why must the publisher's and consumer's attempt budgets be separate?
 
 ## 18. Definition of Completion
-The project is complete when the schema is brought up by a versioned migration; when `PlaceOrder` writes the Order and a `Pending` outbox row in the same transaction and never calls the broker; when sequence allocation under an aggregate-scoped lock prevents collisions and out-of-order allocations; when the publisher's claim query selects only a `Pending` minimum-sequence non-`Published` head per aggregate, leaves a `Failed` head blocking, uses `FOR UPDATE SKIP LOCKED` in deterministic order, holds the row lock through publish plus mark, marks `Published` only after acknowledgement, increments the attempt on failure, and moves the outbox row to `Failed` at the bound; when the consumer validates schema and version before decoding, uses the conflict-aware inbox, no-ops on duplicate, performs the side effect on a fresh insert, rolls back both on side-effect failure, and records `DeadLettered` after its separate bound for permanent or unknown-version deliveries; when the unit suite passes locally with no Docker and no broker; when the opt-in PostgreSQL integration suite passes with its gates and the broker remaining a fake; when the honest at-least-once statement is reproduced in the project's own documentation; and when no real broker is introduced before project 098.
+
+- [ ] The project is complete when the schema is brought up by a versioned migration;
+- [ ] When `PlaceOrder` writes the Order and a `Pending` outbox row in the same transaction and never calls the broker;
+- [ ] When sequence allocation under an aggregate-scoped lock prevents collisions and out-of-order allocations;
+- [ ] When the publisher's claim query selects only a `Pending` minimum-sequence non-`Published` head per aggregate, leaves a `Failed` head blocking, uses `FOR UPDATE SKIP LOCKED` in deterministic order, holds the row lock through publish plus mark, marks `Published` only after acknowledgement, increments the attempt on failure, and moves the outbox row to `Failed` at the bound;
+- [ ] When the consumer validates schema and version before decoding, uses the conflict-aware inbox, no-ops on duplicate, performs the side effect on a fresh insert, rolls back both on side-effect failure, and records `DeadLettered` after its separate bound for permanent or unknown-version deliveries;
+- [ ] When the unit suite passes locally with no Docker and no broker;
+- [ ] When the opt-in PostgreSQL integration suite passes with its gates and the broker remaining a fake;
+- [ ] When the honest at-least-once statement is reproduced in the project's own documentation;
+- [ ] And when no real broker is introduced before project 098.
 
 ## 19. Optional Extensions
+
 - A second event type added to the same outbox table, with the Consumer dispatching on event type after version validation; the inbox uniqueness key is unchanged and the publisher's loop is unchanged.
-- A small set of read-model projections written by the Consumer, each in its own transaction with its own inbox row, demonstrating that one event can drive multiple projections idempotently.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 064 — Database Migrations](../../05-databases/064_database_migrations/README.md#20-prerequisite-based-documentation-guide), [Project 066 — Database Transaction Manager](../../05-databases/066_db_transaction_manager/README.md#20-prerequisite-based-documentation-guide), [Project 086 — Distributed Task Queue](../../07-advanced-systems/086_distributed_task_queue/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [PostgreSQL locking clauses](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE), [Transactional Outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html), [Debezium outbox documentation](https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html).
+
+### Project-specific learning focus
+
+- **Learn now:** atomic business writes and outbox inserts, SKIP LOCKED polling, idempotent inboxes, retry and dead-letter policy, ordering limits, migrations, and projection transactions.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

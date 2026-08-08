@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project **014** — `014_input_validator`. The directory name and number must match exactly.
+- Project **014** — `014_input_validator`.
+- The directory name and number must match exactly.
 
 ## 2. Project Idea
 
@@ -12,11 +13,14 @@ A small package that validates a single record — a small struct holding an **e
 
 ## 3. Why This Project Now?
 
-Projects 011 through 013 taught the learner to keep behavior as data, to inject I/O boundaries, and to handle domain logic with declared policies. Project 014 introduces a different recurring shape: a small set of independent checks, each with its own rules, and an outer layer that combines their results into one report.
+- Projects 011 through 013 taught the learner to keep behavior as data, to inject I/O boundaries, and to handle domain logic with declared policies.
+- Project 014 introduces a different recurring shape: a small set of independent checks, each with its own rules, and an outer layer that combines their results into one report.
 
-This shape will reappear in every later project — every form validation, every API request validator, every configuration checker. Getting it right at this level means the later projects inherit good habits rather than reinvent the same plumbing.
+- This shape will reappear in every later project — every form validation, every API request validator, every configuration checker.
+- Getting it right at this level means the later projects inherit good habits rather than reinvent the same plumbing.
 
-This project is also the first one where regex appears with restraint: enough to express the contracts, not so much that the pattern becomes an unreadable wall. The companion discipline is *parsing*: when a real parser exists, prefer it to a regex.
+- This project is also the first one where regex appears with restraint: enough to express the contracts, not so much that the pattern becomes an unreadable wall.
+- The companion discipline is *parsing*: when a real parser exists, prefer it to a regex.
 
 ## 4. Prerequisites
 
@@ -37,29 +41,31 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### One validator per field
+### Concepts
+
+#### One validator per field
 
 The package exposes three validator functions — one for email, one for phone, one for date — each of which accepts a string and returns either success or a clear, named error. The functions do not call each other and do not share state. Each is independently callable from a test without going through the aggregator.
 
 The aggregator takes a small record that holds three separate fields (an email field, a phone field, a date field) and runs each validator against its matching field. The aggregator's job is to call the three validators and to combine their results; it does not change the rules of any individual validator.
 
-### Why a record, not one string for everything
+#### Why a record, not one string for everything
 
 Running all three validators against the same string makes no sense: a phone validator applied to an email address will always fail, and the user would have to read three meaningless errors. A record with one field per validator means each validator sees only the value that belongs to it, and the user can read the per-field errors in order.
 
-### Moderate regex use
+#### Moderate regex use
 
 A regex is appropriate when the contract is "a string that matches a pattern". It is not appropriate when the contract involves arithmetic (for example, "a date that exists in the calendar"). For email, a moderate pattern covers the common shape. For phone, the pattern is even narrower: digits, an optional leading `+`, optional separators. For date, **regex is not the right tool**; the validator delegates to a real date parser. The rule for the learner is: use regex where it fits, use a parser where parsing is the contract.
 
-### Real date parsing
+#### Real date parsing
 
 `time.Parse` accepts a layout and a string and returns a parsed `time.Time` plus an error. The contract for this project is: the input must look like `YYYY-MM-DD` and must parse to a real calendar date. The validator parses with the chosen layout; if the parser succeeds, the input is accepted as a valid date. If the parser fails, the validator reports the failure. The project does not require the validator to distinguish between "wrong layout" and "impossible calendar content" — only that both kinds of failure are rejected.
 
-### Impossible dates
+#### Impossible dates
 
 `2025-02-30` looks like a date because it has the right shape, but February has 28 days in 2025. A naive regex would accept it; a real parser, however, would fail because `2025-02-30` is not a real calendar day. The contract for this project is: an impossible date is rejected by the date validator. The verification cases must include `2025-02-30`, `2025-04-31`, `2025-13-01`, `2025-00-10`, and similar impossibilities. The learner is not required to classify which specific error the parser produced; rejecting is enough.
 
-### Unicode cases
+#### Unicode cases
 
 A learning validator that supports Unicode must do so *deliberately*, not by accident.
 
@@ -67,7 +73,7 @@ A learning validator that supports Unicode must do so *deliberately*, not by acc
 - **Phone.** The contract stays ASCII-only: ASCII digits, an optional leading `+`, and a small set of separators. The digit-count limits count ASCII digits and ignore separators.
 - **Date.** ASCII-only because the layout is fixed.
 
-### Aggregated errors
+#### Aggregated errors
 
 When the aggregator runs the three validators against the three fields, it does not stop at the first failure. It collects every failure into one report, so the user fixes all problems at once. The aggregation must preserve each individual error message so the user can see which field and which check failed and why. The mechanism is left to the learner (`errors.Join`, a custom slice, or another technique), but the *behavior* is required: one call produces one combined result that lists every failing field.
 
@@ -110,7 +116,9 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 A record (a small struct) with three fields:
 
@@ -120,12 +128,12 @@ A record (a small struct) with three fields:
 
 For per-validator testing, each validator accepts its own kind of string on its own.
 
-### Outputs
+#### Outputs
 
 - A combined report that lists which fields failed and why.
 - For each individual validator, success or a named error when called on its own.
 
-### Example text-only all-fields-valid run
+#### Example text-only all-fields-valid run
 
 ```
 email "alice@example.com": OK
@@ -133,7 +141,7 @@ phone "+1-555-123-4567": OK
 date  "2025-01-15": OK
 ```
 
-### Example text-only aggregated failure run
+#### Example text-only aggregated failure run
 
 ```
 email "not an email":     local part or domain part contains whitespace or '@'
@@ -141,7 +149,7 @@ phone "abc":              contains non-digit, non-separator characters
 date  "2025-02-30":       not a real calendar date
 ```
 
-### Example impossible-date rejection
+#### Example impossible-date rejection
 
 ```
 date "2025-02-30": not a real calendar date
@@ -197,9 +205,11 @@ date "2025-02-30": not a real calendar date
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. The expected outcomes pin the contract.
 
-### Per-validator cases
+#### Per-validator cases
 
 - A canonical email like `alice@example.com` is accepted by the email validator.
 - An email missing `@` is rejected by the email validator.
@@ -217,7 +227,7 @@ Each case is described in natural language. The expected outcomes pin the contra
 - An out-of-range date like `2025-13-01` is rejected by the date validator.
 - An empty input produces a non-nil error from every validator.
 
-### Aggregator cases
+#### Aggregator cases
 
 - A record with all three fields valid produces a combined result with no failures; the "all-fields-valid" example from section 9 is reachable.
 - A record with two invalid fields produces a combined result that lists both failures, in a stable order (for example `email` then `phone`).
@@ -260,18 +270,37 @@ Each case is described in natural language. The expected outcomes pin the contra
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and the tests pin the per-field and aggregator contracts with concrete expected outcomes.
-- The package documentation declares the three contracts, the per-field record, and the learning-scope disclaimer at the top.
-- Each validator is reachable from a test that calls it on its own string.
-- The aggregator is reachable from a test that constructs the record directly.
-- The aggregator's behavior — every failure listed, order stable — is exercised by at least one test, and an all-valid record produces a result with no failures.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and the tests pin the per-field and aggregator contracts with concrete expected outcomes.
+- [ ] The package documentation declares the three contracts, the per-field record, and the learning-scope disclaimer at the top.
+- [ ] Each validator is reachable from a test that calls it on its own string.
+- [ ] The aggregator is reachable from a test that constructs the record directly.
+- [ ] The aggregator's behavior — every failure listed, order stable — is exercised by at least one test, and an all-valid record produces a result with no failures.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Per-field severity.** Tag each error with a severity (`info`, `warning`, `error`) and let the aggregator filter by minimum severity. Keep the tag system trivial: an enum-like type and a switch, not a full rule engine.
-- **Optional date layout.** Let the date validator accept a small set of alternative layouts (for example `YYYY/MM/DD` in addition to `YYYY-MM-DD`) and try each in turn. The aggregator's behavior is unchanged; only one validator grows a small list.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 013 — Time World Clock](../../01-foundations/013_time_world_clock/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`regexp`](https://pkg.go.dev/regexp).
+- **Standards and concept references:** [Go blog: working with errors](https://go.dev/blog/go1.13-errors).
+
+### Project-specific learning focus
+
+- **Learn now:** anchored patterns, semantic date validation, aggregated errors, Unicode-aware checks, and honest validation scope.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

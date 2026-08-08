@@ -2,7 +2,14 @@
 
 ## 1. Project Name and Number
 
-Project **029** — `029_linked_list_impl`. The directory name and number must match exactly. The project implements a singly linked generic list restricted to comparable values. The list reinforces generics while focusing on pointers and nodes. The list's zero value is usable immediately, with no constructor call required. Insertion is at a zero-based position; deletion removes the first matching value; find returns the first position; length returns the current size; values returns the values in order. Inserting at an invalid position returns an error and does not mutate the list. Deleting or finding a missing value has an explicit not-found outcome and does not mutate the list.
+- Project **029** — `029_linked_list_impl`.
+- The directory name and number must match exactly.
+- The project implements a singly linked generic list restricted to comparable values.
+- The list reinforces generics while focusing on pointers and nodes.
+- The list's zero value is usable immediately, with no constructor call required.
+- Insertion is at a zero-based position; deletion removes the first matching value; find returns the first position; length returns the current size; values returns the values in order.
+- Inserting at an invalid position returns an error and does not mutate the list.
+- Deleting or finding a missing value has an explicit not-found outcome and does not mutate the list.
 
 ## 2. Project Idea
 
@@ -22,11 +29,17 @@ Values returns a slice of the values in chain order. The returned slice is indep
 
 ## 3. Why This Project Now?
 
-Projects 001–028 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, shape-validated matrices, generic zero-value containers, and a comparator-driven BST. None of them focused on pointer chains. Project 029 is the project's first encounter with a dynamic, pointer-linked data structure.
+- Projects 001–028 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, shape-validated matrices, generic zero-value containers, and a comparator-driven BST.
+- None of them focused on pointer chains.
+- Project 029 is the project's first encounter with a dynamic, pointer-linked data structure.
 
-The project reinforces generics in a different setting: the element type must be comparable (not just any type), but the implementation is still generic across many comparable types. The project also forces the learner to reason about head and tail updates carefully: insertion at the head rewrites the head pointer; insertion at the tail rewrites the tail pointer; insertion in the middle rewrites the previous node's `next` pointer. Deletion can rewrite the head pointer (deleting the first node), the tail pointer (deleting the last node), or a middle node's `next` pointer. Each case must be handled explicitly.
+- The project reinforces generics in a different setting: the element type must be comparable (not just any type), but the implementation is still generic across many comparable types.
+- The project also forces the learner to reason about head and tail updates carefully: insertion at the head rewrites the head pointer; insertion at the tail rewrites the tail pointer; insertion in the middle rewrites the previous node's `next` pointer.
+- Deletion can rewrite the head pointer (deleting the first node), the tail pointer (deleting the last node), or a middle node's `next` pointer.
+- Each case must be handled explicitly.
 
-The not-found outcome for find and delete is the same pattern established in project 027 (containers) and project 028 (BST). The list joins the project in the discipline of "empty reads and removals are explicit not-found outcomes, not panics and not fabricated values".
+- The not-found outcome for find and delete is the same pattern established in project 027 (containers) and project 028 (BST).
+- The list joins the project in the discipline of "empty reads and removals are explicit not-found outcomes, not panics and not fabricated values".
 
 ## 4. Prerequisites
 
@@ -47,45 +60,47 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Singly linked chain
+### Concepts
+
+#### Singly linked chain
 
 A singly linked chain is a sequence of nodes where each node holds a value and a `next` pointer. The chain is walked by following `next` from the head. The chain ends when `next` is `nil`. There is no `prev` pointer; walking backward requires restarting from the head.
 
-### Head and tail
+#### Head and tail
 
 The head pointer is the first node. The tail pointer (if tracked) is the last node. Insertion at position `0` creates a new node whose `next` points to the current head, then rewrites the head pointer to the new node. Insertion at the tail position rewrites the current tail's `next` pointer to a new node, then rewrites the tail pointer to the new node. Insertion in the middle walks to the node at position `pos - 1`, creates a new node whose `next` points to the node at position `pos`, and rewrites the node at position `pos - 1`'s `next` pointer to the new node. Each case rewrites a different pointer; getting the case wrong produces a broken chain.
 
 Deletion of the first node rewrites the head pointer to the first node's `next`. Deletion of the last node walks to the second-to-last node and rewrites its `next` to `nil`, then rewrites the tail pointer to the second-to-last node. Deletion in the middle walks to the node at position `pos - 1` and rewrites its `next` to the node at position `pos + 1`.
 
-### Comparable constraint
+#### Comparable constraint
 
 The element type is constrained to `comparable`. This means the element type supports `==` (or, in Go's generics vocabulary, the type is in the `comparable` constraint set). The constraint is enough for `int`, `string`, and structs whose fields are all comparable. It is not enough for slices, maps, or functions, which are not comparable. The project pins this restriction explicitly.
 
-### Zero-based positions
+#### Zero-based positions
 
 Positions are zero-based. Position `0` is before the current head. Position `length` is after the current tail. Positions in between are at the corresponding chain position. The valid range is `[0, length]`. Position `length + 1` is invalid (no slot exists). Negative positions are invalid.
 
-### Invalid position
+#### Invalid position
 
 An invalid position is one outside `[0, length]`. Inserting at an invalid position returns an error (for example a sentinel error matched with `errors.Is`) and does not mutate the list. The list's length, head, and tail are unchanged. The returned error names "invalid position" and includes the offending position and the allowed range.
 
-### First-match deletion
+#### First-match deletion
 
 Deletion removes the first node whose value equals the target by `==`. If the same value appears multiple times in the list, only the earliest occurrence is removed. The list's order is otherwise unchanged. If the value does not appear in the list, deletion reports the not-found outcome and does not mutate the list.
 
-### First-match find
+#### First-match find
 
 Find returns the position of the first node whose value equals the target by `==`. If the same value appears multiple times in the list, only the earliest occurrence's position is returned. If the value does not appear in the list, find reports the not-found outcome.
 
-### Values in order
+#### Values in order
 
 The `values` operation returns a slice of the values in chain order. The slice is independent: it does not expose the internal nodes. A test that mutates the returned slice does not mutate the list. The returned slice is a fresh allocation.
 
-### Zero-value usability
+#### Zero-value usability
 
 The list's zero value is usable immediately. A freshly declared list has a `nil` head, a `nil` tail (if tracked), and length zero. Insertion at position `0` on an empty list creates the first node and sets head, tail, and length correctly.
 
-### Head and tail updates for empty, head, middle, and end operations
+#### Head and tail updates for empty, head, middle, and end operations
 
 For each insertion position, the operation must update the right pointer:
 
@@ -100,11 +115,11 @@ For each deletion case, the operation must update the right pointer:
 - **Delete the last node.** Walks to the second-to-last node. Sets the second-to-last node's `next` to `nil`. Sets tail to the second-to-last node (if tracked). Head is unchanged. Length shrinks by one.
 - **Delete a middle node.** Walks to the node at position `pos - 1`. Sets the node at position `pos - 1`'s `next` to the node at position `pos + 1`. Head and tail (if tracked) are unchanged. Length shrinks by one.
 
-### No internal node exposure
+#### No internal node exposure
 
 The `values` operation must not expose internal node pointers. The returned slice is a fresh allocation of values, not a slice that aliases the chain's node values. A test that mutates the returned slice does not mutate the list. A test that mutates a list value does not affect a previously returned slice.
 
-### Multiple comparable types
+#### Multiple comparable types
 
 The list works for many comparable types. Tests cover at least three distinct element types — for example `int`, `string`, and a small struct with two comparable fields. The same implementation works for all three types without per-type code.
 
@@ -140,7 +155,9 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - For insertion: a zero-based position (integer) and a value (of the list's element type).
 - For deletion: a target value (of the list's element type).
@@ -148,7 +165,7 @@ After completing this project the learner can:
 - For length: no value.
 - For values: no value.
 
-### Outputs
+#### Outputs
 
 - For insertion: an error. Success returns `nil`. Invalid position returns a sentinel error that names the position and the allowed range.
 - For deletion: an error or a clearly-named boolean indicating whether a node was removed. Success reports "removed". A not-found value reports "not removed" without changing the list.
@@ -156,7 +173,7 @@ After completing this project the learner can:
 - For length: the current size as an integer.
 - For values: a fresh slice of values in chain order.
 
-### Example text-only traces
+#### Example text-only traces
 
 List with `int` elements:
 
@@ -248,9 +265,11 @@ values        → [1, 1]
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests use only in-memory elements and direct API calls; no terminal, no real user directories.
 
-### Empty list
+#### Empty list
 
 - A freshly declared list has length zero.
 - Find on an empty list returns the not-found outcome.
@@ -258,35 +277,35 @@ Each case is described in natural language. Tests use only in-memory elements an
 - Values on an empty list returns an empty slice.
 - Insertion at position `0` on an empty list creates the first node, sets head, sets tail (if tracked), and sets length to one.
 
-### Insert head
+#### Insert head
 
 - Insertion at position `0` on a non-empty list prepends the new value. The new value is at position `0` in the subsequent values traversal. Head is rewritten to the new node. Tail (if tracked) is unchanged unless the list was empty. Length grows by one.
 - Insertion at position `0` when the list has one node creates a list of two nodes with the new value first.
 
-### Insert middle
+#### Insert middle
 
 - Insertion at a position strictly between `0` and `length` places the new value at that position. The values before and after the insertion point are unchanged. Length grows by one.
 - Insertion at position `1` on a list of length two produces a list of length three with the new value in the middle.
 
-### Insert end (tail)
+#### Insert end (tail)
 
 - Insertion at position `length` appends the new value. The new value is at the end of the subsequent values traversal. Tail (if tracked) is rewritten to the new node. Length grows by one.
 - Insertion at position `length` on a list of one node produces a list of two nodes with the new value second.
 
-### Invalid index
+#### Invalid index
 
 - Insertion at a negative position returns a sentinel error. The list is not mutated.
 - Insertion at a position greater than `length` returns a sentinel error. The list is not mutated.
 - Insertion at position `length + 1` returns a sentinel error. The list is not mutated.
 
-### Duplicate values
+#### Duplicate values
 
 - Inserting the same value multiple times produces a list with one node per insertion (duplicates are allowed in the list).
 - Find on a list with duplicates returns the position of the first occurrence.
 - Delete on a list with duplicates removes the first occurrence only. The remaining occurrences are still present in the same relative order.
 - After deleting the first occurrence, a subsequent find for the same value returns the position of the new first occurrence.
 
-### Delete only / first / middle / last
+#### Delete only / first / middle / last
 
 - Deletion of the only node (list of length one) returns the not-found outcome if the value does not match, or returns "removed" and produces an empty list if the value matches.
 - Deletion of the first node (list of length two or more) rewrites head to the next node. Tail (if tracked) is unchanged unless the list becomes empty.
@@ -294,12 +313,12 @@ Each case is described in natural language. Tests use only in-memory elements an
 - Deletion of the last node rewrites the second-to-last node's `next` to `nil`. Tail (if tracked) is rewritten to the second-to-last node.
 - After deletion, values returns the remaining values in chain order.
 
-### Missing value
+#### Missing value
 
 - Delete with a value not in the list returns the not-found outcome. The list is not mutated. Length, head, and tail are unchanged.
 - Find with a value not in the list returns the not-found outcome. The list is not mutated.
 
-### Length invariants
+#### Length invariants
 
 - Length starts at zero.
 - Each successful insertion grows length by exactly one.
@@ -309,30 +328,30 @@ Each case is described in natural language. Tests use only in-memory elements an
 - A not-found find does not change length.
 - Length matches the actual node count after every operation (a test can verify by counting nodes through a recursive walk or by relying on values' length as a proxy, depending on the package's surface).
 
-### Zero-value use
+#### Zero-value use
 
 - A freshly declared list is empty.
 - Insertion at position `0` on the empty list creates the first node and sets head, tail, and length correctly.
 - Subsequent operations on the same list work as on a list constructed explicitly.
 
-### Multiple comparable types
+#### Multiple comparable types
 
 - The same generic implementation works for `int`, `string`, and a small struct with two comparable fields.
 - For each type, insertion, deletion, find, length, and values behave identically.
 - For struct element types, equality by `==` is used (the constraint allows this for comparable structs).
 
-### Stable order
+#### Stable order
 
 - After a sequence of insertions, the values traversal returns values in the order they were inserted.
 - After deleting the first occurrence of a value, the values traversal returns the remaining values in their original relative order.
 
-### No internal exposure
+#### No internal exposure
 
 - Mutating a slice returned by `values` does not change the list. A subsequent values traversal returns the original values.
 - Mutating a list value (for example by inserting a new value) does not affect a previously returned slice.
 - The test confirms that the returned slice is a fresh allocation, not a slice that aliases the chain's node values.
 
-### Process
+#### Process
 
 - A test runs the driver with a small script of insertions, deletions, and finds and confirms the printed values traversal matches the expected text-only form.
 
@@ -379,23 +398,41 @@ Each case is described in natural language. Tests use only in-memory elements an
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- The list is a generic type with a `comparable` constraint. The same implementation works for `int`, `string`, and a small struct with comparable fields.
-- Insertion at position `0`, position `length`, and positions in between all work and update head, tail (if tracked), and length correctly.
-- Invalid positions return a sentinel error matched with `errors.Is`. The list is not mutated.
-- Deletion removes the first matching node and updates head, tail (if tracked), and length correctly. A missing value returns the not-found outcome and does not mutate the list.
-- Find returns the position of the first matching node. A missing value returns the not-found outcome.
-- Length matches the actual node count after every operation.
-- The list's zero value is usable immediately, with no constructor call. Insertion at position `0` on the zero-value list creates the first node and sets head, tail, and length correctly.
-- The values operation returns a fresh slice in chain order. The slice does not expose internal node pointers. Mutating the slice does not mutate the list.
-- The package documentation states the position rule, the invalid-position error, the first-match rules, the not-found outcome, the zero-value-usable rule, and the concurrency-unsafety rule.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] The list is a generic type with a `comparable` constraint. The same implementation works for `int`, `string`, and a small struct with comparable fields.
+- [ ] Insertion at position `0`, position `length`, and positions in between all work and update head, tail (if tracked), and length correctly.
+- [ ] Invalid positions return a sentinel error matched with `errors.Is`. The list is not mutated.
+- [ ] Deletion removes the first matching node and updates head, tail (if tracked), and length correctly. A missing value returns the not-found outcome and does not mutate the list.
+- [ ] Find returns the position of the first matching node. A missing value returns the not-found outcome.
+- [ ] Length matches the actual node count after every operation.
+- [ ] The list's zero value is usable immediately, with no constructor call. Insertion at position `0` on the zero-value list creates the first node and sets head, tail, and length correctly.
+- [ ] The values operation returns a fresh slice in chain order. The slice does not expose internal node pointers. Mutating the slice does not mutate the list.
+- [ ] The package documentation states the position rule, the invalid-position error, the first-match rules, the not-found outcome, the zero-value-usable rule, and the concurrency-unsafety rule.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Reverse values.** Add a method that returns the values in reverse chain order as a fresh slice. The method walks the chain once and appends to a fresh slice from the back. The method does not mutate the list and does not expose internal node pointers. Do not add a `Reverse()` in-place mutation or a doubly linked list.
-- **Contains.** Add a method that returns a boolean indicating whether a target value appears in the list by `==`. The method does not mutate the list and does not change length. The method uses the same first-match rule as `find`. Do not add a `count` operation or a `find-all-positions` operation.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 028 — Binary Search Tree](../../02-data-structures/028_binary_search_tree/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [Go specification: pointer types](https://go.dev/ref/spec#Pointer_types).
+
+### Project-specific learning focus
+
+- **Learn now:** head and tail invariants, pointer-chain updates, first-match deletion, comparable constraints, empty-list behavior, and linear-time traversal.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

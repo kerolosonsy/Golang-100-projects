@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project 035 — File Downloader Concurrency. Lives in `03-concurrency/035_file_downloader_concurrency`.
+- Project 035 — File Downloader Concurrency.
+- Lives in `03-concurrency/035_file_downloader_concurrency`.
 
 ## 2. Project Idea
 
@@ -10,37 +11,88 @@ Download several HTTP resources into an explicit destination root directory unde
 
 ## 3. Why This Project Now?
 
-Project 031 gave you the cancellation fan-out. Project 032 fixed channel ownership. Project 033 gave you real HTTP with an injected client and the no-follow redirect policy. Project 034 gave you a bounded fan-out with exactly-once reconciliation under cancellation. File Downloader Concurrency reuses all four against a filesystem side effect.
+- Project 031 gave you the cancellation fan-out.
+- Project 032 fixed channel ownership.
+- Project 033 gave you real HTTP with an injected client and the no-follow redirect policy.
+- Project 034 gave you a bounded fan-out with exactly-once reconciliation under cancellation.
+- File Downloader Concurrency reuses all four against a filesystem side effect.
 
 ## 4. Prerequisites
 
-The curriculum map's stated dependencies for this project: Projects 031 and 034. Familiarity with the file system, `net/http`, `httptest.Server`, and the worker-pool shape from Project 034 is required. The URL and filename validation rules echo Project 033's URL definition and add the safe-name rules listed in this project.
+- The curriculum map's stated dependencies for this project: Projects 031 and 034.
+- Familiarity with the file system, `net/http`, `httptest.Server`, and the worker-pool shape from Project 034 is required.
+- The URL and filename validation rules echo Project 033's URL definition and add the safe-name rules listed in this project.
 
 ## 5. What You Must Know Before Starting
 
-That `net/http.Client` is the unit of configuration for timeouts, transport, and redirect policy. That `os.CreateTemp` creates a uniquely named file in a given directory and returns its name plus the opened file handle. That `os.Rename` is the cross-platform rename mechanism whose atomicity is filesystem-dependent. That `http.Response.Body` is an `io.ReadCloser` whose close is mandatory. That `filepath.Join` is the platform-correct way to construct a destination path, and that the joined path can still escape its parent if the joined components contain traversal sequences. That `os.MkdirTemp` is the standard way to create a test directory. That `io.LimitReader` is the standard way to bound the bytes read from a stream. That `httptest.NewServer` is the standard way to serve predictable responses in tests. That this project pins the maximum response body to exactly 16 MiB (16,777,216 bytes), and that the streamed limit's overflow detection allows observation of one byte beyond the limit rather than silent truncation; `Content-Length` may be used for an early rejection but is not trusted in place of the streamed limit. That the destination root must already exist as a directory and is never auto-created. That a valid URL is a string that parses as an absolute URL whose scheme is `http` or `https` and whose host is non-empty. That a safe filename is a non-empty leaf name; `.` and `..` are rejected; absolute paths, slash and backslash, any platform separator, and any name that does not remain a single basename after `filepath.Clean` are rejected.
+- That `net/http.Client` is the unit of configuration for timeouts, transport, and redirect policy.
+- That `os.CreateTemp` creates a uniquely named file in a given directory and returns its name plus the opened file handle.
+- That `os.Rename` is the cross-platform rename mechanism whose atomicity is filesystem-dependent.
+- That `http.Response.Body` is an `io.ReadCloser` whose close is mandatory.
+- That `filepath.Join` is the platform-correct way to construct a destination path, and that the joined path can still escape its parent if the joined components contain traversal sequences.
+- That `os.MkdirTemp` is the standard way to create a test directory.
+- That `io.LimitReader` is the standard way to bound the bytes read from a stream.
+- That `httptest.NewServer` is the standard way to serve predictable responses in tests.
+- That this project pins the maximum response body to exactly 16 MiB (16,777,216 bytes), and that the streamed limit's overflow detection allows observation of one byte beyond the limit rather than silent truncation; `Content-Length` may be used for an early rejection but is not trusted in place of the streamed limit.
+- That the destination root must already exist as a directory and is never auto-created.
+- That a valid URL is a string that parses as an absolute URL whose scheme is `http` or `https` and whose host is non-empty.
+- That a safe filename is a non-empty leaf name; `.` and `..` are rejected; absolute paths, slash and backslash, any platform separator, and any name that does not remain a single basename after `filepath.Clean` are rejected.
 
 ## 6. Explanation of New Concepts
 
-The "downloader" shape is a worker-pool-like fan-out, but each job has a filesystem side effect: bytes flow from the HTTP response into a temporary file on disk, and only on success is the temporary file promoted to the final destination name via a rename. The sequence matters: a temporary file that is renamed on success is a check the test can rely on; a destination file that is left intact on failure is a check the test can rely on.
+### Concepts
 
-Batch preflight. The preflight is a read-only gate that inspects every input before any request starts or any filesystem mutation occurs. The preflight rejects duplicate filenames within the input, unsafe filenames, non-positive concurrency, malformed URLs, and existing destinations. If any preflight check fails on any item, no request is started, no goroutine is launched, no directory is created, and no temporary file is created. The result slice still carries one entry per input in input order: offending entries name the specific violation they triggered; otherwise-valid entries report "not started because batch preflight failed". The preflight is read-only by contract.
+- The "downloader" shape is a worker-pool-like fan-out, but each job has a filesystem side effect: bytes flow from the HTTP response into a temporary file on disk, and only on success is the temporary file promoted to the final destination name via a rename.
+- The sequence matters: a temporary file that is renamed on success is a check the test can rely on; a destination file that is left intact on failure is a check the test can rely on.
 
-Destination root policy. The destination root must already exist as a directory when the call begins. It is never auto-created. The downloader must never write outside the root. Filenames supplied by the caller are joined to the destination root through `filepath.Join`, and the joined path is checked to remain a single basename inside the root. The rename is performed only when the joined path stays inside the root.
+- Batch preflight.
+- The preflight is a read-only gate that inspects every input before any request starts or any filesystem mutation occurs.
+- The preflight rejects duplicate filenames within the input, unsafe filenames, non-positive concurrency, malformed URLs, and existing destinations.
+- If any preflight check fails on any item, no request is started, no goroutine is launched, no directory is created, and no temporary file is created.
+- The result slice still carries one entry per input in input order: offending entries name the specific violation they triggered; otherwise-valid entries report "not started because batch preflight failed".
+- The preflight is read-only by contract.
 
-Safe filename. A safe filename is a non-empty leaf name. The names `.` and `..` are rejected. Absolute paths are rejected. The slash, the backslash, and any platform-specific separator are rejected anywhere within the filename. After `filepath.Clean`, the name must remain a single basename; the downloader verifies this. Existing regular files, directories, and symlinks at the final path all count as existing and reject the batch.
+- Destination root policy.
+- The destination root must already exist as a directory when the call begins.
+- It is never auto-created.
+- The downloader must never write outside the root.
+- Filenames supplied by the caller are joined to the destination root through `filepath.Join`, and the joined path is checked to remain a single basename inside the root.
+- The rename is performed only when the joined path stays inside the root.
 
-Maximum response body. The maximum response body is pinned to exactly 16 MiB (16,777,216 bytes). The streamed limit's overflow detection allows observation of one byte beyond the limit so the size violation is observable rather than hidden by a silent truncation. `Content-Length` may be used for an early rejection to avoid buffering an oversized response, but the streamed limit is the source of truth and is enforced even when `Content-Length` is absent or lies.
+- Safe filename.
+- A safe filename is a non-empty leaf name.
+- The names `.` and `..` are rejected.
+- Absolute paths are rejected.
+- The slash, the backslash, and any platform-specific separator are rejected anywhere within the filename.
+- After `filepath.Clean`, the name must remain a single basename; the downloader verifies this.
+- Existing regular files, directories, and symlinks at the final path all count as existing and reject the batch.
 
-Redirect policy. The downloader classifies only the final response observed under the injected client's redirect policy. 2xx is success. Every other final status, including an un-followed 3xx, is HTTP-status failure. The downloader does not itself promise redirect following; the injected client's policy governs the number of redirects and the final response, and the downloader reports on whatever the client delivered.
+- Maximum response body.
+- The maximum response body is pinned to exactly 16 MiB (16,777,216 bytes).
+- The streamed limit's overflow detection allows observation of one byte beyond the limit so the size violation is observable rather than hidden by a silent truncation. `Content-Length` may be used for an early rejection to avoid buffering an oversized response, but the streamed limit is the source of truth and is enforced even when `Content-Length` is absent or lies.
 
-Continue-on-error policy. Independent downloads continue after one item fails, unless the parent context is cancelled. Partial success is explicit; the result slice carries one entry per input item in input order.
+- Redirect policy.
+- The downloader classifies only the final response observed under the injected client's redirect policy. 2xx is success.
+- Every other final status, including an un-followed 3xx, is HTTP-status failure.
+- The downloader does not itself promise redirect following; the injected client's policy governs the number of redirects and the final response, and the downloader reports on whatever the client delivered.
 
-Rename visibility. The rename on success provides normal-operation same-filesystem visibility only. The downloader does not promise universal atomicity across filesystems, does not promise crash durability, and does not protect against filesystem races that occur after the preflight. External filesystem races between the preflight and the rename, including another process creating or removing a file at the final path, are outside this project's guarantee. The descriptions of "no overwrite" apply to the preflight-detected existing-destination case, not to runtime races the downloader cannot see.
+- Continue-on-error policy.
+- Independent downloads continue after one item fails, unless the parent context is cancelled.
+- Partial success is explicit; the result slice carries one entry per input item in input order.
+
+- Rename visibility.
+- The rename on success provides normal-operation same-filesystem visibility only.
+- The downloader does not promise universal atomicity across filesystems, does not promise crash durability, and does not protect against filesystem races that occur after the preflight.
+- External filesystem races between the preflight and the rename, including another process creating or removing a file at the final path, are outside this project's guarantee.
+- The descriptions of "no overwrite" apply to the preflight-detected existing-destination case, not to runtime races the downloader cannot see.
 
 ## 7. Learning Objective
 
-After this project you can apply the "temp plus rename" pattern to a real filesystem side effect, separated by the streamed 16 MiB limit and bounded by the read-only batch preflight. You can define a non-mutating preflight that validates inputs without touching the destination root and that returns one result per input. You can coordinate a worker-pool-shaped fan-out with a downstream filesystem side effect and a documented byte limit. You can ensure that on per-item failure, no leftover temporary file clutters the destination directory. You can prove concurrency bounds without timing waits.
+- After this project you can apply the "temp plus rename" pattern to a real filesystem side effect, separated by the streamed 16 MiB limit and bounded by the read-only batch preflight.
+- You can define a non-mutating preflight that validates inputs without touching the destination root and that returns one result per input.
+- You can coordinate a worker-pool-shaped fan-out with a downstream filesystem side effect and a documented byte limit.
+- You can ensure that on per-item failure, no leftover temporary file clutters the destination directory.
+- You can prove concurrency bounds without timing waits.
 
 ## 8. Functional Requirements
 
@@ -63,29 +115,75 @@ After this project you can apply the "temp plus rename" pattern to a real filesy
 
 ## 9. Inputs and Outputs
 
-**Input** is a destination root directory that already exists as a directory, a list of download specifications, a maximum concurrency that is positive, a context, and an injected `http.Client`.
+### Interface Contract
 
-**Output** is a slice of length equal to the input. Each entry carries the input index, the URL string, the output filename, the final status, and for success entries the byte count or content hash as documented.
+- **Input** is a destination root directory that already exists as a directory, a list of download specifications, a maximum concurrency that is positive, a context, and an injected `http.Client`.
 
-**Behaviour example (text only).** Three downloads run under concurrency two against a destination that already exists. The result slice has three entries in input order. The implementation never has more than two items in flight. On a 404 from the test server for one item, that entry reports HTTP error and the other two are downloaded; no leftover temporary files remain.
+- **Output** is a slice of length equal to the input.
+- Each entry carries the input index, the URL string, the output filename, the final status, and for success entries the byte count or content hash as documented.
 
-**Behaviour example (text only).** Two items describe the same output filename. The preflight rejects the batch. The result slice carries two rejected entries; the destination root is untouched; no goroutine ever starts; no request is attempted; no temporary file appears.
+- **Behaviour example (text only).** Three downloads run under concurrency two against a destination that already exists.
+- The result slice has three entries in input order.
+- The implementation never has more than two items in flight.
+- On a 404 from the test server for one item, that entry reports HTTP error and the other two are downloaded; no leftover temporary files remain.
 
-**Behaviour example (text only).** One item names `../escape` as the filename. The preflight rejects the batch. The result slice carries one rejected entry naming the specific violation; the destination root and any parent are untouched.
+- **Behaviour example (text only).** Two items describe the same output filename.
+- The preflight rejects the batch.
+- The result slice carries two rejected entries; the destination root is untouched; no goroutine ever starts; no request is attempted; no temporary file appears.
 
-**Behaviour example (text only).** The destination root does not exist. The preflight rejects the batch. The downloader never auto-creates the destination root.
+- **Behaviour example (text only).** One item names `../escape` as the filename.
+- The preflight rejects the batch.
+- The result slice carries one rejected entry naming the specific violation; the destination root and any parent are untouched.
+
+- **Behaviour example (text only).** The destination root does not exist.
+- The preflight rejects the batch.
+- The downloader never auto-creates the destination root.
 
 ## 10. Rules and Edge Cases
 
-Filenames are non-empty leaf names; `.` and `..` are rejected. Absolute paths are rejected. Slash, backslash, and any platform-specific separator are rejected anywhere within the filename. After `filepath.Clean`, the name must remain a single basename; the downloader verifies this. Duplicate filenames within the input are rejected. Non-positive maximum concurrency is rejected. Malformed URLs (any string that does not parse as an absolute `http` or `https` URL with a non-empty host) are rejected at the batch level. Existing regular files, directories, and symlinks at the final path all count as existing and reject the batch. The destination root must already exist as a directory. A 3xx response is classified by the injected client's redirect policy; the downloader itself does not follow redirects. 4xx and 5xx produce HTTP error status; the body is still closed. Read errors produce transport error. Reading past the 16 MiB streamed limit produces size-limit exceeded; the body is still closed. On cancellation, in-flight items are unblocked, their temporary files are removed, and their entries report cancelled; items that completed before cancellation are reported as success. Preflight failure prevents any filesystem mutation and any request. A rename failure on an otherwise successful download is reported as a rename error for that item, the temporary file is removed, and no final file is published. Rename visibility is same-filesystem only.
+- Filenames are non-empty leaf names; `.` and `..` are rejected.
+- Absolute paths are rejected.
+- Slash, backslash, and any platform-specific separator are rejected anywhere within the filename.
+- After `filepath.Clean`, the name must remain a single basename; the downloader verifies this.
+- Duplicate filenames within the input are rejected.
+- Non-positive maximum concurrency is rejected.
+- Malformed URLs (any string that does not parse as an absolute `http` or `https` URL with a non-empty host) are rejected at the batch level.
+- Existing regular files, directories, and symlinks at the final path all count as existing and reject the batch.
+- The destination root must already exist as a directory.
+- A 3xx response is classified by the injected client's redirect policy; the downloader itself does not follow redirects. 4xx and 5xx produce HTTP error status; the body is still closed.
+- Read errors produce transport error.
+- Reading past the 16 MiB streamed limit produces size-limit exceeded; the body is still closed.
+- On cancellation, in-flight items are unblocked, their temporary files are removed, and their entries report cancelled; items that completed before cancellation are reported as success.
+- Preflight failure prevents any filesystem mutation and any request.
+- A rename failure on an otherwise successful download is reported as a rename error for that item, the temporary file is removed, and no final file is published.
+- Rename visibility is same-filesystem only.
 
 ## 11. Project Constraints
 
-Standard library only. Tests use `httptest.Server` and temporary directories only. No real internet. No `time.Sleep` for proving concurrency; barrier counters and synchronization channels are used. The preflight is read-only by contract. The downloader must not write outside the destination root. The downloaded bytes are preserved exactly; the test asserts byte equality, not equivalence. No resume, no archive extraction, no content-type trust, no redirects beyond the injected client's configured policy. The downloader does not promise universal rename atomicity across filesystems, does not promise crash durability, and does not protect against filesystem races that occur after the preflight. The race detector must report nothing under `-race`.
+- Standard library only.
+- Tests use `httptest.Server` and temporary directories only.
+- No real internet.
+- No `time.Sleep` for proving concurrency; barrier counters and synchronization channels are used.
+- The preflight is read-only by contract.
+- The downloader must not write outside the destination root.
+- The downloaded bytes are preserved exactly; the test asserts byte equality, not equivalence.
+- No resume, no archive extraction, no content-type trust, no redirects beyond the injected client's configured policy.
+- The downloader does not promise universal rename atomicity across filesystems, does not promise crash durability, and does not protect against filesystem races that occur after the preflight.
+- The race detector must report nothing under `-race`.
 
 ## 12. Design Questions Before Coding
 
-How is the 16 MiB streamed limit enforced so that overflow is observable rather than silently truncated, and where in the copy loop does the one-byte overflow probe live? How does the batch preflight reject every violation without mutating the destination root, launching a goroutine, attempting a request, creating a directory, or creating a temporary file? How is the temporary file uniquely named, and how is the rename performed only on success? How is the maximum concurrency enforced without an off-by-one error between channel buffering and worker count? How is the in-flight count proved in tests without timing waits? How is the boundary for "writes outside the destination root" enforced, and how is the test confirmed? How does the cancellation reach an in-flight read and unblock it? What does the partial-success result entry look like, and how is it distinguished from full failure and from a batch-preflight-blocked entry? What does the rename failure path look like, and how is the temporary file cleaned up? How does the read-only preflight prove that the required destination root already exists as a directory, while never auto-creating it? Why does the project fix its URL definition, safe-filename rules, and root policy, instead of leaving them as design choices?
+- How is the 16 MiB streamed limit enforced so that overflow is observable rather than silently truncated, and where in the copy loop does the one-byte overflow probe live?
+- How does the batch preflight reject every violation without mutating the destination root, launching a goroutine, attempting a request, creating a directory, or creating a temporary file?
+- How is the temporary file uniquely named, and how is the rename performed only on success?
+- How is the maximum concurrency enforced without an off-by-one error between channel buffering and worker count?
+- How is the in-flight count proved in tests without timing waits?
+- How is the boundary for "writes outside the destination root" enforced, and how is the test confirmed?
+- How does the cancellation reach an in-flight read and unblock it?
+- What does the partial-success result entry look like, and how is it distinguished from full failure and from a batch-preflight-blocked entry?
+- What does the rename failure path look like, and how is the temporary file cleaned up?
+- How does the read-only preflight prove that the required destination root already exists as a directory, while never auto-creating it?
+- Why does the project fix its URL definition, safe-filename rules, and root policy, instead of leaving them as design choices?
 
 ## 13. Implementation Milestones
 
@@ -104,24 +202,106 @@ How is the 16 MiB streamed limit enforced so that overflow is observable rather 
 
 ## 14. Verification Cases the Learner Must Write
 
-Success path: each well-formed download produces a file at the destination root whose contents match the response body exactly. Binary and empty bodies are preserved exactly; byte equality holds. A 404 from the test server is reported as HTTP error and the file at the destination root is not created. A 500 from the test server is reported as HTTP error and the file at the destination root is not created. A truncated response is reported as transport error and no destination file is created. A response that exceeds 16 MiB triggers the streamed-limit detection, is reported as size-limit exceeded, and no destination file is created; `Content-Length` may short-circuit only if the streamed limit is still enforced when `Content-Length` is absent or lies. A filename collision with an existing destination — including an existing regular file, directory, or symlink at the final path — is rejected at the batch preflight with no download starting, no goroutine starting, and no request attempted. A traversal filename (a `..` segment, an absolute path, an embedded slash, an embedded backslash, a name that does not remain a single basename after `filepath.Clean`) is rejected at the batch preflight with no download starting. A duplicate filename within the input is rejected at the batch preflight with no download starting. When the batch preflight fails, no goroutine is launched, no network request is attempted, no destination directory is auto-created, and no temporary file appears; otherwise-valid items report batch-preflight-blocked at their input positions, offending items name the specific violation. Maximum concurrency is never exceeded: a synchronization counter records the number of in-flight downloads and the maximum observed equals the configured limit, with no `time.Sleep`. Result order matches input order. Partial success: one item failing HTTP error does not stop the other items when the parent context is not cancelled. Cancellation mid-flight cancels in-flight reads, removes temporary files for affected items, and reports cancelled for those items while leaving any pre-completion successes intact. Temporary files are cleaned up: after a cancelled or failed run, no leftover temporary files remain in the destination root. The destination root is not auto-created when it does not exist; the call is rejected at preflight. Writes never escape the destination root: a test using an escaped target filename rejects at the batch preflight. Running under `-race` produces no race report. The preflight-detected existing-destination case is covered; external filesystem races after the preflight are outside this project's guarantee and are not described as safe overwrites.
+### Required Cases
+
+- Success path: each well-formed download produces a file at the destination root whose contents match the response body exactly.
+- Binary and empty bodies are preserved exactly; byte equality holds.
+- A 404 from the test server is reported as HTTP error and the file at the destination root is not created.
+- A 500 from the test server is reported as HTTP error and the file at the destination root is not created.
+- A truncated response is reported as transport error and no destination file is created.
+- A response that exceeds 16 MiB triggers the streamed-limit detection, is reported as size-limit exceeded, and no destination file is created; `Content-Length` may short-circuit only if the streamed limit is still enforced when `Content-Length` is absent or lies.
+- A filename collision with an existing destination — including an existing regular file, directory, or symlink at the final path — is rejected at the batch preflight with no download starting, no goroutine starting, and no request attempted.
+- A traversal filename (a `..` segment, an absolute path, an embedded slash, an embedded backslash, a name that does not remain a single basename after `filepath.Clean`) is rejected at the batch preflight with no download starting.
+- A duplicate filename within the input is rejected at the batch preflight with no download starting.
+- When the batch preflight fails, no goroutine is launched, no network request is attempted, no destination directory is auto-created, and no temporary file appears; otherwise-valid items report batch-preflight-blocked at their input positions, offending items name the specific violation.
+- Maximum concurrency is never exceeded: a synchronization counter records the number of in-flight downloads and the maximum observed equals the configured limit, with no `time.Sleep`.
+- Result order matches input order.
+- Partial success: one item failing HTTP error does not stop the other items when the parent context is not cancelled.
+- Cancellation mid-flight cancels in-flight reads, removes temporary files for affected items, and reports cancelled for those items while leaving any pre-completion successes intact.
+- Temporary files are cleaned up: after a cancelled or failed run, no leftover temporary files remain in the destination root.
+- The destination root is not auto-created when it does not exist; the call is rejected at preflight.
+- Writes never escape the destination root: a test using an escaped target filename rejects at the batch preflight.
+- Running under `-race` produces no race report.
+- The preflight-detected existing-destination case is covered; external filesystem races after the preflight are outside this project's guarantee and are not described as safe overwrites.
 
 ## 15. Common Mistakes to Watch For
 
-Using `time.Sleep` to prove concurrency; barrier counters or similar synchronization channels are required. Forgetting to close the response body on non-2xx, on size-limit, or on cancellation; bodies must always be closed. Renaming the temporary file before its data has been flushed and closed. Trusting content-type headers; the byte-limit check is the only size bound. Letting one item's failure stop the others, unless the parent context is cancelled. Promising that `os.Rename` is atomic on all filesystems, or promising crash durability; the cross-platform contract is "normal-operation same-filesystem visibility only" — do not promise more, and do not describe external filesystem races after preflight as safe overwrites. Writing into the destination without the preflight, or writing after a preflight rejection has been reported. Allowing an input filename to escape the destination root; filename validation must precede `filepath.Join` and the joined path must be checked against the root. Using a fixed-name temporary file rather than `os.CreateTemp`, which makes uniqueness a manual concern. Trusting `Content-Length` in place of the streamed limit; the streamed limit is the source of truth. Silently truncating an oversized response; the detection boundary allows one byte of observation beyond the limit. Auto-creating the destination root on a rejection path, or when the root is missing. Treating a 3xx as a success the downloader itself produced; the downloader classifies only the final response under the injected client's redirect policy. Allowing an absolute-path filename, a `..` segment, an embedded separator, or any name that does not remain a single basename after `filepath.Clean` to slip through preflight.
+- Using `time.Sleep` to prove concurrency; barrier counters or similar synchronization channels are required.
+- Forgetting to close the response body on non-2xx, on size-limit, or on cancellation; bodies must always be closed.
+- Renaming the temporary file before its data has been flushed and closed.
+- Trusting content-type headers; the byte-limit check is the only size bound.
+- Letting one item's failure stop the others, unless the parent context is cancelled.
+- Promising that `os.Rename` is atomic on all filesystems, or promising crash durability; the cross-platform contract is "normal-operation same-filesystem visibility only" — do not promise more, and do not describe external filesystem races after preflight as safe overwrites.
+- Writing into the destination without the preflight, or writing after a preflight rejection has been reported.
+- Allowing an input filename to escape the destination root; filename validation must precede `filepath.Join` and the joined path must be checked against the root.
+- Using a fixed-name temporary file rather than `os.CreateTemp`, which makes uniqueness a manual concern.
+- Trusting `Content-Length` in place of the streamed limit; the streamed limit is the source of truth.
+- Silently truncating an oversized response; the detection boundary allows one byte of observation beyond the limit.
+- Auto-creating the destination root on a rejection path, or when the root is missing.
+- Treating a 3xx as a success the downloader itself produced; the downloader classifies only the final response under the injected client's redirect policy.
+- Allowing an absolute-path filename, a `..` segment, an embedded separator, or any name that does not remain a single basename after `filepath.Clean` to slip through preflight.
 
 ## 16. Topics and References for Study
 
-The `net/http` package documentation, especially `Client`, `Request`, `Response`, `CheckRedirect`, and `Transport`. The `io` package documentation, especially `LimitReader`, `Copy`, and `CopyBuffer`. The `os` package documentation, especially `CreateTemp`, `Rename`, `Remove`, `Stat`, and the cross-filesystem note on rename. The `path/filepath` package documentation, especially `Clean`, `Join`, `Base`, and the platform-specific separator behaviour. The `testing` and `httptest` package documentation. The `context` package documentation for cancellation propagation. The `sync` package documentation, especially `WaitGroup` and the `sync/atomic` package for the in-flight counter.
+- The `net/http` package documentation, especially `Client`, `Request`, `Response`, `CheckRedirect`, and `Transport`.
+- The `io` package documentation, especially `LimitReader`, `Copy`, and `CopyBuffer`.
+- The `os` package documentation, especially `CreateTemp`, `Rename`, `Remove`, `Stat`, and the cross-filesystem note on rename.
+- The `path/filepath` package documentation, especially `Clean`, `Join`, `Base`, and the platform-specific separator behaviour.
+- The `testing` and `httptest` package documentation.
+- The `context` package documentation for cancellation propagation.
+- The `sync` package documentation, especially `WaitGroup` and the `sync/atomic` package for the in-flight counter.
 
 ## 17. Self-Assessment Questions
 
-Why is the batch preflight read-only, and what does "read-only" guarantee that a mutating preflight would not? Why is the temporary file renamed only on success, and what is the concrete risk of renaming eagerly? What does the 16 MiB streamed limit protect against, at what step is it enforced, and why is silent truncation forbidden? Why is `Content-Length` allowed only as an early-rejection hint and not as a replacement for the streamed limit? Why is the maximum concurrency proved with barrier counters rather than `time.Sleep`? How does cancellation reach an in-flight read, and what is the cleanup sequence? What is the difference between HTTP error status and transport error, and how do the tests pin the distinction? Why does the project pin its URL definition, safe-filename rules, and root policy, instead of leaving them as design choices? Why is rename visibility restricted to normal-operation same-filesystem only, and what is outside the project's guarantee? Why is an external filesystem race after the preflight not described as a safe overwrite?
+1. Why is the batch preflight read-only, and what does "read-only" guarantee that a mutating preflight would not?
+2. Why is the temporary file renamed only on success, and what is the concrete risk of renaming eagerly?
+3. What does the 16 MiB streamed limit protect against, at what step is it enforced, and why is silent truncation forbidden?
+4. Why is `Content-Length` allowed only as an early-rejection hint and not as a replacement for the streamed limit?
+5. Why is the maximum concurrency proved with barrier counters rather than `time.Sleep`?
+6. How does cancellation reach an in-flight read, and what is the cleanup sequence?
+7. What is the difference between HTTP error status and transport error, and how do the tests pin the distinction?
+8. Why does the project pin its URL definition, safe-filename rules, and root policy, instead of leaving them as design choices?
+9. Why is rename visibility restricted to normal-operation same-filesystem only, and what is outside the project's guarantee?
+10. Why is an external filesystem race after the preflight not described as a safe overwrite?
 
 ## 18. Definition of Completion
 
-Every Functional Requirement is implemented and exercised by a passing test. The Behaviour Examples in this README hold. Tests use `httptest.Server` and temporary directories only. Tests run with `-race` and produce no race report. The maximum concurrency is never exceeded, proven with synchronization primitives. The result slice is in input order regardless of completion order. The batch preflight is read-only: when any preflight check fails on any item, no goroutine is launched, no network request is attempted, no destination directory is auto-created, and no temporary file appears. Successful downloads preserve the response bytes exactly. Failure of one item does not prevent other items from running, unless the parent context is cancelled. No temporary file is left on disk after any failure. The downloader never writes outside the destination root. The 16 MiB streamed limit is enforced and `Content-Length` is not trusted in place of it. The destination root is never auto-created. Rename visibility is normal-operation same-filesystem only; universal atomicity, crash durability, and external post-preflight race safety are not promised. You can answer every Self-Assessment Question without consulting the README.
+- [ ] Every Functional Requirement is implemented and exercised by a passing test.
+- [ ] The Behaviour Examples in this README hold.
+- [ ] Tests use `httptest.Server` and temporary directories only.
+- [ ] Tests run with `-race` and produce no race report.
+- [ ] The maximum concurrency is never exceeded, proven with synchronization primitives.
+- [ ] The result slice is in input order regardless of completion order.
+- [ ] The batch preflight is read-only: when any preflight check fails on any item, no goroutine is launched, no network request is attempted, no destination directory is auto-created, and no temporary file appears.
+- [ ] Successful downloads preserve the response bytes exactly.
+- [ ] Failure of one item does not prevent other items from running, unless the parent context is cancelled.
+- [ ] No temporary file is left on disk after any failure.
+- [ ] The downloader never writes outside the destination root.
+- [ ] The 16 MiB streamed limit is enforced and `Content-Length` is not trusted in place of it.
+- [ ] The destination root is never auto-created.
+- [ ] Rename visibility is normal-operation same-filesystem only; universal atomicity, crash durability, and external post-preflight race safety are not promised.
+- [ ] You can answer every Self-Assessment Question without consulting the README.
 
 ## 19. Optional Extensions
 
-Add a manifest output that lists every result alongside a SHA-256 of the successfully downloaded bytes, in input order; the manifest is itself a file inside the destination root and its filename is configurable, and the manifest is only written when its own preflight passes. Add a coarse progress callback that is invoked once per item when the item finishes, with the callback protected by context awareness and exercised by a test.
+- Add a manifest output that lists every result alongside a SHA-256 of the successfully downloaded bytes, in input order; the manifest is itself a file inside the destination root and its filename is configurable, and the manifest is only written when its own preflight passes.
+- Add a coarse progress callback that is invoked once per item when the item finishes, with the callback protected by context awareness and exercised by a test.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 034 — Worker Pool Basic](../../03-concurrency/034_worker_pool_basic/README.md#20-prerequisite-based-documentation-guide), [Project 031 — Concurrent Timer](../../03-concurrency/031_concurrent_timer/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- None. This project applies already introduced APIs, standards, and testing practices in a new combination.
+
+### Project-specific learning focus
+
+- **Learn now:** download size limits, URL and filename validation, bounded concurrency, temporary files, atomic rename, cleanup, ordered results, and cancellation.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

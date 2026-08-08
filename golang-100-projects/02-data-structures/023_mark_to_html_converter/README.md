@@ -2,7 +2,11 @@
 
 ## 1. Project Name and Number
 
-Project **023** — `023_mark_to_html_converter`. The directory name and number must match exactly. This project builds a deterministic converter that turns a deliberately tiny subset of Markdown-flavoured text into HTML. The subset is not CommonMark and is not a roadmap toward CommonMark. It is a small, well-defined language whose rules the README pins, and the converter's behavior is fully pinned by those rules.
+- Project **023** — `023_mark_to_html_converter`.
+- The directory name and number must match exactly.
+- This project builds a deterministic converter that turns a deliberately tiny subset of Markdown-flavoured text into HTML.
+- The subset is not CommonMark and is not a roadmap toward CommonMark.
+- It is a small, well-defined language whose rules the README pins, and the converter's behavior is fully pinned by those rules.
 
 ## 2. Project Idea
 
@@ -19,9 +23,13 @@ The output layout is pinned by this README: every non-empty emitted line ends wi
 
 ## 3. Why This Project Now?
 
-Projects 019 through 022 introduced streaming parsers, deterministic ordering, and validation discipline. Project 023 brings those disciplines together with a state machine: the converter must remember whether it is currently inside a list or a paragraph, must close open structures on the right line, and must close every open structure at end-of-input even when the input is malformed.
+- Projects 019 through 022 introduced streaming parsers, deterministic ordering, and validation discipline.
+- Project 023 brings those disciplines together with a state machine: the converter must remember whether it is currently inside a list or a paragraph, must close open structures on the right line, and must close every open structure at end-of-input even when the input is malformed.
 
-The project also introduces the discipline of escaping user content exactly once and only on user text. A naive converter either double-escapes (turning `&lt;` into `&amp;lt;`) or escapes too aggressively (turning `**` into `&#42;&#42;`). The README pins the processing order and the escape contract so the test can pin both. The project is a study in small languages, not a study in Markdown.
+- The project also introduces the discipline of escaping user content exactly once and only on user text.
+- A naive converter either double-escapes (turning `&lt;` into `&amp;lt;`) or escapes too aggressively (turning `**` into `&#42;&#42;`).
+- The README pins the processing order and the escape contract so the test can pin both.
+- The project is a study in small languages, not a study in Markdown.
 
 ## 4. Prerequisites
 
@@ -40,7 +48,9 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### The supported syntax
+### Concepts
+
+#### The supported syntax
 
 The converter recognizes exactly these constructs:
 
@@ -56,19 +66,19 @@ A marker with no content is not a valid heading or list item. A line such as `# 
 
 Anything else — fenced code blocks, block quotes, ordered lists, links, images, raw HTML, tables, hard line breaks, reference-style links, horizontal rules, character escapes, indented code, four-space code blocks, nested lists, four-or-more-hash headings — is out of scope. The converter does not recognize these constructs. Their syntax characters are part of the line's text content; any HTML-significant characters among them are escaped, and the rest stays literal.
 
-### Processing order
+#### Processing order
 
 The converter processes input line by line. For each line, in this order:
 
-1. Determine the line's block-level role: heading (level 1, 2, or 3), list item, blank, or paragraph text. The role is determined by the line's first characters and the current state.
-2. Close any block-level structure that the new role requires closing (for example, closing a paragraph when a list item begins, or closing a list when a paragraph begins).
-3. Emit the block-level opening tag (`<h1>`, `<h2>`, `<h3>`, `<ul>`, `<li>`, `<p>`) when the role requires it.
-4. Process the line's inline content: detect matched bold spans and emit the line's text, applying HTML escaping to user text exactly once. The converter's own tags (`<strong>`, `</strong>`) are emitted unescaped.
-5. Emit the block-level closing tag (`</h1>`, `</h2>`, `</h3>`, `</li>`, `</ul>`, `</p>`) at the right moment.
+- Determine the line's block-level role: heading (level 1, 2, or 3), list item, blank, or paragraph text. The role is determined by the line's first characters and the current state.
+- Close any block-level structure that the new role requires closing (for example, closing a paragraph when a list item begins, or closing a list when a paragraph begins).
+- Emit the block-level opening tag (`<h1>`, `<h2>`, `<h3>`, `<ul>`, `<li>`, `<p>`) when the role requires it.
+- Process the line's inline content: detect matched bold spans and emit the line's text, applying HTML escaping to user text exactly once. The converter's own tags (`<strong>`, `</strong>`) are emitted unescaped.
+- Emit the block-level closing tag (`</h1>`, `</h2>`, `</h3>`, `</li>`, `</ul>`, `</p>`) at the right moment.
 
 The crucial pinning: HTML escaping applies only to user text, and only once. The converter emits its own tags unescaped. Bold-span detection runs on raw text; the resulting content (whether wrapped in `<strong>` or emitted as literal text) is HTML-escaped exactly once before being written. A user-supplied `<` becomes `&lt;` once; it never becomes `&amp;lt;`. A user-supplied `&` becomes `&amp;` once. Asterisks remain asterisks.
 
-### The block state machine
+#### The block state machine
 
 The state machine has three wrapping states:
 
@@ -82,7 +92,7 @@ A heading is a single-line state, not a wrapping state. After the heading's clos
 
 Two adjacent list items form one list. A blank or non-list line closes the list. A new list item after a closing non-list line opens a new list. Three consecutive list items, then a blank line, then two more list items, produce two `<ul>` elements with two separate opening and closing pairs.
 
-### Bold-span detection rules
+#### Bold-span detection rules
 
 Bold spans are detected per line. The detection rule is:
 
@@ -97,7 +107,7 @@ Bold spans are detected per line. The detection rule is:
 
 The HTML-significant characters around the literal `**` markers — for example an opening `<` or a closing `>` — are escaped once per the standard escape contract. The asterisks themselves remain literal.
 
-### Newline behavior
+#### Newline behavior
 
 The output layout is pinned and applies to every run:
 
@@ -110,7 +120,7 @@ The output layout is pinned and applies to every run:
 
 The output is byte-identical across two runs against the same input.
 
-### The escape contract
+#### The escape contract
 
 The escape contract is pinned to the standard five-character set with the standard replacements. The exact escape strings are part of the test contract:
 
@@ -122,7 +132,7 @@ The escape contract is pinned to the standard five-character set with the standa
 
 The escape is applied to user text only, exactly once. The converter's own tags are emitted unescaped. Asterisks, hashes, dashes, and other Markdown-flavoured characters are not HTML-significant and are not escaped: they remain literal.
 
-### Unsupported Markdown stays as escaped literal text
+#### Unsupported Markdown stays as escaped literal text
 
 A line beginning with a backtick fence, a line beginning with `>`, a line beginning with `1.`, a line containing `[link](url)`, a line containing `![image](url)`, a four-space-indented line, and any other Markdown syntax the converter does not recognize: the syntax characters are part of the line's text content. HTML-significant characters in that text are escaped; asterisks, hashes, and dashes remain literal. A raw `<script>alert(1)</script>` becomes `&lt;script&gt;alert(1)&lt;/script&gt;`. The text never becomes live HTML.
 
@@ -158,17 +168,20 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A stream of UTF-8 text through an `io.Reader`. The text may contain any combination of supported syntax, plain text, raw HTML, Markdown syntax the converter does not support, blank lines, and trailing or missing newlines.
 
-### Outputs
+#### Outputs
 
 - HTML written to an injected `io.Writer`. The HTML contains only the tags listed in section 8. Raw HTML from the input never appears as live HTML in the output. Output is deterministic.
 
-### Example text-only success run
+#### Example text-only success run
 
 Input:
+
 ```
 # Title
 
@@ -181,6 +194,7 @@ Second paragraph.
 ```
 
 Output:
+
 ```
 <h1>Title</h1>
 <p>Hello <strong>world</strong>.</p>
@@ -191,26 +205,30 @@ Output:
 <p>Second paragraph.</p>
 ```
 
-### Example text-only escaped-raw-HTML run
+#### Example text-only escaped-raw-HTML run
 
 Input:
+
 ```
 <script>alert(1)</script>
 ```
 
 Output:
+
 ```
 <p>&lt;script&gt;alert(1)&lt;/script&gt;</p>
 ```
 
-### Example text-only unmatched-bold run
+#### Example text-only unmatched-bold run
 
 Input:
+
 ```
 This **has no closing marker.
 ```
 
 Output:
+
 ```
 <p>This **has no closing marker.</p>
 ```
@@ -276,9 +294,11 @@ Output:
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests drive the converter through an `io.Reader` and assert on the `io.Writer` output.
 
-### Supported constructs
+#### Supported constructs
 
 - A level-1 heading line becomes `<h1>title</h1>` followed by a newline, with the content HTML-escaped.
 - A level-2 heading line becomes `<h2>title</h2>` followed by a newline.
@@ -289,14 +309,14 @@ Each case is described in natural language. Tests drive the converter through an
 - A bold span with HTML-escaped content (`**<x>**`) becomes `<strong>&lt;x&gt;</strong>` — the `**` are recognized as markers, the `<` and `>` are escaped once.
 - Two non-overlapping matched pairs on the same line (for example `**a** and **b**`) is not a bold span under the project's "exactly one non-empty paired delimiter span" rule. The line is paragraph text. The `**` characters remain literal. No `<strong>` is emitted.
 
-### Marker with no content
+#### Marker with no content
 
 - A line containing `# ` (hash, space, end-of-line) is unsupported syntax and becomes a paragraph line containing the literal `# ` and any HTML-significant characters escaped. The leading space is part of the text.
 - A line containing `## ` is treated the same way: literal `## ` text in a paragraph.
 - A line containing `### ` is treated the same way: literal `### ` text in a paragraph.
 - A line containing `- ` is treated the same way: literal `- ` text in a paragraph.
 
-### Adjacent transitions
+#### Adjacent transitions
 
 - A paragraph line followed by a heading line produces a paragraph line, one blank output line, then the heading line. The paragraph's `</p>` and the heading's `<h1>` are emitted in that order.
 - A paragraph line followed by a list item line produces a paragraph line, one blank output line, then the list block (`<ul>`, items, `</ul>`). The paragraph's `</p>` and the list's `<ul>` are emitted in that order.
@@ -304,25 +324,25 @@ Each case is described in natural language. Tests drive the converter through an
 - A heading line followed by a list item line produces the heading line, one blank output line, then the list block.
 - Three consecutive list items form one list. A blank input line between two list items closes the first list; the next list item opens a new list. The output has two `<ul>` blocks with one blank output line between them.
 
-### Blank and empty input
+#### Blank and empty input
 
 - Zero bytes of input produces zero bytes of output.
 - Whitespace-only input produces zero bytes of output.
 - A single blank input line between two paragraphs produces one blank output line between the two `<p>...</p>` lines.
 - Two or more consecutive blank input lines between two paragraphs produce one blank output line between them (the consecutive blank lines collapse).
 
-### Plain text
+#### Plain text
 
 - A line of plain text with no markup becomes one `<p>...</p>` line. The text is HTML-escaped.
 - A multi-line paragraph (lines joined without blank input lines between them) becomes one `<p>...</p>` line whose content joins the source lines with one ASCII space.
 
-### Malicious raw HTML
+#### Malicious raw HTML
 
 - A line containing `<script>alert(1)</script>` becomes a paragraph line with `<` escaped to `&lt;` and `>` escaped to `&gt;`. The output never contains a live `<script>` tag.
 - A line containing the four characters `&lt;` (that is, `&`, `l`, `t`, `;`) becomes a paragraph line with `&` escaped to `&amp;`, producing `&amp;lt;`. The double-escape trap (`&amp;amp;`) does not occur.
 - A line containing an attribute-quoted string like `" onerror="alert(1)` becomes paragraph text with `"` escaped to `&#34;` and `<` (if any) escaped to `&lt;`.
 
-### Ampersands and quotes (pinned exact entities)
+#### Ampersands and quotes (pinned exact entities)
 
 - An ampersand in plain text is escaped to `&amp;`. The double-escaping trap (`&amp;amp;`) does not occur.
 - A `<` in plain text is escaped to `&lt;`.
@@ -330,7 +350,7 @@ Each case is described in natural language. Tests drive the converter through an
 - A double quote in plain text is escaped to `&#34;`.
 - A single quote in plain text is escaped to `&#39;`.
 
-### Unmatched bold
+#### Unmatched bold
 
 - A line with one `**` and no closing `**` is paragraph text. The `**` remains literal. No `<strong>` is emitted.
 - A line with `****` (two adjacent pairs, no content) is paragraph text. The `****` remains literal.
@@ -338,7 +358,7 @@ Each case is described in natural language. Tests drive the converter through an
 - A line `**bold **inside**` (three or more markers, no single non-empty pair that exhausts the markers) is paragraph text. All `**` characters remain literal. The converter does not guess a partial span. No `<strong>` is emitted.
 - A line `**a** and **b**` (two non-overlapping matched pairs) is paragraph text under the "exactly one non-empty paired delimiter span" rule. The `**` characters remain literal. No `<strong>` is emitted.
 
-### Unsupported syntax
+#### Unsupported syntax
 
 - A line beginning with `>` (blockquote syntax) is paragraph text. The `>` remains literal.
 - A line beginning with `1. ` (ordered list syntax) is paragraph text. The `1.` remains literal.
@@ -346,18 +366,18 @@ Each case is described in natural language. Tests drive the converter through an
 - A fenced code block delimited by ```` ``` ```` is paragraph text on every line.
 - A line containing `[link](url)` is paragraph text. The brackets and parentheses remain literal.
 
-### List closed at EOF
+#### List closed at EOF
 
 - A list whose last item is the final input line is closed with `</ul>` on its own line at end-of-input.
 - A paragraph whose last line is the final input line is closed with `</p>` on its own line at end-of-input.
 - A paragraph and a list are never open at the same time at end-of-input.
 
-### Deterministic output
+#### Deterministic output
 
 - Two runs against the same input produce byte-identical output.
 - The newline layout, the placement of tags, and the per-line ordering are all pinned by the test.
 
-### Process
+#### Process
 
 - An integration test runs the compiled binary against a temporary file with a mix of supported and unsupported syntax and confirms the exit code is zero and the output is on standard output.
 - An integration test runs the compiled binary against a temporary file containing raw HTML and confirms the output contains escaped literal text and no live HTML tags.
@@ -405,23 +425,42 @@ Each case is described in natural language. Tests drive the converter through an
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- The state machine has the three wrapping states described in section 6, with the transitions documented and pinned by tests. Paragraphs and lists are never open at the same time.
-- HTML escaping applies to user text only and is applied exactly once. The escape contract is `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&#34;`, `'` → `&#39;`. The converter's own tags are emitted unescaped. Asterisks, hashes, and dashes remain literal.
-- A marker with no content (`# `, `## `, `### `, `- `) is unsupported syntax and becomes a paragraph line containing the literal marker characters.
-- Unmatched and misnested `**` remain literal text; no `<strong>` is emitted for them.
-- Every open block-level structure is closed at end-of-input.
-- Raw HTML in the input never appears as live HTML in the output.
-- The output layout is pinned: every non-empty emitted line ends with one newline; lists emit one line per opening, item, and closing tag; paragraph source lines join with one ASCII space; consecutive blank input lines collapse to one blank output line.
-- Two runs against the same input produce byte-identical output.
-- The package documentation states the supported syntax, the unsupported-syntax rule, the escape contract, the newline behavior, and the inline-processing rules.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] The state machine has the three wrapping states described in section 6, with the transitions documented and pinned by tests. Paragraphs and lists are never open at the same time.
+- [ ] HTML escaping applies to user text only and is applied exactly once. The escape contract is `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&#34;`, `'` → `&#39;`. The converter's own tags are emitted unescaped. Asterisks, hashes, and dashes remain literal.
+- [ ] A marker with no content (`# `, `## `, `### `, `- `) is unsupported syntax and becomes a paragraph line containing the literal marker characters.
+- [ ] Unmatched and misnested `**` remain literal text; no `<strong>` is emitted for them.
+- [ ] Every open block-level structure is closed at end-of-input.
+- [ ] Raw HTML in the input never appears as live HTML in the output.
+- [ ] The output layout is pinned: every non-empty emitted line ends with one newline; lists emit one line per opening, item, and closing tag; paragraph source lines join with one ASCII space; consecutive blank input lines collapse to one blank output line.
+- [ ] Two runs against the same input produce byte-identical output.
+- [ ] The package documentation states the supported syntax, the unsupported-syntax rule, the escape contract, the newline behavior, and the inline-processing rules.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Italic spans.** Add a single-asterisk italic syntax (`*text*`) using the same per-line pairing rule as bold. Italic and bold do not nest; bold markers inside italic text remain literal text. Do not add underscore italic, three-asterisk bold-italic, or any other inline construct.
-- **Ordered list items.** Add a `1. ` list marker that produces `<ol>`, `<li>...</li>` lines, and `</ol>` on separate lines instead of `<ul>` and `</ul>`. The number is fixed at `1.`; the converter does not renumber. Do not add other ordered-list markers, nesting, or a start-attribute.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 022 — Contact Book](../../02-data-structures/022_contact_book/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`html`](https://pkg.go.dev/html).
+- **Standards and concept references:** [CommonMark specification](https://spec.commonmark.org/).
+
+### Project-specific learning focus
+
+- **Learn now:** state-machine parsing, context-aware HTML escaping, unmatched delimiters, list transitions, and golden-output tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

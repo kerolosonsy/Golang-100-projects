@@ -2,7 +2,8 @@
 
 ## 1. Project Name and Number
 
-Project **015** — `015_cli_counter`. The directory name and number must match exactly.
+- Project **015** — `015_cli_counter`.
+- The directory name and number must match exactly.
 
 ## 2. Project Idea
 
@@ -12,9 +13,13 @@ The counter's tick source is injected from the outside. The production program u
 
 ## 3. Why This Project Now?
 
-Projects 011 through 014 introduced injected I/O, integer-cents arithmetic, deterministic time conversion, and per-field validation. None of them used the concurrency primitives that the rest of the path will rely on. Project 015 introduces the smallest useful piece of time-driven behavior: a loop that ticks at a chosen interval, can be cancelled through `context`, and releases its tick source cleanly when it stops.
+- Projects 011 through 014 introduced injected I/O, integer-cents arithmetic, deterministic time conversion, and per-field validation.
+- None of them used the concurrency primitives that the rest of the path will rely on.
+- Project 015 introduces the smallest useful piece of time-driven behavior: a loop that ticks at a chosen interval, can be cancelled through `context`, and releases its tick source cleanly when it stops.
 
-This is the first project in which the **lifecycle of a resource** matters. The contract is: every tick source the program creates is stopped exactly once on the path that creates it, and the test can observe both the events and the cleanup. The counter never reads a wall clock directly; everything time-related flows through the injected tick source.
+- This is the first project in which the **lifecycle of a resource** matters.
+- The contract is: every tick source the program creates is stopped exactly once on the path that creates it, and the test can observe both the events and the cleanup.
+- The counter never reads a wall clock directly; everything time-related flows through the injected tick source.
 
 ## 4. Prerequisites
 
@@ -35,7 +40,9 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Why an injected tick source
+### Concepts
+
+#### Why an injected tick source
 
 A `time.Ticker` is bound to real time. To test a counter without real sleeps, the program must be able to receive tick events on demand. The clean way to express that seam is to inject a small abstraction that has two responsibilities: deliver tick events and stop itself. Production wires it to a real `time.Ticker`; tests wire a fake that the test controls. The README does not prescribe a Go interface or a function signature — it only describes the contract:
 
@@ -43,15 +50,15 @@ A `time.Ticker` is bound to real time. To test a counter without real sleeps, th
 - The tick source has a `Stop` method that the counter calls on the path that created the source.
 - The fake used in tests lets the test push a tick when it wants one and lets the test observe whether `Stop` was called.
 
-### Why "round once at the boundary" applies here too
+#### Why "round once at the boundary" applies here too
 
 A counter that reads the wall clock directly is hard to test. The injected tick source means the only place the program touches real time is the production wiring, and the only thing tests need to control is the sequence of tick events. The counter itself does not call `time.Now` and does not own a wall-clock value.
 
-### Cancellation through `context`
+#### Cancellation through `context`
 
 A `context.Context` carries a `Done` channel that closes when the context is cancelled. A subsequent `select` on that channel fires immediately. The counter's loop listens on both the tick channel and the `Done` channel; whichever fires first wins. When cancellation wins, the loop exits and the cleanup runs.
 
-### Lifecycle of the tick source
+#### Lifecycle of the tick source
 
 The contract for the tick source's lifecycle is precise:
 
@@ -60,11 +67,11 @@ The contract for the tick source's lifecycle is precise:
 
 A test can pin the contract by counting `Stop` calls and asserting the count is `0` on the no-source paths and `1` on the source-owning paths.
 
-### Initial output before any tick
+#### Initial output before any tick
 
 The starting value is emitted immediately, before the loop waits for the first tick. Every later value follows a tick. This makes "counting up from `0` to `3`" produce exactly four printed lines (`0, 1, 2, 3`) with three ticks between them, not three printed lines (`0, 1, 2`) followed by a tick that produces the final value.
 
-### Verification without real sleeps
+#### Verification without real sleeps
 
 A test that calls `time.Sleep` to wait for the counter is a flaky test: it depends on scheduling and may time out on a slow machine. The contract for this project is: every verification case uses the injected tick source to produce a deterministic sequence of events. No test calls `time.Sleep` to advance the counter; no test waits for the counter to "finish on its own"; the test *causes* the events and then asserts the outcomes.
 
@@ -95,7 +102,9 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - Direction: up or down.
 - Starting value: an integer.
@@ -104,14 +113,14 @@ After completing this project the learner can:
 - Context: a `context.Context`.
 - Writer: an `io.Writer`.
 
-### Outputs
+#### Outputs
 
 - One line containing the starting value, emitted immediately.
 - One line per tick, containing the next value.
 - A final line stating why the counter stopped: target reached, cancelled, or already at target.
 - All output goes through the injected `io.Writer` so a test can capture it.
 
-### Example text-only success run (counting up, 0 to 3, interval 1s)
+#### Example text-only success run (counting up, 0 to 3, interval 1s)
 
 ```
 Step: 0
@@ -121,7 +130,7 @@ Step: 3
 Reached target 3.
 ```
 
-### Example cancellation run
+#### Example cancellation run
 
 ```
 Step: 0
@@ -129,7 +138,7 @@ Step: 1
 Cancelled at value 1.
 ```
 
-### Example zero-count run
+#### Example zero-count run
 
 ```
 Step: 5
@@ -186,16 +195,18 @@ Already at target 5.
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. The fake tick source, the context, and the writer are all controlled by the test; no case calls `time.Sleep` and no case waits for a real ticker to tick.
 
-### Output and counting
+#### Output and counting
 
 - Counting up from `0` to `3` with three ticks delivered by the fake source produces the values `0, 1, 2, 3` and a "reached target" line, in that order. The starting value `0` is emitted before any tick.
 - Counting down from `3` to `0` with three ticks produces the values `3, 2, 1, 0` and a "reached target" line. The starting value `3` is emitted before any tick.
 - Cancelling the context after the starting value and one tick produces `0, 1` and the cancellation line.
 - Cancelling the context before any tick is delivered still produces the starting value, then the cancellation line.
 
-### Lifecycle
+#### Lifecycle
 
 - On the target-reached path, the fake tick source's `Stop` was called exactly once.
 - On the cancellation path, the fake tick source's `Stop` was called exactly once.
@@ -205,7 +216,7 @@ Each case is described in natural language. The fake tick source, the context, a
 - On the invalid-direction path, no tick source was created and `Stop` was called zero times.
 - On the non-positive-interval path, no tick source was created and `Stop` was called zero times.
 
-### Independence from real time
+#### Independence from real time
 
 - Across all the above cases, the test file contains zero calls to `time.Sleep` (the learner can search the file to confirm).
 - Across all the above cases, no production ticker is ever constructed; the fake source is the only source the counter sees.
@@ -245,17 +256,36 @@ Each case is described in natural language. The fake tick source, the context, a
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and no test calls `time.Sleep` to advance the counter.
-- The package documentation states both halves of the lifecycle rule: every source-owning path calls `Stop` exactly once, every no-source path calls `Stop` zero times.
-- The counter's loop is reachable from a test that controls the tick source, the context, and the writer.
-- The test file contains zero calls to `time.Sleep` (the learner can search the file to confirm).
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and no test calls `time.Sleep` to advance the counter.
+- [ ] The package documentation states both halves of the lifecycle rule: every source-owning path calls `Stop` exactly once, every no-source path calls `Stop` zero times.
+- [ ] The counter's loop is reachable from a test that controls the tick source, the context, and the writer.
+- [ ] The test file contains zero calls to `time.Sleep` (the learner can search the file to confirm).
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Step callback.** Add an optional hook that is called with each value before it is printed; the hook can transform the value or record it for the test. Keep the hook simple — one function value, no interface ceremony.
-- **Step limit.** Accept an optional maximum number of ticks; if the counter would exceed that limit before reaching the target, it stops with a "step limit reached" line and stops the tick source exactly once. Do not add scheduling, alarms, or real-time guarantees.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 014 — Input Validator](../../01-foundations/014_input_validator/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`context`](https://pkg.go.dev/context).
+- **Standards and concept references:** [Go blog: context](https://go.dev/blog/context).
+
+### Project-specific learning focus
+
+- **Learn now:** ticker ownership, cancellation propagation, stopping resources exactly once, fake clocks, and deterministic lifecycle tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

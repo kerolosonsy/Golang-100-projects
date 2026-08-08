@@ -2,7 +2,9 @@
 
 ## 1. Project Name and Number
 
-Project **016** — `016_todo_cli`. The directory name and number must match exactly. This is the first project in the "data, files, and algorithms" level of the plan.
+- Project **016** — `016_todo_cli`.
+- The directory name and number must match exactly.
+- This is the first project in the "data, files, and algorithms" level of the plan.
 
 ## 2. Project Idea
 
@@ -16,9 +18,12 @@ The project deliberately separates three concerns: the domain operations on the 
 
 ## 3. Why This Project Now?
 
-Projects 001 through 015 walked through the language surface and through simple structured I/O. None of them built a small in-memory domain that another program could call. Project 016 is the first project whose operations must be exercisable from a test independently of the loop, because the same domain layer is reused by project 017 (JSON persistence) with a different I/O shell.
+- Projects 001 through 015 walked through the language surface and through simple structured I/O.
+- None of them built a small in-memory domain that another program could call.
+- Project 016 is the first project whose operations must be exercisable from a test independently of the loop, because the same domain layer is reused by project 017 (JSON persistence) with a different I/O shell.
 
-The project also introduces the discipline of stable IDs: the plan's verification rules require that an ID, once issued, is never reused after deletion, and that listing order is deterministic. The learner practices those decisions now, while the project is small, so that the same discipline scales naturally when the same model becomes a persisted document in 017.
+- The project also introduces the discipline of stable IDs: the plan's verification rules require that an ID, once issued, is never reused after deletion, and that listing order is deterministic.
+- The learner practices those decisions now, while the project is small, so that the same discipline scales naturally when the same model becomes a persisted document in 017.
 
 ## 4. Prerequisites
 
@@ -40,39 +45,60 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### A loop driven by an injected reader
+### Concepts
 
-The program runs a read-print loop. Production wires `os.Stdin` to a buffered scanner; tests wire a `strings.Reader` or `bytes.Buffer` that holds a fixed command sequence. The same loop body runs in both cases. The loop reads one line, dispatches it to the domain, prints the result, and reads the next line. The loop terminates cleanly when the scanner returns EOF; it also terminates when the user types `quit`.
+#### A loop driven by an injected reader
 
-This seam is the same one project 015 introduced for the tick source: the production wiring is real, the test wiring is a fake. Here the seam is for input rather than for ticks, but the pattern is the same.
+- The program runs a read-print loop.
+- Production wires `os.Stdin` to a buffered scanner; tests wire a `strings.Reader` or `bytes.Buffer` that holds a fixed command sequence.
+- The same loop body runs in both cases.
+- The loop reads one line, dispatches it to the domain, prints the result, and reads the next line.
+- The loop terminates cleanly when the scanner returns EOF; it also terminates when the user types `quit`.
 
-### EOF ends cleanly
+- This seam is the same one project 015 introduced for the tick source: the production wiring is real, the test wiring is a fake.
+- Here the seam is for input rather than for ticks, but the pattern is the same.
 
-EOF is the normal end of the loop. The scanner returns `false` because the underlying reader is at EOF, the loop exits, and the program returns from `main` with exit code zero. No special "exit" command is required; closing the input is enough.
+#### EOF ends cleanly
 
-### `quit` is not a mutation
+- EOF is the normal end of the loop.
+- The scanner returns `false` because the underlying reader is at EOF, the loop exits, and the program returns from `main` with exit code zero.
+- No special "exit" command is required; closing the input is enough.
 
-The line `quit` ends the loop but is not a domain command. It does not add a task, does not delete a task, and does not change the collection. The test pins this: after `quit`, the collection still contains exactly the tasks it contained before the `quit` line was read.
+#### `quit` is not a mutation
 
-### Unknown or malformed commands continue the session
+- The line `quit` ends the loop but is not a domain command.
+- It does not add a task, does not delete a task, and does not change the collection.
+- The test pins this: after `quit`, the collection still contains exactly the tasks it contained before the `quit` line was read.
 
-A line that begins with anything other than the four known subcommands, or a line that fails to parse (for example, `complete` with no ID, or `add` with no title), produces an error line on standard error and the loop continues with the next line. The session does not exit on the first error. This invariant lets a test prove that earlier commands succeeded and that the failed command did not mutate state.
+#### Unknown or malformed commands continue the session
 
-### A domain separated from the loop
+- A line that begins with anything other than the four known subcommands, or a line that fails to parse (for example, `complete` with no ID, or `add` with no title), produces an error line on standard error and the loop continues with the next line.
+- The session does not exit on the first error.
+- This invariant lets a test prove that earlier commands succeeded and that the failed command did not mutate state.
 
-The domain operations on the collection are plain Go. They take the current collection and arguments, return the updated collection plus a result plus an error, and never touch the reader, the writer, or the loop. A table-driven test calls the domain directly, asserts on the returned collection, and does not have to set up a scanner or capture standard output.
+#### A domain separated from the loop
 
-This separation matters for one concrete reason: the tests in section 14 must be able to pin the invariant "errors never mutate state" by calling the domain in isolation. A test that runs through the loop has to capture standard output and parse it; a test that calls the domain directly inspects the returned collection and moves on.
+- The domain operations on the collection are plain Go.
+- They take the current collection and arguments, return the updated collection plus a result plus an error, and never touch the reader, the writer, or the loop.
+- A table-driven test calls the domain directly, asserts on the returned collection, and does not have to set up a scanner or capture standard output.
 
-### Stable IDs and stable order
+- This separation matters for one concrete reason: the tests in section 14 must be able to pin the invariant "errors never mutate state" by calling the domain in isolation.
+- A test that runs through the loop has to capture standard output and parse it; a test that calls the domain directly inspects the returned collection and moves on.
 
-The collection assigns IDs in a deterministic way: monotonically increasing positive integers, never reused after deletion. A counter remembers the next ID to issue; every `add` increments it; every `delete` removes a task but does not return its ID to a pool. The benefits are that an old ID still maps to "does not exist" after deletion, that listing order by ID is identical to creation order, and that a future JSON round trip in project 017 keeps the same IDs across runs.
+#### Stable IDs and stable order
 
-Listing order is the order of insertion, which is identical to ascending ID order under this policy. If the learner ever decides to expose a "sort by title" command, that sort is a separate view and does not change the canonical order.
+- The collection assigns IDs in a deterministic way: monotonically increasing positive integers, never reused after deletion.
+- A counter remembers the next ID to issue; every `add` increments it; every `delete` removes a task but does not return its ID to a pool.
+- The benefits are that an old ID still maps to "does not exist" after deletion, that listing order by ID is identical to creation order, and that a future JSON round trip in project 017 keeps the same IDs across runs.
 
-### Errors that do not mutate state
+- Listing order is the order of insertion, which is identical to ascending ID order under this policy.
+- If the learner ever decides to expose a "sort by title" command, that sort is a separate view and does not change the canonical order.
 
-Every domain operation that fails — empty title, missing ID, unknown ID, malformed command — returns an error without changing the collection. This invariant lets a test write one negative case and one positive case without resetting state in between. A test that runs `add a`, then `complete 999` (which fails), then `add b` confirms that the collection contains exactly `a` and `b` and that the failed `complete 999` did not consume the next ID.
+#### Errors that do not mutate state
+
+- Every domain operation that fails — empty title, missing ID, unknown ID, malformed command — returns an error without changing the collection.
+- This invariant lets a test write one negative case and one positive case without resetting state in between.
+- A test that runs `add a`, then `complete 999` (which fails), then `add b` confirms that the collection contains exactly `a` and `b` and that the failed `complete 999` did not consume the next ID.
 
 ## 7. Learning Objective
 
@@ -104,11 +130,13 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - A stream of command lines from an injected reader. Each line is one command. Empty lines are treated as malformed input.
 
-### Outputs
+#### Outputs
 
 - For `add`: a single line confirming the new task, including its ID.
 - For `list`: one line per task, in creation order, with a clear marker for complete vs incomplete, plus an optional header.
@@ -117,7 +145,7 @@ After completing this project the learner can:
 - For `quit` or EOF: no output.
 - For any error: a single line on standard error describing the failure.
 
-### Example text-only success session (one process, many lines)
+#### Example text-only success session (one process, many lines)
 
 ```
 add buy milk
@@ -138,7 +166,7 @@ Completed task 1.
 [x] 1: buy milk
 ```
 
-### Example text-only error session (one process, many lines)
+#### Example text-only error session (one process, many lines)
 
 ```
 add
@@ -221,9 +249,11 @@ The session continues after every error. The `complete 2` line still succeeds be
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. The domain tests call the domain functions directly. The loop tests drive the loop end-to-end through an injected reader and capture output through an injected writer. No test depends on real user input, real home directories, or wall-clock time. No test assumes state survives across process invocations.
 
-### Domain — happy paths
+#### Domain — happy paths
 
 - Adding a task with a non-empty title returns a collection of length one containing that task, with the chosen ID policy assigning ID `1` to the first task.
 - Listing a freshly added collection returns one task in the same order it was added.
@@ -233,7 +263,7 @@ Each case is described in natural language. The domain tests call the domain fun
 - After a deletion, adding a new task yields an ID strictly greater than every ID ever issued, so the deleted ID is not reused.
 - A repeated completion of an already-complete task is a successful no-op: the collection is unchanged but no error is reported.
 
-### Domain — error paths
+#### Domain — error paths
 
 - Adding a task with an empty title returns an error and leaves the collection unchanged.
 - Adding a task with a whitespace-only title (per the rule the learner pinned) returns an error and leaves the collection unchanged.
@@ -242,13 +272,13 @@ Each case is described in natural language. The domain tests call the domain fun
 - Completing with a non-numeric or negative or zero ID returns an error and leaves the collection unchanged.
 - Deleting with a non-numeric or negative or zero ID returns an error and leaves the collection unchanged.
 
-### Loop — happy paths
+#### Loop — happy paths
 
 - A loop test feeds the sequence `add buy milk`, `add write report`, `complete 1`, `list`, `quit` through the injected reader. Standard output contains the two confirmations, the completion confirmation, and the two-task listing, in that order. The session ends after `quit`. Standard error is empty.
 - A loop test feeds `add hello world` (title with a space) and then `list`. The output contains one task whose title is `hello world`.
 - A loop test feeds `list` with an empty collection. The output contains the documented empty-listing line. Standard error is empty.
 
-### Loop — error paths and session continuity
+#### Loop — error paths and session continuity
 
 - A loop test feeds `add` (no title) followed by `list`. Standard error contains a clear message for the empty title. Standard output contains the empty-listing line because the failed `add` did not mutate the collection.
 - A loop test feeds `complete 999` against an empty collection followed by `add buy milk` and `list`. Standard error contains a clear message for the unknown ID. Standard output shows exactly one task. The failed `complete 999` did not consume the next ID.
@@ -257,7 +287,7 @@ Each case is described in natural language. The domain tests call the domain fun
 - A loop test feeds `complete -1` and `complete 0`. Both return a clear error. The collection is unchanged.
 - A loop test feeds a line that is just whitespace. Standard error contains a clear malformed-line message. The collection is unchanged.
 
-### Loop — termination
+#### Loop — termination
 
 - A loop test feeds the single line `quit`. Standard output is empty. Standard error is empty. The loop ends.
 - A loop test feeds no lines (EOF immediately). Standard output is empty. Standard error is empty. The loop ends with exit code zero.
@@ -266,16 +296,16 @@ Each case is described in natural language. The domain tests call the domain fun
 - A custom reader that returns an error after a valid command causes the command's result to be emitted, then ends the session with a process-level read error rather than treating the failure as EOF.
 - A writer that fails while receiving output ends the session with a process-level write error; the failure is not silently ignored.
 
-### Loop — error does not end the session
+#### Loop — error does not end the session
 
 - A loop test feeds a sequence that interleaves successful commands, failed commands, and `quit`. The collection at the end of the loop contains exactly the tasks that the successful commands added, and the failed commands have no effect on the collection. The test pins this by capturing the final `list` output.
 
-### Stability
+#### Stability
 
 - A test runs `add a`, `add b`, `delete 1`, `add c`, `list` through the domain. The final collection contains exactly two tasks: the original `b` (ID `2`) and the new `c` (ID strictly greater than `2`, in that order). ID `1` does not appear.
 - A test runs the operations in random order across many cases and confirms that the collection's tasks are always strictly increasing by ID, with no gaps filled.
 
-### Cross-invocation independence
+#### Cross-invocation independence
 
 - A loop test feeds `add buy milk` and `quit`. A second loop test, in a separate process-equivalent invocation (a fresh domain and a fresh reader), starts with an empty collection. The first session's tasks are not visible in the second.
 
@@ -318,18 +348,36 @@ Each case is described in natural language. The domain tests call the domain fun
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test, and the tests do not depend on real user input, real home directories, or cross-process state.
-- The domain operations are callable from tests without touching any input reader, any output writer, or the loop.
-- ID stability holds: across a representative randomized run, no ID is ever reused, and the listing order is always ascending ID order.
-- Error paths return errors and leave the collection unchanged; a test confirms this for every error case in section 14.
-- The loop continues after every error; a test confirms this for at least the empty-title, unknown-ID, and unknown-subcommand error cases.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test, and the tests do not depend on real user input, real home directories, or cross-process state.
+- [ ] The domain operations are callable from tests without touching any input reader, any output writer, or the loop.
+- [ ] ID stability holds: across a representative randomized run, no ID is ever reused, and the listing order is always ascending ID order.
+- [ ] Error paths return errors and leave the collection unchanged; a test confirms this for every error case in section 14.
+- [ ] The loop continues after every error; a test confirms this for at least the empty-title, unknown-ID, and unknown-subcommand error cases.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Filter flag on `list`.** Accept an optional flag on the `list` line that lists only incomplete tasks or only complete tasks. The flag must not change the canonical order, only the slice that is printed.
-- **Update title.** Add an `update <id> <new title...>` command that changes a task's title without changing its ID or its completion state. Empty titles are rejected with the same error path as `add`. Do not add renaming, archival, or priority fields.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 015 — CLI Counter](../../01-foundations/015_cli_counter/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [A Tour of Go: structs, methods and interfaces](https://go.dev/tour/methods/1).
+
+### Project-specific learning focus
+
+- **Learn now:** domain modeling, command parsing, stable identifiers, state transitions, and testing an interactive loop with injected streams.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

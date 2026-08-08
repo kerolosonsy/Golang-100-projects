@@ -2,7 +2,12 @@
 
 ## 1. Project Name and Number
 
-Project **028** — `028_binary_search_tree`. The directory name and number must match exactly. The project implements a generic binary search tree whose ordering is driven by an explicit comparator supplied by the caller. The tree supports insert, search, and in-order traversal. Duplicates are ignored: an attempt to insert a value the comparator considers equal to an existing value does not add a new node, the operation reports that no new node was added, and the size does not change. Balancing is out of scope.
+- Project **028** — `028_binary_search_tree`.
+- The directory name and number must match exactly.
+- The project implements a generic binary search tree whose ordering is driven by an explicit comparator supplied by the caller.
+- The tree supports insert, search, and in-order traversal.
+- Duplicates are ignored: an attempt to insert a value the comparator considers equal to an existing value does not add a new node, the operation reports that no new node was added, and the size does not change.
+- Balancing is out of scope.
 
 ## 2. Project Idea
 
@@ -18,11 +23,17 @@ The project is honest about its scope: the tree is not balanced. A degenerate in
 
 ## 3. Why This Project Now?
 
-Projects 001–027 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, shape-validated matrices, and generic zero-value containers. None of them implemented a recursive data structure with an externally supplied ordering rule. Project 028 is the first project that combines recursion, generics, and a comparator-driven invariant.
+- Projects 001–027 established variables, functions, loops, structs, errors, slices, files, JSON, CSV, scanning, sorting, walking, hashing, shape-validated matrices, and generic zero-value containers.
+- None of them implemented a recursive data structure with an externally supplied ordering rule.
+- Project 028 is the first project that combines recursion, generics, and a comparator-driven invariant.
 
-The comparator pattern is reused elsewhere in the path (for example in project 069's text search ranking). The duplicate-ignore rule and the in-order-traversal contract are the simplest expression of "the comparator defines the order, the tree follows it". Project 028 is the project's first encounter with a data structure whose correctness depends on a property (the comparator invariants) supplied by the caller, not by the type system.
+- The comparator pattern is reused elsewhere in the path (for example in project 069's text search ranking).
+- The duplicate-ignore rule and the in-order-traversal contract are the simplest expression of "the comparator defines the order, the tree follows it".
+- Project 028 is the project's first encounter with a data structure whose correctness depends on a property (the comparator invariants) supplied by the caller, not by the type system.
 
-Project 028 also forces the learner to be honest about an unbalanced BST. A degenerate insertion order is a worst case the project acknowledges, not a hidden surprise. Balancing is a separate concern.
+- Project 028 also forces the learner to be honest about an unbalanced BST.
+- A degenerate insertion order is a worst case the project acknowledges, not a hidden surprise.
+- Balancing is a separate concern.
 
 ## 4. Prerequisites
 
@@ -42,35 +53,37 @@ Per the dependency map in `plan.md`, projects 002 through 030 require only the i
 
 ## 6. Explanation of New Concepts
 
-### Comparator-driven order
+### Concepts
+
+#### Comparator-driven order
 
 The BST's correctness depends on the comparator's invariants, not on the element type's built-in operators. Two values are "equal in the tree's order" when the comparator returns zero. Two values are "less" or "greater" when the comparator returns a negative or positive value. The tree stores and retrieves values according to the comparator's verdicts. If the comparator is inconsistent (for example, it returns zero for some pair on one call and a negative value on another call), the tree's behavior is undefined. The project pins this responsibility on the caller.
 
-### Insertion with a recursive walk
+#### Insertion with a recursive walk
 
 Insertion starts at the root. If the tree is empty, the new value becomes the root and the size becomes one. If the tree is not empty, insertion compares the new value to the current node's value. A "less" verdict recurses into the left subtree. A "greater" verdict recurses into the right subtree. A "equal" verdict reports that no new node was added and returns without changing the tree or the size. When the recursion reaches a `nil` child slot, a new node is created there and the size is incremented.
 
-### Duplicate-by-comparator policy
+#### Duplicate-by-comparator policy
 
 A duplicate-by-comparator value is a value the comparator considers equal to an existing node's value. The tree ignores duplicates: it does not add a second node, does not change the size, and does not change any existing node. The insertion operation reports the outcome through a clearly-named boolean or a sentinel error. The caller can distinguish "I added a new value" from "I tried to add a duplicate and the tree did not change".
 
-### Search
+#### Search
 
 Search starts at the root. If the tree is empty, search reports a miss. If the tree is not empty, search compares the target value to the current node's value. A "equal" verdict reports a hit. A "less" verdict recurses into the left subtree. A "greater" verdict recurses into the right subtree. Reaching a `nil` child slot without a match reports a miss.
 
-### In-order traversal
+#### In-order traversal
 
 In-order traversal visits the left subtree, then the current node, then the right subtree. The result is a sequence of values in comparator order. The traversal is independent of the tree: the returned sequence does not mutate the tree and is a fresh slice. In-order traversal on an empty tree returns an empty slice and no error.
 
-### Independent result, no mutation
+#### Independent result, no mutation
 
 The in-order traversal returns a fresh slice. A test that mutates the returned slice and re-runs the traversal observes the original values in order. A test that runs the traversal twice in a row observes the same values in the same order.
 
-### Size
+#### Size
 
 Size is the number of nodes in the tree. The size starts at zero (empty tree). Each successful insertion (not a duplicate) increments size by one. Duplicates do not change size. The size accessor returns the current value. The size accessor is consistent with the actual node count.
 
-### Comparator invariants
+#### Comparator invariants
 
 The comparator defines a total order over the element type. The invariants are:
 
@@ -81,19 +94,19 @@ The comparator defines a total order over the element type. The invariants are:
 
 A comparator that violates any invariant produces an undefined tree. The project does not validate the comparator at runtime; the caller is responsible.
 
-### Multiple element types
+#### Multiple element types
 
 The tree is generic through type parameters. Tests cover at least three distinct element types — for example `int`, `string`, and a small struct with a comparator that compares one of the struct's fields. The same implementation works for all three types without per-type code.
 
-### Ascending and descending comparators
+#### Ascending and descending comparators
 
 The comparator can define ascending or descending order. The same tree, given an ascending comparator for `int`, stores and retrieves values in ascending order. The same tree, given a descending comparator for `int`, stores and retrieves values in descending order. The in-order traversal reflects whichever order the comparator defines.
 
-### Empty tree safety
+#### Empty tree safety
 
 Search and traversal on an empty tree are safe and well-defined. Search returns a miss. In-order traversal returns an empty slice. Size returns zero.
 
-### Degenerate insertion and balancing is out of scope
+#### Degenerate insertion and balancing is out of scope
 
 Inserting values in sorted (or reverse-sorted) order produces a degenerate shape: every node has at most one non-nil child, and the tree is effectively a linked list. The project is honest about this: the tree is not balanced, and a degenerate insertion is a worst case. Balancing (rotation, randomized insertion, red-black invariants) is out of scope.
 
@@ -130,7 +143,9 @@ After completing this project the learner can:
 
 ## 9. Inputs and Outputs
 
-### Inputs
+### Interface Contract
+
+#### Inputs
 
 - For insertion: a value of the tree's element type.
 - For search: a target value of the tree's element type.
@@ -138,14 +153,14 @@ After completing this project the learner can:
 - For size: no value.
 - The comparator is supplied at construction (or with a zero-value tree, set explicitly before the first non-empty use).
 
-### Outputs
+#### Outputs
 
 - For insertion: a clearly-named boolean or a sentinel error indicating whether a new node was added. On a duplicate, the boolean is "not added" (or the sentinel error is returned) and size is unchanged. On a new value, the boolean is "added" (or no error) and size grows by one.
 - For search: a hit or miss outcome through a clearly-named boolean, an `errors.Is`-matchable error, or a comparable result.
 - For in-order traversal: a fresh slice of values in comparator order. Empty tree returns an empty slice.
 - For size: the current node count as an integer.
 
-### Example text-only traces
+#### Example text-only traces
 
 Tree with ascending `int` comparator (returns negative if `a < b`):
 
@@ -228,9 +243,11 @@ in-order  → [7, 5, 3]
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 Each case is described in natural language. Tests use only in-memory elements and direct API calls; no terminal, no real user directories.
 
-### Insert and search
+#### Insert and search
 
 - Insert a value into an empty tree. Size becomes one. The tree's root is that value.
 - Insert a second value that is "less" by the comparator. Size becomes two. The new value is the root's left child.
@@ -240,21 +257,21 @@ Each case is described in natural language. Tests use only in-memory elements an
 - Search for a value in a tree with many nodes returns a hit when the value is present and a miss when it is not.
 - Search on an empty tree returns a miss.
 
-### Duplicate behavior
+#### Duplicate behavior
 
 - Insert a value, then insert the same value again. The second insertion reports "not added". Size does not change.
 - Insert a value, then insert a comparator-equal value (for example a different `string` that the comparator considers equal to the first). The second insertion reports "not added". Size does not change.
 - After several duplicates, the tree's structure and size are unchanged from the state before the duplicates.
 - Insert duplicates in different positions (left subtree, right subtree, root). The duplicate-ignore rule applies at each position.
 
-### Empty tree
+#### Empty tree
 
 - An empty tree has size zero.
 - Search on an empty tree returns a miss. No panic.
 - In-order traversal on an empty tree returns an empty slice. No panic.
 - Insertion on an empty tree creates a root and sets size to one.
 
-### Missing comparator (pinned policy)
+#### Missing comparator (pinned policy)
 
 - An empty tree without a configured comparator supports safe search (returns a miss) and in-order traversal (returns an empty slice). No panic.
 - Insertion on a tree without a non-`nil` comparator returns a contextual error. The tree is not mutated. Size remains zero. No panic.
@@ -262,56 +279,56 @@ Each case is described in natural language. Tests use only in-memory elements an
 - Once the tree holds any value, an attempt to replace the comparator returns a contextual error. The tree is not mutated. Size and existing nodes are unchanged. No panic.
 - A test pins each of these outcomes directly. The tests do not exercise "comparator is optional", "comparator can be swapped after first insertion", or "panic on missing comparator". Those are not valid policies.
 
-### Ascending and descending comparators
+#### Ascending and descending comparators
 
 - With an ascending `int` comparator, inserting `5, 3, 7, 3, 8` produces an in-order traversal of `[3, 5, 7, 8]`.
 - With a descending `int` comparator (returns positive when `a < b`), inserting the same values produces an in-order traversal of `[8, 7, 5, 3]`.
 - With an ascending `string` comparator, inserting values in mixed order produces an in-order traversal in lexicographic ascending order.
 - The same tree, given different comparators at construction, reflects the comparator's order in its in-order traversal.
 
-### In-order order
+#### In-order order
 
 - In-order traversal of a tree with a non-trivial shape (for example, a root with two subtrees, each with several nodes) returns values in comparator order.
 - In-order traversal of a degenerate tree (sorted insertion) returns values in comparator order despite the shape.
 - In-order traversal of a degenerate tree (reverse-sorted insertion) returns values in comparator order despite the shape.
 
-### Size
+#### Size
 
 - After each successful insertion, size grows by exactly one.
 - After a duplicate-ignored insertion, size is unchanged.
 - Size matches the actual node count of the tree (a test can verify by counting nodes through a recursive walk or by relying on the in-order traversal's length as a proxy, depending on the package's surface).
 - Size starts at zero for a freshly declared tree.
 
-### Negative and mixed values
+#### Negative and mixed values
 
 - Inserting negative, zero, and positive `int` values produces an in-order traversal that includes all of them in the correct order.
 - Inserting mixed-case strings produces an in-order traversal in the comparator's order.
 - The duplicate-ignore rule applies to negative, zero, and positive values equally.
 
-### Multiple element types
+#### Multiple element types
 
 - The same generic implementation works for `int`, `string`, and a struct with a comparator that compares a chosen field.
 - For each type, insert and search behave identically.
 - For struct element types, the comparator compares the chosen field and the in-order traversal reflects that field's order.
 
-### No mutation from returned traversal data
+#### No mutation from returned traversal data
 
 - Mutating the slice returned by in-order traversal does not change the tree's structure or values.
 - A subsequent in-order traversal returns the original values in the original order.
 - A subsequent search returns the same hits and misses as before the mutation.
 
-### Comparator invariants (documentation)
+#### Comparator invariants (documentation)
 
 - The package documentation states the comparator's invariants (antisymmetry, transitivity, totality, sign consistency).
 - The package documentation states that the tree's correctness depends on the comparator's invariants and that the implementation does not validate them.
 - A test exercises a comparator that obeys the invariants and observes correct behavior; the test does not exercise a comparator that violates the invariants (that case is documented as undefined behavior).
 
-### No-balancing declaration
+#### No-balancing declaration
 
 - The package documentation states that the tree is not balanced and that a degenerate insertion order produces a degenerate shape.
 - The required scope does not test balancing. A test that inserts in sorted order and observes the degenerate shape is part of the required scope and pins the no-balancing rule's observable consequence.
 
-### Process
+#### Process
 
 - A test runs the driver with a small script of insertions and confirms the printed in-order traversal matches the expected text-only form.
 
@@ -359,22 +376,40 @@ Each case is described in natural language. Tests use only in-memory elements an
 
 The project is complete when **all** of the following are true.
 
-- The README's 19 sections are present in order; this file is the reference.
-- Every functional requirement in section 8 is satisfied.
-- Every verification case in section 14 has a corresponding test.
-- The tree is generic through type parameters. The same implementation works for `int`, `string`, and a struct with a comparator that compares a chosen field.
-- An empty tree without a configured comparator supports safe search (returns a miss) and in-order traversal (returns an empty slice). Insertion on a tree without a non-`nil` comparator returns a contextual error and does not mutate the tree. Configuring a `nil` comparator is rejected with a contextual error. Insertion never panics.
-- Insertion places a new value at the correct child slot. A comparator-equal insertion reports "not added" and does not change the tree or the size.
-- Search returns a hit on a comparator-equal value and a miss otherwise. Empty-tree search returns a miss.
-- In-order traversal returns values in comparator order as a fresh slice. Empty-tree traversal returns an empty slice.
-- Once any value is in the tree, the comparator cannot be replaced. An attempt to replace it returns a contextual error and does not mutate the tree.
-- Ascending and descending comparators produce ascending and descending in-order traversals on the same tree.
-- The package documentation states the comparator's invariants, the duplicate-ignore policy, the in-order traversal contract, the empty-tree contract, the missing-comparator policy (empty tree safe, insertion rejected, `nil` comparator rejected, comparator not replaceable after first insertion), and the no-balancing rule.
-- The learner can answer every self-assessment question in section 17 without re-reading the code.
+- [ ] The README's 19 sections are present in order; this file is the reference.
+- [ ] Every functional requirement in section 8 is satisfied.
+- [ ] Every verification case in section 14 has a corresponding test.
+- [ ] The tree is generic through type parameters. The same implementation works for `int`, `string`, and a struct with a comparator that compares a chosen field.
+- [ ] An empty tree without a configured comparator supports safe search (returns a miss) and in-order traversal (returns an empty slice). Insertion on a tree without a non-`nil` comparator returns a contextual error and does not mutate the tree. Configuring a `nil` comparator is rejected with a contextual error. Insertion never panics.
+- [ ] Insertion places a new value at the correct child slot. A comparator-equal insertion reports "not added" and does not change the tree or the size.
+- [ ] Search returns a hit on a comparator-equal value and a miss otherwise. Empty-tree search returns a miss.
+- [ ] In-order traversal returns values in comparator order as a fresh slice. Empty-tree traversal returns an empty slice.
+- [ ] Once any value is in the tree, the comparator cannot be replaced. An attempt to replace it returns a contextual error and does not mutate the tree.
+- [ ] Ascending and descending comparators produce ascending and descending in-order traversals on the same tree.
+- [ ] The package documentation states the comparator's invariants, the duplicate-ignore policy, the in-order traversal contract, the empty-tree contract, the missing-comparator policy (empty tree safe, insertion rejected, `nil` comparator rejected, comparator not replaceable after first insertion), and the no-balancing rule.
+- [ ] The learner can answer every self-assessment question in section 17 without re-reading the code.
 
 ## 19. Optional Extensions
 
 At most two small extensions. Each must be cleanly separated from the required scope.
 
 - **Min and max.** Add a method each that returns the minimum and maximum value in the tree by the comparator's order. The method returns the not-found outcome (sentinel error or boolean) for an empty tree and does not mutate the tree. Do not add a `k`-th-smallest query or a rank operation.
-- **Delete by comparator.** Add a delete operation that removes a node whose value compares equal to a target by the comparator. The operation reports hit/miss through the same not-found outcome used by search. After deletion, the tree's structure is repaired so the BST invariant holds and the in-order traversal still returns values in comparator order. Do not add a delete-by-position or delete-min operation, and do not change the duplicate-ignore rule.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisite:** [Project 027 — Custom Stack and Queue](../../02-data-structures/027_custom_stack_queue/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guide first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`cmp`](https://pkg.go.dev/cmp).
+
+### Project-specific learning focus
+
+- **Learn now:** comparator laws, insertion and search invariants, recursive in-order traversal, duplicate policy, and the worst case of an unbalanced tree.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

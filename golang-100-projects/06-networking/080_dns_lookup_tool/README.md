@@ -1,47 +1,109 @@
 # Project 080 — DNS Lookup Tool
 
 ## 1. Project Name and Number
-Project 080, dns_lookup_tool. This README is a learning guide only. You will create every source and test file yourself in `06-networking/080_dns_lookup_tool/`. This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- Project 080, dns_lookup_tool.
+- This README is a learning guide only.
+- You will create every source and test file yourself in `06-networking/080_dns_lookup_tool/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 2. Project Idea
+
 A CLI that resolves a single validated ASCII hostname using a small injected resolver boundary. The required scope is host addresses and the canonical name; A and AAAA addresses are reported separately after textual canonicalization, deduplication of canonical equivalents, and lexical sort of the canonical strings. Canonical name is optional metadata. Errors are categorized using precedence on `errors.Is` before `errors.As`, with a pinned category enum that includes `Canceled`. Invalid input is rejected without ever calling the resolver. Hostname validation accepts only ASCII LDH characters, rejects any ASCII whitespace anywhere, allows at most one trailing root dot, and lowercases the result. The CLI passes that same normalized hostname to the resolver and uses it for display. Deterministic output lines and ordering are pinned in prose.
 
 ## 3. Why This Project Now?
-This project requires Project 079 (load_balancer_round_robin) as the immediate predecessor and Project 071 (tcp_echo_server) for TCP framing, idle deadlines, and per-connection protocol error discipline; it does not require Project 060 because this project is a CLI without an HTTP server. Project 041 (context_timeout_example) is recommended review for context cancellation and deadlines and is optional review only, not a formal prerequisite. This project introduces the discipline of injecting a resolver boundary so unit tests run without public DNS, plus the discipline of distinguishing DNS error categories through `errors.Is` and `errors.As` precedence rather than string matching.
+
+- This project requires Project 079 (load_balancer_round_robin) as the immediate predecessor and Project 071 (tcp_echo_server) for TCP framing, idle deadlines, and per-connection protocol error discipline; it does not require Project 060 because this project is a CLI without an HTTP server.
+- Project 041 (context_timeout_example) is recommended review for context cancellation and deadlines and is optional review only, not a formal prerequisite.
+- This project introduces the discipline of injecting a resolver boundary so unit tests run without public DNS, plus the discipline of distinguishing DNS error categories through `errors.Is` and `errors.As` precedence rather than string matching.
 
 ## 4. Prerequisites
-Projects 079 and 071 are required prerequisites. Project 079 is the immediate predecessor for network-boundary discipline. Project 071 is required for TCP connection handling, byte framing, idle deadlines, accept-loop shutdown, and per-connection protocol error discipline. Project 041 is recommended review for context cancellation propagation but is not a formal prerequisite. No public DNS in required unit tests. One optional integration test for `localhost` is permitted and must be tolerant of the local environment returning IPv4 only, IPv6 only, or both. The resolver boundary is injected; production wires the standard library resolver and tests wire a fake.
+
+- Projects 079 and 071 are required prerequisites.
+- Project 079 is the immediate predecessor for network-boundary discipline.
+- Project 071 is required for TCP connection handling, byte framing, idle deadlines, accept-loop shutdown, and per-connection protocol error discipline.
+- Project 041 is recommended review for context cancellation propagation but is not a formal prerequisite.
+- No public DNS in required unit tests.
+- One optional integration test for `localhost` is permitted and must be tolerant of the local environment returning IPv4 only, IPv6 only, or both.
+- The resolver boundary is injected; production wires the standard library resolver and tests wire a fake.
 
 ## 5. What You Must Know Before Starting
-Know the `net` package and `net.Resolver`, the standard library `*net.DNSError` fields `IsNotFound`, `IsTimeout`, and `IsTemporary`, `errors.Is` and `errors.As` precedence, successful empty answers, context cancellation and deadlines, ASCII hostname limits, IPv4 and IPv6 textual forms, and the race detector.
+
+- Know the `net` package and `net.Resolver`, the standard library `*net.DNSError` fields `IsNotFound`, `IsTimeout`, and `IsTemporary`, `errors.Is` and `errors.As` precedence, successful empty answers, context cancellation and deadlines, ASCII hostname limits, IPv4 and IPv6 textual forms, and the race detector.
 
 ## 6. Explanation of New Concepts
-The CLI accepts a single positional hostname argument. Any ASCII whitespace anywhere in the argument is rejected: the CLI does not trim and accept the trimmed value. A scheme prefix, a path, a port, or a non-ASCII byte is also rejected. Validation accepts only an ASCII LDH hostname with an optional single trailing root dot, lowercases the input, removes that single trailing dot when present, and validates the normalized form against the 1..253-byte total hostname bound. Multiple trailing dots are invalid; an empty interior label is invalid; a label that starts or ends with a hyphen is invalid; a label longer than 63 bytes is invalid. The normalized hostname is exactly the value passed to the resolver boundary and the value used for any display. The input `EXAMPLE.com.` therefore results in `example.com` being passed to the resolver.
 
-IDNA conversion requires an external package and is intentionally out of the required scope; non-ASCII input is rejected honestly with a clear message and the resolver is not called.
+### Concepts
 
-The resolver boundary is a small interface that accepts a context and a normalized hostname and returns A addresses as a slice of strings, AAAA addresses as a slice of strings, a canonical name as an optional string, and an error. The boundary never returns a payload that the caller has to interpret in a different way. The boundary return value is the complete source of truth for the call.
+- The CLI accepts a single positional hostname argument.
+- Any ASCII whitespace anywhere in the argument is rejected: the CLI does not trim and accept the trimmed value.
+- A scheme prefix, a path, a port, or a non-ASCII byte is also rejected.
+- Validation accepts only an ASCII LDH hostname with an optional single trailing root dot, lowercases the input, removes that single trailing dot when present, and validates the normalized form against the 1..253-byte total hostname bound.
+- Multiple trailing dots are invalid; an empty interior label is invalid; a label that starts or ends with a hyphen is invalid; a label longer than 63 bytes is invalid.
+- The normalized hostname is exactly the value passed to the resolver boundary and the value used for any display.
+- The input `EXAMPLE.com.` therefore results in `example.com` being passed to the resolver.
 
-The resolver error is handled before returned data: when the resolver returns a non-nil error, the CLI classifies that error by the pinned precedence and does not use accompanying address or canonical-name values. Only a nil-error result enters returned-data validation. Each address is parsed with the standard library address parser, verified to belong to its declared A or AAAA family, and re-emitted in canonical textual form. An unparseable or wrong-family value is a resolver-boundary contract violation categorized as `Other`, never silently discarded. Within each family, canonical equivalents deduplicate and canonical strings sort lexically. Empty valid slices with nil error are a successful empty answer.
+- IDNA conversion requires an external package and is intentionally out of the required scope; non-ASCII input is rejected honestly with a clear message and the resolver is not called.
 
-Canonical name handling is optional metadata. An empty canonical name does not mean the input was already canonical and is not asserted to mean that; the canonical name is simply reported when the boundary provides a non-empty value. When the boundary provides a canonical name, the CLI normalizes it through the same lowercase rule and the same at-most-one trailing dot rule used for the hostname, then validates it against the same ASCII LDH rules. A canonical name that fails validation is recorded as `Other` and is not silently discarded; the resolver boundary is treated as the only source.
+- The resolver boundary is a small interface that accepts a context and a normalized hostname and returns A addresses as a slice of strings, AAAA addresses as a slice of strings, a canonical name as an optional string, and an error.
+- The boundary never returns a payload that the caller has to interpret in a different way.
+- The boundary return value is the complete source of truth for the call.
 
-Error categorization uses `errors.Is` and `errors.As` precedence in the order pinned by this guide. The CLI first tests the resolver boundary's error against `context.Canceled` using `errors.Is`; on a match, the category is `Canceled`. The CLI then tests against `context.DeadlineExceeded` using `errors.Is`; on a match, the category is `Timeout`. The CLI then uses `errors.As` to extract a `*net.DNSError`; on match, the category is `NotFound` if `IsNotFound` is true, `Timeout` if `IsTimeout` is true, and `Temporary` if `IsTemporary` is true. Errors that do not match any of these branches are categorized as `Other`. The category enum is exactly `Canceled`, `NotFound`, `Timeout`, `Temporary`, and `Other`. A nil error with valid empty addresses is reported as a successful empty answer and is distinct from any category.
+- The resolver error is handled before returned data: when the resolver returns a non-nil error, the CLI classifies that error by the pinned precedence and does not use accompanying address or canonical-name values.
+- Only a nil-error result enters returned-data validation.
+- Each address is parsed with the standard library address parser, verified to belong to its declared A or AAAA family, and re-emitted in canonical textual form.
+- An unparseable or wrong-family value is a resolver-boundary contract violation categorized as `Other`, never silently discarded.
+- Within each family, canonical equivalents deduplicate and canonical strings sort lexically.
+- Empty valid slices with nil error are a successful empty answer.
 
-The required scope is host addresses plus canonical name. CNAME, MX, and TXT are not part of the required scope and are not produced unless the required contract explicitly pins those flags. The CLI does not parse raw DNS packets, does not run a DNS server, does not perform zone transfers, does not poison or manipulate caches, and does not implement a custom recursive resolver.
+- Canonical name handling is optional metadata.
+- An empty canonical name does not mean the input was already canonical and is not asserted to mean that; the canonical name is simply reported when the boundary provides a non-empty value.
+- When the boundary provides a canonical name, the CLI normalizes it through the same lowercase rule and the same at-most-one trailing dot rule used for the hostname, then validates it against the same ASCII LDH rules.
+- A canonical name that fails validation is recorded as `Other` and is not silently discarded; the resolver boundary is treated as the only source.
 
-Output is deterministic for any given resolver return value. On success, the first line is the literal label `Host: ` followed by the normalized input. The next line is `Canonical: ` followed by the normalized canonical name or the single hyphen marker when absent. Each IPv4 address then gets one `A: ` line in sorted order, or one `A: -` line when none exist. Each IPv6 address then gets one `AAAA: ` line in sorted order, or one `AAAA: -` line when none exist. The final line is `Result: ok` when at least one address exists and `Result: empty` when both address families are empty. On resolver or returned-data failure, output is exactly one `Error: ` line followed by one of the five category names.
+- Error categorization uses `errors.Is` and `errors.As` precedence in the order pinned by this guide.
+- The CLI first tests the resolver boundary's error against `context.Canceled` using `errors.Is`; on a match, the category is `Canceled`.
+- The CLI then tests against `context.DeadlineExceeded` using `errors.Is`; on a match, the category is `Timeout`.
+- The CLI then uses `errors.As` to extract a `*net.DNSError`; on match, the category is `NotFound` if `IsNotFound` is true, `Timeout` if `IsTimeout` is true, and `Temporary` if `IsTemporary` is true.
+- Errors that do not match any of these branches are categorized as `Other`.
+- The category enum is exactly `Canceled`, `NotFound`, `Timeout`, `Temporary`, and `Other`.
+- A nil error with valid empty addresses is reported as a successful empty answer and is distinct from any category.
 
-Unit tests use a fake resolver that records calls and returns pinned values. No test depends on public DNS. The fake resolver supports successful mixed IPv4 and IPv6 answers, duplicate and unordered answers, NXDOMAIN, timeout, cancellation, temporary failure, and other failure. Tests assert the categorical mapping through `errors.Is` and `errors.As`, the exact parsing and canonicalization, the exact sorting and deduplication, and the exact validation behavior including the no-call guarantee for invalid input.
+- The required scope is host addresses plus canonical name.
+- CNAME, MX, and TXT are not part of the required scope and are not produced unless the required contract explicitly pins those flags.
+- The CLI does not parse raw DNS packets, does not run a DNS server, does not perform zone transfers, does not poison or manipulate caches, and does not implement a custom recursive resolver.
 
-One optional integration test resolves `localhost`. The integration test is tolerant of the local environment returning IPv4 only, IPv6 only, or both. The integration test does not assert external hostnames. The integration test is gated by a build tag or a test flag that allows opt-in execution; the default test run does not depend on it.
+- Output is deterministic for any given resolver return value.
+- On success, the first line is the literal label `Host: ` followed by the normalized input.
+- The next line is `Canonical: ` followed by the normalized canonical name or the single hyphen marker when absent.
+- Each IPv4 address then gets one `A: ` line in sorted order, or one `A: -` line when none exist.
+- Each IPv6 address then gets one `AAAA: ` line in sorted order, or one `AAAA: -` line when none exist.
+- The final line is `Result: ok` when at least one address exists and `Result: empty` when both address families are empty.
+- On resolver or returned-data failure, output is exactly one `Error: ` line followed by one of the five category names.
 
-Text-only protocol examples are permitted. As a prose shape: `example.com` calls the resolver once with normalized `example.com`, then emits the exact `Host`, `Canonical`, sorted `A`, sorted `AAAA`, and `Result` lines. `EXAMPLE.com.` also resolves as `example.com`. Empty A and AAAA slices with no error produce `A: -`, `AAAA: -`, and `Result: empty`. Empty input prints usage and does not call the resolver; surrounding spaces, a scheme, an empty label, or multiple trailing dots are rejected without a call. A `*net.DNSError` with `IsNotFound` true produces `Error: NotFound`; one with `IsTimeout` true produces `Error: Timeout`; one with `IsTemporary` true produces `Error: Temporary`. An error wrapping `context.Canceled` produces `Error: Canceled`, one wrapping `context.DeadlineExceeded` produces `Error: Timeout`, and any remaining error produces `Error: Other`.
+- Unit tests use a fake resolver that records calls and returns pinned values.
+- No test depends on public DNS.
+- The fake resolver supports successful mixed IPv4 and IPv6 answers, duplicate and unordered answers, NXDOMAIN, timeout, cancellation, temporary failure, and other failure.
+- Tests assert the categorical mapping through `errors.Is` and `errors.As`, the exact parsing and canonicalization, the exact sorting and deduplication, and the exact validation behavior including the no-call guarantee for invalid input.
+
+- One optional integration test resolves `localhost`.
+- The integration test is tolerant of the local environment returning IPv4 only, IPv6 only, or both.
+- The integration test does not assert external hostnames.
+- The integration test is gated by a build tag or a test flag that allows opt-in execution; the default test run does not depend on it.
+
+- Text-only protocol examples are permitted.
+- As a prose shape: `example.com` calls the resolver once with normalized `example.com`, then emits the exact `Host`, `Canonical`, sorted `A`, sorted `AAAA`, and `Result` lines. `EXAMPLE.com.` also resolves as `example.com`.
+- Empty A and AAAA slices with no error produce `A: -`, `AAAA: -`, and `Result: empty`.
+- Empty input prints usage and does not call the resolver; surrounding spaces, a scheme, an empty label, or multiple trailing dots are rejected without a call.
+- A `*net.DNSError` with `IsNotFound` true produces `Error: NotFound`; one with `IsTimeout` true produces `Error: Timeout`; one with `IsTemporary` true produces `Error: Temporary`.
+- An error wrapping `context.Canceled` produces `Error: Canceled`, one wrapping `context.DeadlineExceeded` produces `Error: Timeout`, and any remaining error produces `Error: Other`.
 
 ## 7. Learning Objective
-Implement a hostname resolver CLI with an injected resolver boundary, exact hostname validation that rejects whitespace and trims nothing, exact normalization with at most one trailing dot, exact address parsing and canonicalization before classification, exact `errors.Is` and `errors.As` precedence across the five categories including `Canceled`, exact deterministic output lines and ordering, and tests that pin every branch through a fake resolver without public DNS.
+
+- Implement a hostname resolver CLI with an injected resolver boundary, exact hostname validation that rejects whitespace and trims nothing, exact normalization with at most one trailing dot, exact address parsing and canonicalization before classification, exact `errors.Is` and `errors.As` precedence across the five categories including `Canceled`, exact deterministic output lines and ordering, and tests that pin every branch through a fake resolver without public DNS.
 
 ## 8. Functional Requirements
+
 1. The CLI accepts a single positional hostname argument.
 2. Validation rejects empty input; rejects any ASCII whitespace anywhere; rejects scheme prefixes; rejects paths; rejects ports; rejects non-ASCII bytes.
 3. Validation accepts only ASCII LDH characters per label; each label is 1..63 bytes inclusive; the normalized total hostname is 1..253 bytes inclusive.
@@ -64,18 +126,63 @@ Implement a hostname resolver CLI with an injected resolver boundary, exact host
 20. Invalid input never increments the fake resolver call count.
 
 ## 9. Inputs and Outputs
-CLI input is a single positional hostname argument. Optional input is a context with timeout or cancellation. Resolver boundary input is a context and the normalized hostname. Successful output uses the exact `Host`, `Canonical`, `A`, `AAAA`, and `Result` ordering and labels, with deterministic hyphen markers for absent values. Resolver or returned-data failure output is exactly one `Error: <Category>` line drawn from `Canceled`, `NotFound`, `Timeout`, `Temporary`, or `Other`. A successful empty answer ends in `Result: empty` and is not an error category.
+
+### Interface Contract
+
+- CLI input is a single positional hostname argument.
+- Optional input is a context with timeout or cancellation.
+- Resolver boundary input is a context and the normalized hostname.
+- Successful output uses the exact `Host`, `Canonical`, `A`, `AAAA`, and `Result` ordering and labels, with deterministic hyphen markers for absent values.
+- Resolver or returned-data failure output is exactly one `Error: <Category>` line drawn from `Canceled`, `NotFound`, `Timeout`, `Temporary`, or `Other`.
+- A successful empty answer ends in `Result: empty` and is not an error category.
 
 ## 10. Rules and Edge Cases
-Empty input is rejected. Any ASCII whitespace anywhere is rejected. A scheme prefix is rejected. A path or port is rejected. A non-ASCII byte is rejected. An empty interior label is rejected. An over-length label is rejected. An over-length total hostname is rejected. Multiple trailing dots are rejected. A single trailing root dot is accepted and removed during normalization. The normalized hostname is exactly what is passed to the resolver and exactly what is used for display. Addresses returned by the resolver are parsed and canonicalized before classification; an unparseable address is `Other` and not silently discarded. Canonical equivalents deduplicate within each family. Lexical sort is ascending and is applied after canonicalization. An empty canonical name is reported as a single line; a non-empty canonical name is normalized and validated; an invalid canonical name is `Other`. The category enum is exactly `Canceled`, `NotFound`, `Timeout`, `Temporary`, and `Other`; precedence uses `errors.Is` before `errors.As`. A successful empty answer is distinct from any category. Context cancellation is observed and categorized through `errors.Is`. A deadline-exceeded signal is categorized as `Timeout` through `errors.Is`.
+
+- Empty input is rejected.
+- Any ASCII whitespace anywhere is rejected.
+- A scheme prefix is rejected.
+- A path or port is rejected.
+- A non-ASCII byte is rejected.
+- An empty interior label is rejected.
+- An over-length label is rejected.
+- An over-length total hostname is rejected.
+- Multiple trailing dots are rejected.
+- A single trailing root dot is accepted and removed during normalization.
+- The normalized hostname is exactly what is passed to the resolver and exactly what is used for display.
+- Addresses returned by the resolver are parsed and canonicalized before classification; an unparseable address is `Other` and not silently discarded.
+- Canonical equivalents deduplicate within each family.
+- Lexical sort is ascending and is applied after canonicalization.
+- An empty canonical name is reported as a single line; a non-empty canonical name is normalized and validated; an invalid canonical name is `Other`.
+- The category enum is exactly `Canceled`, `NotFound`, `Timeout`, `Temporary`, and `Other`; precedence uses `errors.Is` before `errors.As`.
+- A successful empty answer is distinct from any category.
+- Context cancellation is observed and categorized through `errors.Is`.
+- A deadline-exceeded signal is categorized as `Timeout` through `errors.Is`.
 
 ## 11. Project Constraints
-No public DNS in required tests. The resolver boundary is injected; production wires the standard library resolver. The CLI is local and offline for required tests. IDNA is out of scope. CNAME, MX, and TXT are out of scope unless the required contract pins those flags. No DNS server, zone transfer, cache manipulation, raw packet parsing, or custom recursive resolver. No string matching on error text. No trimming of whitespace.
+
+- No public DNS in required tests.
+- The resolver boundary is injected; production wires the standard library resolver.
+- The CLI is local and offline for required tests.
+- IDNA is out of scope.
+- CNAME, MX, and TXT are out of scope unless the required contract pins those flags.
+- No DNS server, zone transfer, cache manipulation, raw packet parsing, or custom recursive resolver.
+- No string matching on error text.
+- No trimming of whitespace.
 
 ## 12. Design Questions Before Coding
-How is the resolver boundary shaped so production wires the standard library and tests wire a fake? How is hostname validation ordered so invalid input never reaches the resolver? How is the normalized form guaranteed to be both the resolver argument and display value? Why is a non-nil resolver error classified before accompanying data, while nil-error data is then checked for parseability and correct address family? How does `errors.Is` precedence put cancellation and deadline outcomes before `*net.DNSError` classification? How is optional canonical metadata normalized and validated? How are the exact output labels, ordering, and empty markers kept deterministic? How does the fake prove invalid input makes no call? How is the optional `localhost` test gated?
+
+- How is the resolver boundary shaped so production wires the standard library and tests wire a fake?
+- How is hostname validation ordered so invalid input never reaches the resolver?
+- How is the normalized form guaranteed to be both the resolver argument and display value?
+- Why is a non-nil resolver error classified before accompanying data, while nil-error data is then checked for parseability and correct address family?
+- How does `errors.Is` precedence put cancellation and deadline outcomes before `*net.DNSError` classification?
+- How is optional canonical metadata normalized and validated?
+- How are the exact output labels, ordering, and empty markers kept deterministic?
+- How does the fake prove invalid input makes no call?
+- How is the optional `localhost` test gated?
 
 ## 13. Implementation Milestones
+
 1. Define the validation rules: reject empty, reject any ASCII whitespace anywhere, reject scheme, reject path, reject port, reject non-ASCII bytes, accept only ASCII LDH labels with 1..63 bytes inclusive and a 1..253-byte total bound; reject empty interior labels, hyphen-leading or hyphen-trailing labels, and multiple trailing dots.
 2. Define the normalization rules: lowercase, remove at most one trailing dot, validate the normalized result against the same ASCII LDH bound; the normalized value is exactly what is passed to the resolver boundary and used for display.
 3. Define the resolver boundary as an injected small interface with the pinned return shape.
@@ -89,6 +196,9 @@ How is the resolver boundary shaped so production wires the standard library and
 11. Define the full matrix of validation, canonicalization, sorting, deduplication, NXDOMAIN, timeout, temporary, cancellation, deadline-exceeded, empty answer, canonical-name metadata, unparseable address, invalid canonical name, and the optional `localhost` integration test.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - A valid hostname calls the resolver boundary once and prints exact `Host`, `Canonical`, sorted `A`, sorted `AAAA`, and `Result: ok` lines in order.
 - A CLI invocation with mixed IPv4 and IPv6 addresses returns each family in canonical textual form, deduplicated within family and lexically sorted ascending.
 - A CLI invocation with duplicate addresses returns each address once after canonicalization within each family.
@@ -121,15 +231,42 @@ How is the resolver boundary shaped so production wires the standard library and
 - All tests pass under the race detector.
 
 ## 15. Common Mistakes to Watch For
-Calling the resolver for invalid input; trimming and accepting whitespace; string matching error text; inspecting returned data before classifying a non-nil error; omitting `Canceled`; mapping deadline expiry outside `Timeout`; silently discarding an unparseable or wrong-family address; treating empty canonical metadata as proof of canonicality; leaving nonempty canonical metadata unvalidated; deviating from the exact `Host`, `Canonical`, `A`, `AAAA`, `Result`, and `Error` lines; conflating successful empty with error; using public DNS in unit tests; implementing a DNS server, zone transfer, raw packet parser, cache manipulation, or custom recursion; and incrementing the fake call count for invalid input.
+
+- Calling the resolver for invalid input;
+- Trimming and accepting whitespace;
+- String matching error text;
+- Inspecting returned data before classifying a non-nil error;
+- Omitting `Canceled`;
+- Mapping deadline expiry outside `Timeout`;
+- Silently discarding an unparseable or wrong-family address;
+- Treating empty canonical metadata as proof of canonicality;
+- Leaving nonempty canonical metadata unvalidated;
+- Deviating from the exact `Host`, `Canonical`, `A`, `AAAA`, `Result`, and `Error` lines;
+- Conflating successful empty with error;
+- Using public DNS in unit tests;
+- Implementing a DNS server, zone transfer, raw packet parser, cache manipulation, or custom recursion;
+- And incrementing the fake call count for invalid input.
 
 ## 16. Topics and References for Study
-Study the `net` package, `net.Resolver`, `*net.DNSError`, the `IsNotFound`, `IsTimeout`, and `IsTemporary` fields, `errors.Is` and `errors.As` precedence, successful empty answers, ASCII hostname limits, IPv4 and IPv6 textual canonicalization, context cancellation, and injected resolver boundaries for offline tests. Review the Go `net`, `context`, `errors`, and `sort` documentation. Read the prior README for Project 079 as the immediate predecessor for network-boundary discipline and Project 071 for TCP framing and protocol error discipline. Project 041 for cancellation propagation is optional review.
+
+- Study the `net` package, `net.Resolver`, `*net.DNSError`, the `IsNotFound`, `IsTimeout`, and `IsTemporary` fields, `errors.Is` and `errors.As` precedence, successful empty answers, ASCII hostname limits, IPv4 and IPv6 textual canonicalization, context cancellation, and injected resolver boundaries for offline tests.
+- Review the Go `net`, `context`, `errors`, and `sort` documentation.
+- Read the prior README for Project 079 as the immediate predecessor for network-boundary discipline and Project 071 for TCP framing and protocol error discipline.
+- Project 041 for cancellation propagation is optional review.
 
 ## 17. Self-Assessment Questions
-Why is the resolver boundary injected rather than called directly from the CLI? Why is any ASCII whitespace rejected without trimming rather than trimmed and accepted? Why is the same normalized hostname passed to the resolver and used for display, and why does `EXAMPLE.com.` resolve as `example.com`? Why are addresses parsed and canonicalized before classification, and why is an unparseable address `Other` rather than silently discarded? Why is the precedence `errors.Is` before `errors.As`, why is `Canceled` an explicit category, and why is `context.DeadlineExceeded` resolved before the DNS branch? Why is the canonical name optional metadata rather than a guarantee that empty means the input was already canonical, and why is a non-empty canonical name normalized and validated through the same ASCII LDH rules? Why are the deterministic output lines and ordering pinned in prose, including empty sections, rather than left to impl-detail text? Why is CNAME, MX, and TXT out of required scope unless explicitly pinned, and why is IDNA out of required scope?
+
+1. Why is the resolver boundary injected rather than called directly from the CLI?
+2. Why is any ASCII whitespace rejected without trimming rather than trimmed and accepted?
+3. Why is the same normalized hostname passed to the resolver and used for display, and why does `EXAMPLE.com.` resolve as `example.com`?
+4. Why are addresses parsed and canonicalized before classification, and why is an unparseable address `Other` rather than silently discarded?
+5. Why is the precedence `errors.Is` before `errors.As`, why is `Canceled` an explicit category, and why is `context.DeadlineExceeded` resolved before the DNS branch?
+6. Why is the canonical name optional metadata rather than a guarantee that empty means the input was already canonical, and why is a non-empty canonical name normalized and validated through the same ASCII LDH rules?
+7. Why are the deterministic output lines and ordering pinned in prose, including empty sections, rather than left to impl-detail text?
+8. Why is CNAME, MX, and TXT out of required scope unless explicitly pinned, and why is IDNA out of required scope?
 
 ## 18. Definition of Completion
+
 - [ ] Validation rejects empty input, any ASCII whitespace anywhere, schemes, paths, ports, non-ASCII bytes, empty interior labels, over-length labels, over-length total hostnames, and multiple trailing dots.
 - [ ] Normalization lowercases the input and removes at most one trailing dot; the normalized value is exactly what is passed to the resolver boundary and used for display.
 - [ ] The resolver boundary is an injected small interface; production wires the standard library resolver and tests wire a fake.
@@ -148,4 +285,25 @@ Why is the resolver boundary injected rather than called directly from the CLI? 
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
-Add an explicit CNAME flag whose behavior is pinned only when the required contract opts in, and whose default is off. Add a structured JSON output mode that preserves the same deterministic ordering as the text mode.
+
+- Add an explicit CNAME flag whose behavior is pinned only when the required contract opts in, and whose default is off.
+- Add a structured JSON output mode that preserves the same deterministic ordering as the text mode.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 079 — Load Balancer Round Robin](../../06-networking/079_load_balancer_round_robin/README.md#20-prerequisite-based-documentation-guide), [Project 071 — TCP Echo Server](../../06-networking/071_tcp_echo_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [RFC 1034: DNS concepts](https://www.rfc-editor.org/rfc/rfc1034.html), [RFC 1035: DNS implementation](https://www.rfc-editor.org/rfc/rfc1035.html).
+
+### Project-specific learning focus
+
+- **Learn now:** resolver injection, typed DNS errors, empty successful answers, hostname validation, canonical IPv4 and IPv6 text, context cancellation, and deterministic ordering.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

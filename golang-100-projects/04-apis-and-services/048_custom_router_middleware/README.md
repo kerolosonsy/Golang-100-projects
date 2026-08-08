@@ -2,7 +2,7 @@
 
 ## 1. Project Name and Number
 
-Project 048 — Custom Router and Middleware, located in `048_custom_router_middleware`.
+- Project 048 — Custom Router and Middleware, located in `048_custom_router_middleware`.
 
 ## 2. Project Idea
 
@@ -10,13 +10,16 @@ Build a deliberately small HTTP router on top of `net/http`. It recognizes exact
 
 ## 3. Why This Project Now?
 
-Project 047 established precise REST paths, method status contracts, JSON boundary validation, and concurrent handler use. This project isolates the routing and cross-cutting concerns that a larger API needs before Project 049 standardizes response formatting. The learner must make ambiguity, path normalization, context ownership, and middleware order explicit instead of inheriting accidental behavior from a framework.
+- Project 047 established precise REST paths, method status contracts, JSON boundary validation, and concurrent handler use.
+- This project isolates the routing and cross-cutting concerns that a larger API needs before Project 049 standardizes response formatting.
+- The learner must make ambiguity, path normalization, context ownership, and middleware order explicit instead of inheriting accidental behavior from a framework.
 
 ## 4. Prerequisites
 
-Complete Projects 047 and 046 before starting. Earlier projects may be useful review, but they are not required prerequisites.
+- Complete Projects 047 and 046 before starting.
+- Earlier projects may be useful review, but they are not required prerequisites.
 
-You should already be comfortable with `net/http` handlers, `httptest`, request context propagation, mutex-free immutable configuration after setup, HTTP methods, response headers, and deterministic concurrent tests.
+- You should already be comfortable with `net/http` handlers, `httptest`, request context propagation, mutex-free immutable configuration after setup, HTTP methods, response headers, and deterministic concurrent tests.
 
 ## 5. What You Must Know Before Starting
 
@@ -32,21 +35,42 @@ You should already be comfortable with `net/http` handlers, `httptest`, request 
 
 ## 6. Explanation of New Concepts
 
-A static route matches a complete path whose segments are literal. A parameter route uses a named segment such as `{noteID}` as notation for one captured segment. The braces are route-pattern syntax, not a catch-all. A request must have the same number of segments as the pattern, and every parameter value must be non-empty after the prescribed decoding checks.
+### Concepts
 
-Route selection happens in two conceptual stages. First, the path shape is selected using exact static specificity and the conflict rules. Then the request method is looked up on that selected shape. This prevents a parameter route from bypassing a more specific static route merely because it supports a different method. A selected path with no matching method is known and returns `405`, not `404`.
+- A static route matches a complete path whose segments are literal.
+- A parameter route uses a named segment such as `{noteID}` as notation for one captured segment.
+- The braces are route-pattern syntax, not a catch-all.
+- A request must have the same number of segments as the pattern, and every parameter value must be non-empty after the prescribed decoding checks.
 
-Registration conflicts protect the routing table from ambiguous behavior. The same method and equivalent pattern cannot be registered twice. Parameter names are part of the context contract, so equivalent shapes with inconsistent names are rejected. Distinct parameter patterns that could match the same concrete path without a defined precedence are also rejected. A static route and a parameter route may coexist because static precedence resolves their overlap.
+- Route selection happens in two conceptual stages.
+- First, the path shape is selected using exact static specificity and the conflict rules.
+- Then the request method is looked up on that selected shape.
+- This prevents a parameter route from bypassing a more specific static route merely because it supports a different method.
+- A selected path with no matching method is known and returns `405`, not `404`.
 
-URL decoding is a security boundary. The router examines path segments without treating an encoded slash or backslash as an ordinary character that can change segment count. It decodes each accepted parameter exactly once, rejects malformed escapes, and rejects separator ambiguity rather than cleaning it into a new path.
+- Registration conflicts protect the routing table from ambiguous behavior.
+- The same method and equivalent pattern cannot be registered twice.
+- Parameter names are part of the context contract, so equivalent shapes with inconsistent names are rejected.
+- Distinct parameter patterns that could match the same concrete path without a defined precedence are also rejected.
+- A static route and a parameter route may coexist because static precedence resolves their overlap.
 
-Request-ID middleware gives one request a correlation value. A valid incoming value can be reused; an absent or invalid value is replaced by one generated through an injected source. Access logging runs after routing so it can record the selected status and byte count, and it receives the request ID through the request context.
+- URL decoding is a security boundary.
+- The router examines path segments without treating an encoded slash or backslash as an ordinary character that can change segment count.
+- It decodes each accepted parameter exactly once, rejects malformed escapes, and rejects separator ambiguity rather than cleaning it into a new path.
 
-The required chain is ordered from outside to inside as request-ID middleware, structured access logging, and route dispatch. The request-ID pre-processing occurs first and its post-processing occurs last. The access logger's completion record is emitted after the endpoint returns, so its status and byte count describe the completed response. Every middleware invokes its downstream handler at most once.
+- Request-ID middleware gives one request a correlation value.
+- A valid incoming value can be reused; an absent or invalid value is replaced by one generated through an injected source.
+- Access logging runs after routing so it can record the selected status and byte count, and it receives the request ID through the request context.
+
+- The required chain is ordered from outside to inside as request-ID middleware, structured access logging, and route dispatch.
+- The request-ID pre-processing occurs first and its post-processing occurs last.
+- The access logger's completion record is emitted after the endpoint returns, so its status and byte count describe the completed response.
+- Every middleware invokes its downstream handler at most once.
 
 ## 7. Learning Objective
 
-By completion, you can design a bounded route grammar, reject ambiguous registrations, enforce static-over-parameter precedence, decode parameters safely once, and explain why path cleaning can be a security bug. You can also build and test an ordered middleware chain that propagates request-scoped identity, emits deterministic structured access logs, and remains safe under concurrent requests.
+- By completion, you can design a bounded route grammar, reject ambiguous registrations, enforce static-over-parameter precedence, decode parameters safely once, and explain why path cleaning can be a security bug.
+- You can also build and test an ordered middleware chain that propagates request-scoped identity, emits deterministic structured access logs, and remains safe under concurrent requests.
 
 ## 8. Functional Requirements
 
@@ -70,37 +94,69 @@ By completion, you can design a bounded route grammar, reject ambiguous registra
 
 ## 9. Inputs and Outputs
 
-Route-registration input consists of a canonical pattern, one HTTP method, and one endpoint handler. A pattern may be a static path or contain complete named parameter segments. Registration either succeeds or returns a descriptive conflict error before serving.
+### Interface Contract
 
-Request input is an HTTP method and escaped request path. A path query is not part of route matching and is not included in the access-log path field. A valid incoming `X-Request-ID` is reused only when it satisfies the full validation rule; all other incoming values are treated as absent for generation purposes.
+- Route-registration input consists of a canonical pattern, one HTTP method, and one endpoint handler.
+- A pattern may be a static path or contain complete named parameter segments.
+- Registration either succeeds or returns a descriptive conflict error before serving.
 
-For normal routing errors, the router returns plain text with content type exactly `text/plain; charset=utf-8`. The `404` body is lowercase `not found` followed by one line feed. The `405` body is lowercase `method not allowed` followed by one line feed and includes the sorted `Allow` header. A malformed or ambiguous path returns `400` with lowercase `bad request` followed by one line feed. `HEAD` responses contain no body while retaining the selected status and relevant headers.
+- Request input is an HTTP method and escaped request path.
+- A path query is not part of route matching and is not included in the access-log path field.
+- A valid incoming `X-Request-ID` is reused only when it satisfies the full validation rule; all other incoming values are treated as absent for generation purposes.
 
-The response always includes exactly one `X-Request-ID` value when ID middleware successfully establishes an ID. The access-log completion record contains the same value, the original method, the path without query text, the final status, and the number of response bytes observed by the logging boundary. The endpoint remains responsible for its own application response format.
+- For normal routing errors, the router returns plain text with content type exactly `text/plain; charset=utf-8`.
+- The `404` body is lowercase `not found` followed by one line feed.
+- The `405` body is lowercase `method not allowed` followed by one line feed and includes the sorted `Allow` header.
+- A malformed or ambiguous path returns `400` with lowercase `bad request` followed by one line feed. `HEAD` responses contain no body while retaining the selected status and relevant headers.
 
-Text-only precedence example: if `/users/me` is registered as a static `GET` route and `/users/{id}` is registered as a parameter `GET` route, a `GET` for `/users/me` selects the static route and supplies no `id` parameter. A request for `/users/42` selects the parameter route and supplies `id` with value `42`.
+- The response always includes exactly one `X-Request-ID` value when ID middleware successfully establishes an ID.
+- The access-log completion record contains the same value, the original method, the path without query text, the final status, and the number of response bytes observed by the logging boundary.
+- The endpoint remains responsible for its own application response format.
 
-Text-only decoding example: a parameter containing a percent-encoded space is decoded once to a space. A parameter containing an encoded slash or backslash is rejected instead of becoming an additional path segment. A plus sign remains a plus sign in a path parameter.
+- Text-only precedence example: if `/users/me` is registered as a static `GET` route and `/users/{id}` is registered as a parameter `GET` route, a `GET` for `/users/me` selects the static route and supplies no `id` parameter.
+- A request for `/users/42` selects the parameter route and supplies `id` with value `42`.
+
+- Text-only decoding example: a parameter containing a percent-encoded space is decoded once to a space.
+- A parameter containing an encoded slash or backslash is rejected instead of becoming an additional path segment.
+- A plus sign remains a plus sign in a path parameter.
 
 ## 10. Rules and Edge Cases
 
-Patterns use canonical unescaped static literals. Patterns and requests are case-sensitive. Static literals are not silently normalized, folded to lower case, or given alternate percent-encoded spellings; parameter segments follow the one-time decoding policy below. A non-root trailing slash, repeated slash, raw dot segment, or raw backslash is never redirected or cleaned. It remains a distinct syntactically valid unmatched path and returns `404`.
+- Patterns use canonical unescaped static literals.
+- Patterns and requests are case-sensitive.
+- Static literals are not silently normalized, folded to lower case, or given alternate percent-encoded spellings; parameter segments follow the one-time decoding policy below.
+- A non-root trailing slash, repeated slash, raw dot segment, or raw backslash is never redirected or cleaned.
+- It remains a distinct syntactically valid unmatched path and returns `404`.
 
-Malformed percent escapes return `400`. An encoded slash or backslash in a parameter is rejected with `400`, as is a representation that still contains an encoded separator capable of changing meaning after a second decode. The router performs no second decode. Parameter values that decode to an empty string, dot segment, or dot-dot segment also return `400`.
+- Malformed percent escapes return `400`.
+- An encoded slash or backslash in a parameter is rejected with `400`, as is a representation that still contains an encoded separator capable of changing meaning after a second decode.
+- The router performs no second decode.
+- Parameter values that decode to an empty string, dot segment, or dot-dot segment also return `400`.
 
-A route with a static segment has higher precedence than a parameter route at the same position. If a static path exists but does not support the requested method, the result is `405` using the static route's method set; the router does not fall through to a parameter route that happens to support that method. Ambiguous parameter patterns are registration errors rather than runtime lottery.
+- A route with a static segment has higher precedence than a parameter route at the same position.
+- If a static path exists but does not support the requested method, the result is `405` using the static route's method set; the router does not fall through to a parameter route that happens to support that method.
+- Ambiguous parameter patterns are registration errors rather than runtime lottery.
 
-An incoming request ID with multiple header values, a comma-separated list, whitespace, invalid characters, or an out-of-range length is not trusted. The middleware generates exactly one replacement through its injected source. A generated invalid value is a configuration failure for that request, not an opportunity to echo unvalidated data.
+- An incoming request ID with multiple header values, a comma-separated list, whitespace, invalid characters, or an out-of-range length is not trusted.
+- The middleware generates exactly one replacement through its injected source.
+- A generated invalid value is a configuration failure for that request, not an opportunity to echo unvalidated data.
 
-The endpoint may write no body and may leave status implicit; the logging boundary records the resulting HTTP status according to `net/http` semantics. If an endpoint changes response headers after commitment, the middleware cannot retroactively repair them. The request-ID middleware owns its response header, and endpoint code must not replace it.
+- The endpoint may write no body and may leave status implicit; the logging boundary records the resulting HTTP status according to `net/http` semantics.
+- If an endpoint changes response headers after commitment, the middleware cannot retroactively repair them.
+- The request-ID middleware owns its response header, and endpoint code must not replace it.
 
-The router has no catch-all route. A path with a different segment count, an absent static literal, or no registered parameter shape is `404`. Registration errors are reported before serving and do not alter an already frozen route table.
+- The router has no catch-all route.
+- A path with a different segment count, an absent static literal, or no registered parameter shape is `404`.
+- Registration errors are reported before serving and do not alter an already frozen route table.
 
 ## 11. Project Constraints
 
-Use only the Go standard library, including `net/http`, `context`, `net/url`, `sort`, `strings`, `log/slog` or another standard structured logging facility, `sync`, and `net/http/httptest` as appropriate. Do not use a full router framework, reflection, wildcard or catch-all matching, package-level mutable state, hidden default loggers, or external request-ID packages.
+- Use only the Go standard library, including `net/http`, `context`, `net/url`, `sort`, `strings`, `log/slog` or another standard structured logging facility, `sync`, and `net/http/httptest` as appropriate.
+- Do not use a full router framework, reflection, wildcard or catch-all matching, package-level mutable state, hidden default loggers, or external request-ID packages.
 
-Do not silently clean paths, redirect trailing slashes, decode a parameter twice, or accept encoded separators. Do not prescribe or copy a framework-style API in the guide; the learner chooses types and boundaries. Registration must complete before concurrent serving, and tests use in-memory requests with no fixed ports, network calls, or sleeps.
+- Do not silently clean paths, redirect trailing slashes, decode a parameter twice, or accept encoded separators.
+- Do not prescribe or copy a framework-style API in the guide; the learner chooses types and boundaries.
+- Registration must complete before concurrent serving, and tests use in-memory requests with no fixed ports, network calls, or sleeps.
 
 ## 12. Design Questions Before Coding
 
@@ -130,6 +186,8 @@ Do not silently clean paths, redirect trailing slashes, decode a parameter twice
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 - Register a static route and a parameter route that overlap, then verify the static route wins regardless of registration order.
 - Match several parameter values and verify each named value is available to the endpoint through request-scoped context only.
 - Verify a wrong segment count, unknown static segment, and syntactically valid unregistered path return `404`.
@@ -149,19 +207,36 @@ Do not silently clean paths, redirect trailing slashes, decode a parameter twice
 
 ## 15. Common Mistakes to Watch For
 
-Using first-registered wins makes behavior depend on setup order and lets a parameter route shadow a more specific static resource. Falling through after a static method mismatch can expose a different parameter endpoint. Replacing a duplicate registration silently hides configuration errors. Treating different parameter names as interchangeable can change what handlers find in context.
+- Using first-registered wins makes behavior depend on setup order and lets a parameter route shadow a more specific static resource.
+- Falling through after a static method mismatch can expose a different parameter endpoint.
+- Replacing a duplicate registration silently hides configuration errors.
+- Treating different parameter names as interchangeable can change what handlers find in context.
 
-Calling path cleaning functions can collapse `..`, repeated slashes, or encoded separators into a resource the client did not actually request. Splitting after an early decode lets `%2F` change segment count. Applying query decoding to path data turns plus signs into spaces. Decoding a value twice creates traversal and identity ambiguity.
+- Calling path cleaning functions can collapse `..`, repeated slashes, or encoded separators into a resource the client did not actually request.
+- Splitting after an early decode lets `%2F` change segment count.
+- Applying query decoding to path data turns plus signs into spaces.
+- Decoding a value twice creates traversal and identity ambiguity.
 
-Using a package-level parameter map or request-ID variable causes concurrent requests to overwrite one another. Storing mutable maps in context without ownership rules lets downstream code create races. Trusting any incoming request ID enables log injection and unbounded correlation values. Echoing an invalid generator result repeats the trust failure.
+- Using a package-level parameter map or request-ID variable causes concurrent requests to overwrite one another.
+- Storing mutable maps in context without ownership rules lets downstream code create races.
+- Trusting any incoming request ID enables log injection and unbounded correlation values.
+- Echoing an invalid generator result repeats the trust failure.
 
-Putting the access logger outside request-ID middleware prevents it from reliably seeing the established ID. Logging only before dispatch misses the final status and byte count. Calling downstream twice can duplicate side effects. A response wrapper that advertises unsupported optional interfaces can break handlers that inspect them.
+- Putting the access logger outside request-ID middleware prevents it from reliably seeing the established ID.
+- Logging only before dispatch misses the final status and byte count.
+- Calling downstream twice can duplicate side effects.
+- A response wrapper that advertises unsupported optional interfaces can break handlers that inspect them.
 
-Testing only successful matches misses registration conflicts, `405` semantics, encoded separators, and middleware unwinding. Using sleeps to arrange concurrent requests produces timing-dependent tests instead of a synchronization boundary. Treating a race-detector pass as proof of correct route precedence confuses memory safety with behavior.
+- Testing only successful matches misses registration conflicts, `405` semantics, encoded separators, and middleware unwinding.
+- Using sleeps to arrange concurrent requests produces timing-dependent tests instead of a synchronization boundary.
+- Treating a race-detector pass as proof of correct route precedence confuses memory safety with behavior.
 
 ## 16. Topics and References for Study
 
-Study the official `net/http` handler and response-writer documentation, `net/http/httptest`, `context`, `net/url` path escaping and unescaping, `sort`, and the standard `log/slog` package. Read HTTP semantics for path identity, `404`, `405`, `Allow`, and `HEAD`. Search for route specificity, ambiguous route detection, request-scoped context values, response-writer instrumentation, structured access logging, and safe correlation IDs. Compare the handler boundary from Project 046 and the REST method matrix from Project 047.
+- Study the official `net/http` handler and response-writer documentation, `net/http/httptest`, `context`, `net/url` path escaping and unescaping, `sort`, and the standard `log/slog` package.
+- Read HTTP semantics for path identity, `404`, `405`, `Allow`, and `HEAD`.
+- Search for route specificity, ambiguous route detection, request-scoped context values, response-writer instrumentation, structured access logging, and safe correlation IDs.
+- Compare the handler boundary from Project 046 and the REST method matrix from Project 047.
 
 ## 17. Self-Assessment Questions
 
@@ -178,17 +253,35 @@ Study the official `net/http` handler and response-writer documentation, `net/ht
 
 ## 18. Definition of Completion
 
-- The router accepts only its documented static and one-segment parameter grammar and rejects duplicate or ambiguous registrations before serving.
-- Static routes beat parameter routes, path selection precedes method selection, unknown paths return `404`, and known wrong methods return `405` with sorted `Allow` values.
-- Syntactically valid noncanonical paths return `404`, malformed or encoded-separator paths return `400`, and no path is redirected or silently cleaned into another resource.
-- Parameters are decoded exactly once, encoded separator ambiguity is rejected, and values are scoped under a private typed context key.
-- Request-ID middleware validates the pinned format, generates through an injected source when needed, echoes exactly one value, and prevents invalid source output from reaching handlers.
-- Structured access logging is injected, emits one complete record with the required fields, and follows the pinned middleware order and unwinding behavior.
-- Every middleware calls its downstream at most once, no global state is used, and concurrent requests pass under the race detector.
-- Tests cover precedence, parameters, decoding, registration errors, `404`, `405`, `Allow`, ID paths, order, concurrency, and no-sleep/no-network constraints.
-- The implementation uses only the standard library and the learner can justify every normalization and trust-boundary decision.
+- [ ] The router accepts only its documented static and one-segment parameter grammar and rejects duplicate or ambiguous registrations before serving.
+- [ ] Static routes beat parameter routes, path selection precedes method selection, unknown paths return `404`, and known wrong methods return `405` with sorted `Allow` values.
+- [ ] Syntactically valid noncanonical paths return `404`, malformed or encoded-separator paths return `400`, and no path is redirected or silently cleaned into another resource.
+- [ ] Parameters are decoded exactly once, encoded separator ambiguity is rejected, and values are scoped under a private typed context key.
+- [ ] Request-ID middleware validates the pinned format, generates through an injected source when needed, echoes exactly one value, and prevents invalid source output from reaching handlers.
+- [ ] Structured access logging is injected, emits one complete record with the required fields, and follows the pinned middleware order and unwinding behavior.
+- [ ] Every middleware calls its downstream at most once, no global state is used, and concurrent requests pass under the race detector.
+- [ ] Tests cover precedence, parameters, decoding, registration errors, `404`, `405`, `Allow`, ID paths, order, concurrency, and no-sleep/no-network constraints.
+- [ ] The implementation uses only the standard library and the learner can justify every normalization and trust-boundary decision.
 
 ## 19. Optional Extensions
 
-1. Add a bounded route-group facility for a fixed prefix while preserving exact matching, static precedence, and the same conflict rules.
-2. Add request-scoped cancellation or deadline reporting to access logs, with an injected time boundary and no real-time waiting in tests.
+- Add a bounded route-group facility for a fixed prefix while preserving exact matching, static precedence, and the same conflict rules.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 047 — REST API CRUD](../../04-apis-and-services/047_rest_api_crud/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`net/url`](https://pkg.go.dev/net/url), [`log/slog`](https://pkg.go.dev/log/slog).
+
+### Project-specific learning focus
+
+- **Learn now:** route specificity, ambiguity detection, escaped paths, 404 versus 405, middleware composition, request-scoped values, response capture, and safe logs.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

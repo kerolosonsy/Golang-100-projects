@@ -2,7 +2,7 @@
 
 ## 1. Project Name and Number
 
-Project 053 — URL Shortener API, located in `053_url_shortener_api`.
+- Project 053 — URL Shortener API, located in `053_url_shortener_api`.
 
 ## 2. Project Idea
 
@@ -10,13 +10,17 @@ Build a small HTTP service that accepts a long URL through a strict JSON request
 
 ## 3. Why This Project Now?
 
-Project 052 served static assets with deterministic caching and exact route grammar, and Project 046 is the `net/http` foundation this project extends. This project introduces a clean store boundary, a generated-code contract, collision handling, and a small test-injectable cryptographic source. The new step is to combine strict input validation, deterministic random generation, an interface-based store, and uniform redirect semantics.
+- Project 052 served static assets with deterministic caching and exact route grammar, and Project 046 is the `net/http` foundation this project extends.
+- This project introduces a clean store boundary, a generated-code contract, collision handling, and a small test-injectable cryptographic source.
+- The new step is to combine strict input validation, deterministic random generation, an interface-based store, and uniform redirect semantics.
 
 ## 4. Prerequisites
 
-Complete Projects 052 and 046 before starting. Earlier projects may be useful review, but they are not required prerequisites.
+- Complete Projects 052 and 046 before starting.
+- Earlier projects may be useful review, but they are not required prerequisites.
 
-You should already be able to construct independently testable `net/http` handlers with `httptest`, distinguish `201`, `302`, `400`, `404`, `405`, `413`, `415`, `500`, and `503` semantically, validate JSON strictly, return a `Location` header on `201 Created`, and reason about map iteration order. You should also know how to read from `crypto/rand` with an unbiased mapping and how to inject a deterministic source into a constructor.
+- You should already be able to construct independently testable `net/http` handlers with `httptest`, distinguish `201`, `302`, `400`, `404`, `405`, `413`, `415`, `500`, and `503` semantically, validate JSON strictly, return a `Location` header on `201 Created`, and reason about map iteration order.
+- You should also know how to read from `crypto/rand` with an unbiased mapping and how to inject a deterministic source into a constructor.
 
 ## 5. What You Must Know Before Starting
 
@@ -34,25 +38,50 @@ You should already be able to construct independently testable `net/http` handle
 
 ## 6. Explanation of New Concepts
 
-A short code is a small identifier drawn from a fixed alphabet. The documented alphabet is 62 symbols ordered as the digits `0` through `9`, then the uppercase letters `A` through `Z`, then the lowercase letters `a` through `z`. The fixed length of exactly 8 characters with the fixed alphabet gives a fixed total address space and a fixed URL shape.
+### Concepts
 
-`crypto/rand` produces uniformly distributed random bytes. Mapping those bytes to a symbol alphabet without bias requires rejection sampling: bytes that fall in the top of the range, where a naive modulo would skew the distribution toward the lower symbols, are rejected and a new byte is read. The remaining bytes index into the alphabet directly. This property is what makes the code distribution uniform over the address space.
+- A short code is a small identifier drawn from a fixed alphabet.
+- The documented alphabet is 62 symbols ordered as the digits `0` through `9`, then the uppercase letters `A` through `Z`, then the lowercase letters `a` through `z`.
+- The fixed length of exactly 8 characters with the fixed alphabet gives a fixed total address space and a fixed URL shape.
 
-The store boundary is an interface with a small fixed surface area. The store distinguishes four outcomes for the documented methods: stored, found, not found, collision, and internal error. The boundary exists so tests can inject a deterministic store that simulates collisions, errors, and exhaustion. Returning a single error category for all four cases hides real failures and breaks the test boundary.
+- `crypto/rand` produces uniformly distributed random bytes.
+- Mapping those bytes to a symbol alphabet without bias requires rejection sampling: bytes that fall in the top of the range, where a naive modulo would skew the distribution toward the lower symbols, are rejected and a new byte is read.
+- The remaining bytes index into the alphabet directly.
+- This property is what makes the code distribution uniform over the address space.
 
-The 8,192-byte body cap protects the service from unbounded input. A body of exactly 8,192 bytes that is otherwise valid is accepted; the first byte beyond is `413 Payload Too Large`. The cap is enforced before JSON parsing so an oversized body is rejected without consuming parser memory.
+- The store boundary is an interface with a small fixed surface area.
+- The store distinguishes four outcomes for the documented methods: stored, found, not found, collision, and internal error.
+- The boundary exists so tests can inject a deterministic store that simulates collisions, errors, and exhaustion.
+- Returning a single error category for all four cases hides real failures and breaks the test boundary.
 
-Strict JSON validation rejects unknown fields, missing required fields, trailing whitespace that contains a second value, and wrong field types. A successful decode is exactly one JSON object with the documented fields, followed only by JSON whitespace.
+- The 8,192-byte body cap protects the service from unbounded input.
+- A body of exactly 8,192 bytes that is otherwise valid is accepted; the first byte beyond is `413 Payload Too Large`.
+- The cap is enforced before JSON parsing so an oversized body is rejected without consuming parser memory.
 
-The redirect status is `302 Found`. The service pins this status and does not vary it. The `Location` header value is the exact stored URL. The service does not modify the stored URL before emitting it because doing so would change the contract. The same URL is echoed back through the JSON encoder in the create response: the create body intentionally includes the accepted URL string, the standard JSON encoder performs normal escaping for safety, and the service must not invent manual escaping rules.
+- Strict JSON validation rejects unknown fields, missing required fields, trailing whitespace that contains a second value, and wrong field types.
+- A successful decode is exactly one JSON object with the documented fields, followed only by JSON whitespace.
 
-The service never resolves, fetches, or otherwise touches the destination URL. There is no DNS lookup, no TCP connection, no HTTP fetch, and no preview. By construction, the service is not a vector for SSRF. Tests do not require any external connectivity.
+- The redirect status is `302 Found`.
+- The service pins this status and does not vary it.
+- The `Location` header value is the exact stored URL.
+- The service does not modify the stored URL before emitting it because doing so would change the contract.
+- The same URL is echoed back through the JSON encoder in the create response: the create body intentionally includes the accepted URL string, the standard JSON encoder performs normal escaping for safety, and the service must not invent manual escaping rules.
 
-Internal and public responses are kept distinct. A non-collision internal generator or store error returns a generic `500 Internal Server Error` with the documented JSON error envelope and code `internal_error`. Collision exhaustion on attempt five returns `503 Service Unavailable` with code `service_unavailable`. Validation, body, media, and not-found failures keep their stable mappings. The success envelope never appears in error responses, and success has only `code`, `short_path`, and `url` as its top-level fields.
+- The service never resolves, fetches, or otherwise touches the destination URL.
+- There is no DNS lookup, no TCP connection, no HTTP fetch, and no preview.
+- By construction, the service is not a vector for SSRF.
+- Tests do not require any external connectivity.
+
+- Internal and public responses are kept distinct.
+- A non-collision internal generator or store error returns a generic `500 Internal Server Error` with the documented JSON error envelope and code `internal_error`.
+- Collision exhaustion on attempt five returns `503 Service Unavailable` with code `service_unavailable`.
+- Validation, body, media, and not-found failures keep their stable mappings.
+- The success envelope never appears in error responses, and success has only `code`, `short_path`, and `url` as its top-level fields.
 
 ## 7. Learning Objective
 
-By completion, you can build an interface-based in-memory store, generate unbiased fixed-length codes from a cryptographic source using rejection sampling, handle a small bounded number of collisions deterministically, validate a URL at the HTTP boundary, redirect with a pinned status, and explain why the absence of outbound fetching removes an entire class of risk. You can also explain why strict JSON validation matters, why the store interface must distinguish four outcomes, why the service must echo the accepted URL safely through the standard JSON encoder without manual escaping, and why the URL needs both URL-parser validation and JSON-encode-safe handling.
+- By completion, you can build an interface-based in-memory store, generate unbiased fixed-length codes from a cryptographic source using rejection sampling, handle a small bounded number of collisions deterministically, validate a URL at the HTTP boundary, redirect with a pinned status, and explain why the absence of outbound fetching removes an entire class of risk.
+- You can also explain why strict JSON validation matters, why the store interface must distinguish four outcomes, why the service must echo the accepted URL safely through the standard JSON encoder without manual escaping, and why the URL needs both URL-parser validation and JSON-encode-safe handling.
 
 ## 8. Functional Requirements
 
@@ -78,39 +107,87 @@ By completion, you can build an interface-based in-memory store, generate unbias
 
 ## 9. Inputs and Outputs
 
-The creation request is a JSON object with exactly one field, `url`, whose value is an absolute `http` or `https` URL string with a non-empty host. The request body must not exceed exactly 8,192 bytes. The request media type must be `application/json` with valid optional media-type parameters.
+### Interface Contract
 
-Text-only creation example: a request with a JSON body containing a single field `url` whose value is an absolute `https` URL with a non-empty host produces a `201 Created` response. The response body is a JSON document whose top-level fields are `code`, `short_path`, and `url`. The `url` value matches the request input exactly as the standard JSON encoder escapes it. The response includes a `Location` header whose value is the redirect path for the generated code.
+- The creation request is a JSON object with exactly one field, `url`, whose value is an absolute `http` or `https` URL string with a non-empty host.
+- The request body must not exceed exactly 8,192 bytes.
+- The request media type must be `application/json` with valid optional media-type parameters.
 
-Text-only redirect example: a `GET` to the redirect path with the generated code produces a `302 Found` response with a `Location` header whose value is exactly the stored URL and zero body bytes.
+- Text-only creation example: a request with a JSON body containing a single field `url` whose value is an absolute `https` URL with a non-empty host produces a `201 Created` response.
+- The response body is a JSON document whose top-level fields are `code`, `short_path`, and `url`.
+- The `url` value matches the request input exactly as the standard JSON encoder escapes it.
+- The response includes a `Location` header whose value is the redirect path for the generated code.
 
-Text-only failure examples: a request with a missing `url` field produces `400` with code `invalid_request`; a request with a non-string `url` produces `400`; a request with an `ftp` URL or a non-absolute URL or a URL missing the host produces `400`; a request whose body is 8,193 or more bytes produces `413` with code `payload_too_large`; a body of exactly 8,192 bytes is accepted if otherwise valid; a request with a missing or wrong media type produces `415` with code `unsupported_media_type`; a request whose body is not a JSON object produces `400`; a request whose body contains unknown fields produces `400`; a request whose body contains a trailing second JSON value produces `400`; a request whose code is malformed produces `404` with code `not_found`; a request whose code is not found produces `404`; collision on attempt five produces `503` with code `service_unavailable`; a non-collision generator or store internal error produces `500` with code `internal_error`.
+- Text-only redirect example: a `GET` to the redirect path with the generated code produces a `302 Found` response with a `Location` header whose value is exactly the stored URL and zero body bytes.
 
-The successful JSON document contains exactly `code`, `short_path`, and `url`. The error JSON document contains exactly `code` and `message`. The stable public error codes are `invalid_request`, `payload_too_large`, `unsupported_media_type`, `not_found`, `method_not_allowed`, `service_unavailable`, and `internal_error`.
+- Text-only failure examples: a request with a missing `url` field produces `400` with code `invalid_request`;
+- A request with a non-string `url` produces `400`;
+- A request with an `ftp` URL or a non-absolute URL or a URL missing the host produces `400`;
+- A request whose body is 8,193 or more bytes produces `413` with code `payload_too_large`;
+- A body of exactly 8,192 bytes is accepted if otherwise valid;
+- A request with a missing or wrong media type produces `415` with code `unsupported_media_type`;
+- A request whose body is not a JSON object produces `400`;
+- A request whose body contains unknown fields produces `400`;
+- A request whose body contains a trailing second JSON value produces `400`;
+- A request whose code is malformed produces `404` with code `not_found`;
+- A request whose code is not found produces `404`;
+- Collision on attempt five produces `503` with code `service_unavailable`;
+- A non-collision generator or store internal error produces `500` with code `internal_error`.
+
+- The successful JSON document contains exactly `code`, `short_path`, and `url`.
+- The error JSON document contains exactly `code` and `message`.
+- The stable public error codes are `invalid_request`, `payload_too_large`, `unsupported_media_type`, `not_found`, `method_not_allowed`, `service_unavailable`, and `internal_error`.
 
 ## 10. Rules and Edge Cases
 
-A URL is invalid when it is missing the scheme, has a non-`http` and non-`https` scheme, has an empty host, has an authority that cannot be parsed, or has invalid syntax. The validation does not attempt to resolve the host and does not require a public IP. The validation does not strip fragments or query strings; they are preserved as part of the stored URL.
+- A URL is invalid when it is missing the scheme, has a non-`http` and non-`https` scheme, has an empty host, has an authority that cannot be parsed, or has invalid syntax.
+- The validation does not attempt to resolve the host and does not require a public IP.
+- The validation does not strip fragments or query strings; they are preserved as part of the stored URL.
 
-The code length is exactly 8 characters. The alphabet is the documented ordered alphabet. The mapping uses rejection sampling so that every character is equally likely. Exactly 8 characters and the fixed alphabet give a fixed URL shape that does not change between processes.
+- The code length is exactly 8 characters.
+- The alphabet is the documented ordered alphabet.
+- The mapping uses rejection sampling so that every character is equally likely.
+- Exactly 8 characters and the fixed alphabet give a fixed URL shape that does not change between processes.
 
-A collision occurs when a generated code already exists in the store. The service retries generation at most five total attempts per create. Each retry uses a fresh sample from the random source. Collision on attempt five returns `503 Service Unavailable` with the documented envelope. A non-collision generator or store internal error at any point returns a generic `500 Internal Server Error` with the documented envelope. Existing entries are never overwritten.
+- A collision occurs when a generated code already exists in the store.
+- The service retries generation at most five total attempts per create.
+- Each retry uses a fresh sample from the random source.
+- Collision on attempt five returns `503 Service Unavailable` with the documented envelope.
+- A non-collision generator or store internal error at any point returns a generic `500 Internal Server Error` with the documented envelope.
+- Existing entries are never overwritten.
 
-A code that is not exactly 8 characters, contains a character outside the documented alphabet, contains a path separator, contains an encoded separator, or is otherwise malformed is treated as not found and returns `404`. The store is not consulted for malformed codes.
+- A code that is not exactly 8 characters, contains a character outside the documented alphabet, contains a path separator, contains an encoded separator, or is otherwise malformed is treated as not found and returns `404`.
+- The store is not consulted for malformed codes.
 
-The duplicate-long-URL policy is pinned: a second create for an already-stored URL returns a fresh code with the same contract, not the existing code. The policy is tested in the verification cases. The service does not promise idempotency on creation.
+- The duplicate-long-URL policy is pinned: a second create for an already-stored URL returns a fresh code with the same contract, not the existing code.
+- The policy is tested in the verification cases.
+- The service does not promise idempotency on creation.
 
-The store boundary distinguishes stored, found, not found, collision, and internal error outcomes. The boundary returns are explicit so tests can inject a deterministic store. The boundary is not implemented as a plain map lookup that conflates not found with collision.
+- The store boundary distinguishes stored, found, not found, collision, and internal error outcomes.
+- The boundary returns are explicit so tests can inject a deterministic store.
+- The boundary is not implemented as a plain map lookup that conflates not found with collision.
 
-The service does not fetch the destination. There is no DNS lookup, no TCP connection, no HTTP fetch, and no preview. The stored URL is echoed through the JSON encoder in the create response and through the `Location` header on redirect. The service must safely JSON-encode the URL whenever it appears in a JSON envelope; the standard JSON encoder handles this. The service never offers a body on the redirect and never modifies the stored URL.
+- The service does not fetch the destination.
+- There is no DNS lookup, no TCP connection, no HTTP fetch, and no preview.
+- The stored URL is echoed through the JSON encoder in the create response and through the `Location` header on redirect.
+- The service must safely JSON-encode the URL whenever it appears in a JSON envelope; the standard JSON encoder handles this.
+- The service never offers a body on the redirect and never modifies the stored URL.
 
-Internal responses are kept distinct from public responses. A non-collision internal error returns `500` with `internal_error` and a generic message. A collision exhaustion returns `503` with `service_unavailable`. Validation, body, media, and not-found failures keep their stable mappings.
+- Internal responses are kept distinct from public responses.
+- A non-collision internal error returns `500` with `internal_error` and a generic message.
+- A collision exhaustion returns `503` with `service_unavailable`.
+- Validation, body, media, and not-found failures keep their stable mappings.
 
 ## 11. Project Constraints
 
-Use only the Go standard library. Use `net/http`, `encoding/json`, `crypto/rand`, `strings`, `net/url`, `sync`, and `net/http/httptest`. Do not use a web framework, a database, a third-party URL shortener library, a third-party random library, a third-party URL validator, or an external HTTP client. Do not perform any outbound HTTP, DNS, or TCP requests.
+- Use only the Go standard library.
+- Use `net/http`, `encoding/json`, `crypto/rand`, `strings`, `net/url`, `sync`, and `net/http/httptest`.
+- Do not use a web framework, a database, a third-party URL shortener library, a third-party random library, a third-party URL validator, or an external HTTP client.
+- Do not perform any outbound HTTP, DNS, or TCP requests.
 
-The exact 8,192-byte body cap, the exact 8-character code length, the exact documented alphabet order, the exact at-most-five total attempts collision policy, and the exact stable public error codes are required learning contracts and are part of this document. Do not include implementation code, function signatures, or pseudocode that describes the rejection-sampling algorithm step by step in this guide. The guide states the property and the alphabet, not the algorithm.
+- The exact 8,192-byte body cap, the exact 8-character code length, the exact documented alphabet order, the exact at-most-five total attempts collision policy, and the exact stable public error codes are required learning contracts and are part of this document.
+- Do not include implementation code, function signatures, or pseudocode that describes the rejection-sampling algorithm step by step in this guide.
+- The guide states the property and the alphabet, not the algorithm.
 
 ## 12. Design Questions Before Coding
 
@@ -143,6 +220,8 @@ The exact 8,192-byte body cap, the exact 8-character code length, the exact docu
 
 ## 14. Verification Cases the Learner Must Write
 
+### Required Cases
+
 - Create a link with a valid `https` URL. Verify `201`, the exact JSON envelope with `code`, `short_path`, and `url` only, the `Location` header, and that the `url` field matches the input exactly as the standard JSON encoder escapes it.
 - Create a link with a valid `http` URL. Verify the same contract as `https`.
 - Submit a body of exactly 8,192 bytes that is otherwise valid. Verify it is accepted and a `201` is reachable. Submit a body of 8,193 bytes. Verify `413` before any JSON parse and no store mutation.
@@ -166,25 +245,44 @@ The exact 8,192-byte body cap, the exact 8-character code length, the exact docu
 
 ## 15. Common Mistakes to Watch For
 
-Using a naive modulo to map random bytes to the documented alphabet biases the distribution toward the lower symbols and reduces the effective address space. Reading random bytes only once per code and not rejecting out-of-range values produces skewed codes. Generating a code with a length other than exactly 8 characters makes the URL shape unpredictable and the verification contract ambiguous.
+- Using a naive modulo to map random bytes to the documented alphabet biases the distribution toward the lower symbols and reduces the effective address space.
+- Reading random bytes only once per code and not rejecting out-of-range values produces skewed codes.
+- Generating a code with a length other than exactly 8 characters makes the URL shape unpredictable and the verification contract ambiguous.
 
-Treating the store as a plain map lookup conflates not found, collision, and internal error. Returning a single error for all three cases hides real failures and breaks the test boundary. Returning collision as not found makes retry logic impossible to verify. Returning collision exhaustion as `500` collapses the distinct exhaustion contract into the generic internal-error contract.
+- Treating the store as a plain map lookup conflates not found, collision, and internal error.
+- Returning a single error for all three cases hides real failures and breaks the test boundary.
+- Returning collision as not found makes retry logic impossible to verify.
+- Returning collision exhaustion as `500` collapses the distinct exhaustion contract into the generic internal-error contract.
 
-Trusting the URL without parsing or validation accepts non-`http` and non-`https` schemes, malformed authorities, and empty hosts. The service would still not fetch the destination, but the stored URL would no longer be a valid redirect target and the contract would be ambiguous.
+- Trusting the URL without parsing or validation accepts non-`http` and non-`https` schemes, malformed authorities, and empty hosts.
+- The service would still not fetch the destination, but the stored URL would no longer be a valid redirect target and the contract would be ambiguous.
 
-Reading the body without the exact 8,192-byte cap permits unbounded memory growth. Treating the cap as advisory lets oversized bodies through. Decoding JSON with default options accepts unknown fields and trailing second values. Inferring the media type from the body accepts non-JSON requests.
+- Reading the body without the exact 8,192-byte cap permits unbounded memory growth.
+- Treating the cap as advisory lets oversized bodies through.
+- Decoding JSON with default options accepts unknown fields and trailing second values.
+- Inferring the media type from the body accepts non-JSON requests.
 
-Treating a duplicate long URL as an idempotent request and returning the existing code breaks the contract for fresh-code creation. Idempotency at the URL level is a separate feature and is not part of this project.
+- Treating a duplicate long URL as an idempotent request and returning the existing code breaks the contract for fresh-code creation.
+- Idempotency at the URL level is a separate feature and is not part of this project.
 
-Redirecting with a status other than `302 Found`, modifying the stored URL before emitting it, including a body on the redirect, or fetching the destination as part of the redirect violates the contract. The redirect is a header-only response.
+- Redirecting with a status other than `302 Found`, modifying the stored URL before emitting it, including a body on the redirect, or fetching the destination as part of the redirect violates the contract.
+- The redirect is a header-only response.
 
-Inventing manual escaping rules outside the standard JSON encoder risks breaking the create response shape and the cross-handler consistency. Echoing the accepted URL through manual concatenation can produce an invalid JSON envelope for inputs that contain quotes, backslashes, or control characters.
+- Inventing manual escaping rules outside the standard JSON encoder risks breaking the create response shape and the cross-handler consistency.
+- Echoing the accepted URL through manual concatenation can produce an invalid JSON envelope for inputs that contain quotes, backslashes, or control characters.
 
-Returning a successful response after a partial mutation or after an internal error leaks state. Holding a lock while doing unnecessary JSON encoding reduces concurrency. Using a global random source prevents deterministic tests.
+- Returning a successful response after a partial mutation or after an internal error leaks state.
+- Holding a lock while doing unnecessary JSON encoding reduces concurrency.
+- Using a global random source prevents deterministic tests.
 
 ## 16. Topics and References for Study
 
-Study the official documentation for `net/http`, especially `ServeMux` patterns, `Redirect`, `NotFound`, `Error`, and the documented behavior of `Location`. Study `encoding/json` decoder options, strict field handling, and complete-document validation. Study `crypto/rand` for cryptographic random byte reads. Study `net/url` for `Parse`, `ParseRequestURI`, scheme rules, and host extraction. Study `sync.Mutex` and `sync.RWMutex` for ownership protection. Review RFC 3986 for URI syntax, RFC 7231 for redirect semantics, and the documented practices for unbiased random sampling over fixed alphabets.
+- Study the official documentation for `net/http`, especially `ServeMux` patterns, `Redirect`, `NotFound`, `Error`, and the documented behavior of `Location`.
+- Study `encoding/json` decoder options, strict field handling, and complete-document validation.
+- Study `crypto/rand` for cryptographic random byte reads.
+- Study `net/url` for `Parse`, `ParseRequestURI`, scheme rules, and host extraction.
+- Study `sync.Mutex` and `sync.RWMutex` for ownership protection.
+- Review RFC 3986 for URI syntax, RFC 7231 for redirect semantics, and the documented practices for unbiased random sampling over fixed alphabets.
 
 ## 17. Self-Assessment Questions
 
@@ -201,20 +299,38 @@ Study the official documentation for `net/http`, especially `ServeMux` patterns,
 
 ## 18. Definition of Completion
 
-- `POST /links` accepts a strict JSON object with exactly one valid `url` field and returns `201` with the documented envelope and `Location`.
-- The body cap is exactly 8,192 bytes; exactly that is accepted and one byte more is `413`.
-- `GET /{code}` redirects with `302 Found`, the exact stored URL in `Location`, and zero body bytes.
-- The store boundary distinguishes stored, found, not found, collision, and internal error and is testable through an injected implementation.
-- Code generation uses rejection sampling over the documented alphabet of 62 symbols to produce exactly 8 characters.
-- Retry on collision is bounded to at most five total attempts per create; collision on the fifth attempt returns `503`; non-collision generator or store internal errors return `500`.
-- Malformed codes return `404` without consulting the store; missing codes return `404` with the documented envelope.
-- Unsupported methods, unknown paths, missing or wrong media types, oversized bodies, malformed JSON, and unknown or trailing fields map to the documented statuses without leaking internal causes.
-- The duplicate-long-URL policy returns a fresh code for every successful create and never returns the existing code.
-- The accepted URL is echoed safely through the standard JSON encoder in the create response; no manual escaping is invented.
-- Concurrent creates are safe under the race detector without external network access and without outbound HTTP.
-- The service uses only the Go standard library, and the learner can explain each policy and trade-off without referring to implementation syntax.
+- [ ] `POST /links` accepts a strict JSON object with exactly one valid `url` field and returns `201` with the documented envelope and `Location`.
+- [ ] The body cap is exactly 8,192 bytes; exactly that is accepted and one byte more is `413`.
+- [ ] `GET /{code}` redirects with `302 Found`, the exact stored URL in `Location`, and zero body bytes.
+- [ ] The store boundary distinguishes stored, found, not found, collision, and internal error and is testable through an injected implementation.
+- [ ] Code generation uses rejection sampling over the documented alphabet of 62 symbols to produce exactly 8 characters.
+- [ ] Retry on collision is bounded to at most five total attempts per create; collision on the fifth attempt returns `503`; non-collision generator or store internal errors return `500`.
+- [ ] Malformed codes return `404` without consulting the store; missing codes return `404` with the documented envelope.
+- [ ] Unsupported methods, unknown paths, missing or wrong media types, oversized bodies, malformed JSON, and unknown or trailing fields map to the documented statuses without leaking internal causes.
+- [ ] The duplicate-long-URL policy returns a fresh code for every successful create and never returns the existing code.
+- [ ] The accepted URL is echoed safely through the standard JSON encoder in the create response; no manual escaping is invented.
+- [ ] Concurrent creates are safe under the race detector without external network access and without outbound HTTP.
+- [ ] The service uses only the Go standard library, and the learner can explain each policy and trade-off without referring to implementation syntax.
 
 ## 19. Optional Extensions
 
-1. Add a deterministic, in-memory analytics counter that records the number of redirects per code, with no expiration and no persistence.
-2. Add a deterministic duplicate-URL short-circuit that returns the existing code for the same exact URL, with the existing-code behavior documented as a contract change.
+- Add a deterministic, in-memory analytics counter that records the number of redirects per code, with no expiration and no persistence.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 052 — Static File Server](../../04-apis-and-services/052_static_file_server/README.md#20-prerequisite-based-documentation-guide), [Project 046 — Basic HTTP Server](../../04-apis-and-services/046_basic_http_server/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **Standards and concept references:** [RFC 3986: URI syntax](https://www.rfc-editor.org/rfc/rfc3986.html).
+
+### Project-specific learning focus
+
+- **Learn now:** URL validation, unbiased short-code generation, collision retries, synchronized indexes, strict JSON, redirect choices, and deterministic tests.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

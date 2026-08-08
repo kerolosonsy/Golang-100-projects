@@ -1,45 +1,115 @@
 # Project 084 — TLS/SSL Server
 
 ## 1. Project Name and Number
-Project 084, tls_ssl_server. This README is a learning guide only. You will create every source and test file yourself in `06-networking/084_tls_ssl_server/`. This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- Project 084, tls_ssl_server.
+- This README is a learning guide only.
+- You will create every source and test file yourself in `06-networking/084_tls_ssl_server/`.
+- This guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 2. Project Idea
+
 A TLS HTTPS server whose certificate and private key are produced by a test certificate helper. The test helper generates an ECDSA P-256 CA and an ECDSA P-256 server certificate whose Subject Alternative Names list `localhost`, `127.0.0.1`, and `::1`, whose key usage is digital signature, whose extended key usage is `serverAuth`, and whose random positive non-zero 128-bit serial is generated with `crypto/rand` and is unique within one generated fixture set. The minimum and maximum required TLS version are both TLS 1.3; a TLS 1.2-only client fails. The TLS 1.3 cipher suites remain the Go defaults and are not configured through `CipherSuites`. The pinned ALPN list is exactly `http/1.1`; the required response reports HTTP major version 1 and negotiated ALPN `http/1.1`. The health endpoint is `/healthz`, responds only to `GET`, returns 200 with `Content-Type: application/json` and an exact JSON health object, and never includes secrets or certificate data. The default TLS mode does not require a client certificate; a separately configured mTLS mode requires and verifies a client certificate with the `clientAuth` EKU.
 
 ## 3. Why This Project Now?
-This follows Project 083 (custom_http_client) as the immediate predecessor. Project 071 (tcp_echo_server) and Project 060 (graceful_shutdown_web) are also formal prerequisites. Project 046 (basic_http_server) is recommended review for `net/http` server basics, and Project 041 (context_timeout_example) is recommended review for context cancellation, but neither is a formal prerequisite. This project introduces the discipline of pinning both the minimum and maximum TLS version to TLS 1.3 with no fallback, the discipline of pinning ALPN exactly without conflating TLS version with HTTP version, the discipline of verifying chain and EKU explicitly, and the discipline of separating the default server from a separately configured mTLS mode.
+
+- This follows Project 083 (custom_http_client) as the immediate predecessor.
+- Project 071 (tcp_echo_server) and Project 060 (graceful_shutdown_web) are also formal prerequisites.
+- Project 046 (basic_http_server) is recommended review for `net/http` server basics, and Project 041 (context_timeout_example) is recommended review for context cancellation, but neither is a formal prerequisite.
+- This project introduces the discipline of pinning both the minimum and maximum TLS version to TLS 1.3 with no fallback, the discipline of pinning ALPN exactly without conflating TLS version with HTTP version, the discipline of verifying chain and EKU explicitly, and the discipline of separating the default server from a separately configured mTLS mode.
 
 ## 4. Prerequisites
-Project 083 is the immediate predecessor and required prerequisite; Project 071 and Project 060 are also formal prerequisites. Project 046 and Project 041 are recommended review for HTTP server basics and cancellation context, but neither is a formal prerequisite. All certificates are generated locally for test use only; no production certificate authority is contacted. No external domain is contacted. Certificate verification is never disabled as a solution. Private keys are never logged, never echoed to test output, and never written to files outside the test fixture directory. Tests use `httptest` unstarted servers or loopback ephemeral TLS endpoints.
+
+- Project 083 is the immediate predecessor and required prerequisite; Project 071 and Project 060 are also formal prerequisites.
+- Project 046 and Project 041 are recommended review for HTTP server basics and cancellation context, but neither is a formal prerequisite.
+- All certificates are generated locally for test use only; no production certificate authority is contacted.
+- No external domain is contacted.
+- Certificate verification is never disabled as a solution.
+- Private keys are never logged, never echoed to test output, and never written to files outside the test fixture directory.
+- Tests use `httptest` unstarted servers or loopback ephemeral TLS endpoints.
 
 ## 5. What You Must Know Before Starting
-Know the `crypto/tls` package and `tls.Config`, `tls.Certificate`, certificate generation with `crypto/x509` and `crypto/rand`, the difference between key usage and extended key usage, ECDSA P-256 key generation, ALPN protocols, the minimum and maximum TLS version configuration, the TLS 1.3 cipher suite negotiation, the fact that TLS 1.3 cipher suites are not configured through `CipherSuites`, `tls.ClientAuth` modes including `NoClientCert` and `RequireAndVerifyClientCert`, `RootCAs` and the trust pool boundary, `ServerName` matching, loopback TLS listeners, server timeouts, graceful shutdown, the race detector, and the conceptual separation between TLS protocol version and HTTP protocol version.
+
+- Know the `crypto/tls` package and `tls.Config`, `tls.Certificate`, certificate generation with `crypto/x509` and `crypto/rand`, the difference between key usage and extended key usage, ECDSA P-256 key generation, ALPN protocols, the minimum and maximum TLS version configuration, the TLS 1.3 cipher suite negotiation, the fact that TLS 1.3 cipher suites are not configured through `CipherSuites`, `tls.ClientAuth` modes including `NoClientCert` and `RequireAndVerifyClientCert`, `RootCAs` and the trust pool boundary, `ServerName` matching, loopback TLS listeners, server timeouts, graceful shutdown, the race detector, and the conceptual separation between TLS protocol version and HTTP protocol version.
 
 ## 6. Explanation of New Concepts
-The test certificate helper generates an ECDSA P-256 CA with `IsCA` and basic constraints set, key usage set to certificate signing and CRL signing, and a random positive non-zero 128-bit serial drawn from `crypto/rand`. The server leaf is ECDSA P-256 with key usage digital signature and extended key usage `serverAuth`, with Subject Alternative Names `localhost`, `127.0.0.1`, and `::1`. The client leaf is ECDSA P-256 with key usage digital signature and extended key usage `clientAuth` only. Each generated serial is unique within one fixture set; zero values and duplicates are retried by the helper rather than propagated. An injected fixture clock pins the CA validity to `now-1m` through `now+2h` and the leaf validity to `now-1m` through `now+1h`. The same clock is used to drive a deterministic verification time boundary for the valid, expired, and not-yet-valid tests so that the test never waits for wall-clock time. Generated keys remain in memory; when a test must materialize a temporary key file the file is created with mode `0600` and is cleaned up. Production configuration reads explicit certificate and key paths and fails before the listener starts on load or mismatch.
 
-The TLS version is pinned. The minimum and maximum required TLS version are both TLS 1.3; a TLS 1.2-only client fails. There is no fallback policy. The TLS 1.3 cipher suites remain the Go defaults and are not configured through `CipherSuites`; no user-supplied weakening is permitted; no static RSA key exchange suites are permitted. The rationale is that TLS 1.3 cipher suites are negotiated by the runtime and cannot be weakened by `CipherSuites`; the discipline is that the runtime manages them and the code does not interfere.
+### Concepts
 
-The ALPN list is pinned exactly to `http/1.1`. The required client observes HTTP major version 1 and negotiated ALPN `http/1.1`. The TLS version is independent of the HTTP version; the learner explains the difference in prose. The pinned policy does not describe `h2` and never conditionally discusses HTTP/2. The `http/1.1` ALPN is the only entry; a client that advertises only `h2` fails the ALPN negotiation.
+- The test certificate helper generates an ECDSA P-256 CA with `IsCA` and basic constraints set, key usage set to certificate signing and CRL signing, and a random positive non-zero 128-bit serial drawn from `crypto/rand`.
+- The server leaf is ECDSA P-256 with key usage digital signature and extended key usage `serverAuth`, with Subject Alternative Names `localhost`, `127.0.0.1`, and `::1`.
+- The client leaf is ECDSA P-256 with key usage digital signature and extended key usage `clientAuth` only.
+- Each generated serial is unique within one fixture set; zero values and duplicates are retried by the helper rather than propagated.
+- An injected fixture clock pins the CA validity to `now-1m` through `now+2h` and the leaf validity to `now-1m` through `now+1h`.
+- The same clock is used to drive a deterministic verification time boundary for the valid, expired, and not-yet-valid tests so that the test never waits for wall-clock time.
+- Generated keys remain in memory; when a test must materialize a temporary key file the file is created with mode `0600` and is cleaned up.
+- Production configuration reads explicit certificate and key paths and fails before the listener starts on load or mismatch.
 
-The client builds a trust pool from the test CA and uses the matching `ServerName`. The trust pool is constructed from the CA certificate bytes; the `ServerName` matches one of the SAN entries of the server certificate. The client never sets `InsecureSkipVerify`. The client never accepts a certificate signed by a CA that the trust pool does not contain. A wrong hostname produces a verification failure; an untrusted CA produces a verification failure; an expired or not-yet-valid certificate produces a verification failure. None is treated as a recoverable warning.
+- The TLS version is pinned.
+- The minimum and maximum required TLS version are both TLS 1.3; a TLS 1.2-only client fails.
+- There is no fallback policy.
+- The TLS 1.3 cipher suites remain the Go defaults and are not configured through `CipherSuites`; no user-supplied weakening is permitted; no static RSA key exchange suites are permitted.
+- The rationale is that TLS 1.3 cipher suites are negotiated by the runtime and cannot be weakened by `CipherSuites`; the discipline is that the runtime manages them and the code does not interfere.
 
-The default client auth mode is `NoClientCert`; the server does not request a client certificate. The mTLS mode is separately configured; when mTLS is enabled, the server is configured with a client CA pool built from the test client CA, the client auth mode is `RequireAndVerifyClientCert`, and the server requires a verified client certificate with the `clientAuth` EKU on every request. A missing client certificate is rejected at the TLS layer. A client certificate signed by a foreign CA is rejected at the TLS layer. A client certificate whose EKU is `serverAuth` only or is otherwise wrong is rejected at the TLS layer. An expired client certificate is rejected at the TLS layer. A correct client certificate signed by the test client CA with the `clientAuth` EKU succeeds.
+- The ALPN list is pinned exactly to `http/1.1`.
+- The required client observes HTTP major version 1 and negotiated ALPN `http/1.1`.
+- The TLS version is independent of the HTTP version; the learner explains the difference in prose.
+- The pinned policy does not describe `h2` and never conditionally discusses HTTP/2.
+- The `http/1.1` ALPN is the only entry; a client that advertises only `h2` fails the ALPN negotiation.
 
-The health endpoint is exactly `/healthz`. It accepts `GET` only. The response is 200 with `Content-Type: application/json`; the exact response body is `{"status":"ok"}` with no trailing newline. Every later reference in this guide to the exact JSON health object means precisely those bytes. The response body never contains secrets, private keys, or certificate bodies. Any other method is 405. Any other path is 404.
+- The client builds a trust pool from the test CA and uses the matching `ServerName`.
+- The trust pool is constructed from the CA certificate bytes; the `ServerName` matches one of the SAN entries of the server certificate.
+- The client never sets `InsecureSkipVerify`.
+- The client never accepts a certificate signed by a CA that the trust pool does not contain.
+- A wrong hostname produces a verification failure; an untrusted CA produces a verification failure; an expired or not-yet-valid certificate produces a verification failure.
+- None is treated as a recoverable warning.
 
-Server timeouts are pinned exactly. The read-header timeout is 5 seconds; the read timeout is 15 seconds; the write timeout is 15 seconds; the idle timeout is 60 seconds; the graceful-shutdown budget is 5 seconds. The graceful-shutdown proof uses a barrier: the test holds a handler at an injected barrier, starts `Shutdown`, proves pending by synchronization events, releases the barrier, and proves completion. The watchdog `Close` runs only on a failed proof and then fails the test; the watchdog is never a success path.
+- The default client auth mode is `NoClientCert`; the server does not request a client certificate.
+- The mTLS mode is separately configured; when mTLS is enabled, the server is configured with a client CA pool built from the test client CA, the client auth mode is `RequireAndVerifyClientCert`, and the server requires a verified client certificate with the `clientAuth` EKU on every request.
+- A missing client certificate is rejected at the TLS layer.
+- A client certificate signed by a foreign CA is rejected at the TLS layer.
+- A client certificate whose EKU is `serverAuth` only or is otherwise wrong is rejected at the TLS layer.
+- An expired client certificate is rejected at the TLS layer.
+- A correct client certificate signed by the test client CA with the `clientAuth` EKU succeeds.
 
-A plaintext HTTP request to the HTTPS endpoint never returns the health response. The listener speaks TLS only; a plaintext request may receive a TLS-level error or a connection error, and depending on the underlying `net/http` behavior it may receive a safe 400 response from the server before the request reaches the handler, but it never returns the health response and never returns certificate or private-key parse internals.
+- The health endpoint is exactly `/healthz`.
+- It accepts `GET` only.
+- The response is 200 with `Content-Type: application/json`; the exact response body is `{"status":"ok"}` with no trailing newline.
+- Every later reference in this guide to the exact JSON health object means precisely those bytes.
+- The response body never contains secrets, private keys, or certificate bodies.
+- Any other method is 405.
+- Any other path is 404.
 
-TLS handshake errors and server errors are generic and never contain key or certificate parse internals in HTTP output or in logs. The log invariant is enforced through an injected logger.
+- Server timeouts are pinned exactly.
+- The read-header timeout is 5 seconds; the read timeout is 15 seconds; the write timeout is 15 seconds; the idle timeout is 60 seconds; the graceful-shutdown budget is 5 seconds.
+- The graceful-shutdown proof uses a barrier: the test holds a handler at an injected barrier, starts `Shutdown`, proves pending by synchronization events, releases the barrier, and proves completion.
+- The watchdog `Close` runs only on a failed proof and then fails the test; the watchdog is never a success path.
 
-Text-only protocol examples are permitted. As a prose shape: the required client opens a TLS connection to `https://127.0.0.1:port`, builds a trust pool from the test CA, sets `ServerName` to `127.0.0.1`, negotiates TLS 1.3 and ALPN `http/1.1`, sends `GET /healthz`, receives 200 with `Content-Type: application/json` and the exact JSON health object, and closes the connection. A client that trusts a different CA pool fails the handshake at the certificate verification step. A client that connects with `ServerName` set to a name that is not in the SAN list fails the handshake. A client that connects with a TLS 1.2-only configuration fails the handshake because the minimum and maximum required TLS version is TLS 1.3. A client that advertises only `h2` fails the ALPN negotiation because the pinned ALPN list is exactly `http/1.1`. A plaintext HTTP request to the HTTPS endpoint never returns the health response. In mTLS mode, a client with a verified client certificate signed by the test client CA and with the `clientAuth` EKU succeeds; a client without a client certificate is rejected at the TLS layer; a client with a foreign-CA client certificate is rejected; a client with a `serverAuth`-only client certificate is rejected; a client with an expired client certificate is rejected.
+- A plaintext HTTP request to the HTTPS endpoint never returns the health response.
+- The listener speaks TLS only; a plaintext request may receive a TLS-level error or a connection error, and depending on the underlying `net/http` behavior it may receive a safe 400 response from the server before the request reaches the handler, but it never returns the health response and never returns certificate or private-key parse internals.
+
+- TLS handshake errors and server errors are generic and never contain key or certificate parse internals in HTTP output or in logs.
+- The log invariant is enforced through an injected logger.
+
+- Text-only protocol examples are permitted.
+- As a prose shape: the required client opens a TLS connection to `https://127.0.0.1:port`, builds a trust pool from the test CA, sets `ServerName` to `127.0.0.1`, negotiates TLS 1.3 and ALPN `http/1.1`, sends `GET /healthz`, receives 200 with `Content-Type: application/json` and the exact JSON health object, and closes the connection.
+- A client that trusts a different CA pool fails the handshake at the certificate verification step.
+- A client that connects with `ServerName` set to a name that is not in the SAN list fails the handshake.
+- A client that connects with a TLS 1.2-only configuration fails the handshake because the minimum and maximum required TLS version is TLS 1.3.
+- A client that advertises only `h2` fails the ALPN negotiation because the pinned ALPN list is exactly `http/1.1`.
+- A plaintext HTTP request to the HTTPS endpoint never returns the health response.
+- In mTLS mode, a client with a verified client certificate signed by the test client CA and with the `clientAuth` EKU succeeds;
+- A client without a client certificate is rejected at the TLS layer;
+- A client with a foreign-CA client certificate is rejected;
+- A client with a `serverAuth`-only client certificate is rejected;
+- A client with an expired client certificate is rejected.
 
 ## 7. Learning Objective
-Implement a TLS HTTPS server with ECDSA P-256 certificates generated through `crypto/rand`, minimum and maximum required TLS version both TLS 1.3 with no fallback, the Go-default TLS 1.3 cipher suites untouched, ALPN exactly `http/1.1`, an exact `/healthz` JSON health endpoint, server timeouts and graceful shutdown proved by barrier events, a default `NoClientCert` mode, a separately configured mTLS `RequireAndVerifyClientCert` mode with a strict `clientAuth` EKU check, generic TLS handshake and server errors without key or certificate parse internals, and tests that prove trusted success, untrusted CA, wrong hostname, expired certificate, not-yet-valid certificate, TLS 1.2-only failure, plaintext-to-TLS failure, ALPN mismatch, mTLS success, mTLS missing client certificate, mTLS foreign-CA client certificate, mTLS wrong-EKU client certificate, and mTLS expired client certificate, all without contacting an external CA or domain and without disabling verification.
+
+- Implement a TLS HTTPS server with ECDSA P-256 certificates generated through `crypto/rand`, minimum and maximum required TLS version both TLS 1.3 with no fallback, the Go-default TLS 1.3 cipher suites untouched, ALPN exactly `http/1.1`, an exact `/healthz` JSON health endpoint, server timeouts and graceful shutdown proved by barrier events, a default `NoClientCert` mode, a separately configured mTLS `RequireAndVerifyClientCert` mode with a strict `clientAuth` EKU check, generic TLS handshake and server errors without key or certificate parse internals, and tests that prove trusted success, untrusted CA, wrong hostname, expired certificate, not-yet-valid certificate, TLS 1.2-only failure, plaintext-to-TLS failure, ALPN mismatch, mTLS success, mTLS missing client certificate, mTLS foreign-CA client certificate, mTLS wrong-EKU client certificate, and mTLS expired client certificate, all without contacting an external CA or domain and without disabling verification.
 
 ## 8. Functional Requirements
+
 1. The test certificate helper generates an ECDSA P-256 CA with `IsCA` and basic constraints set, key usage certificate signing and CRL signing, and a random positive non-zero 128-bit serial drawn from `crypto/rand`. The helper retries zero or duplicate serial values within one generated fixture set.
 2. The server leaf is ECDSA P-256 with key usage digital signature, extended key usage `serverAuth`, and Subject Alternative Names `localhost`, `127.0.0.1`, `::1`.
 3. The client leaf is ECDSA P-256 with key usage digital signature and extended key usage `clientAuth` only.
@@ -60,18 +130,61 @@ Implement a TLS HTTPS server with ECDSA P-256 certificates generated through `cr
 18. Tests use `httptest` unstarted servers or loopback ephemeral TLS endpoints; no external CA or domain is contacted; verification is never disabled as a solution.
 
 ## 9. Inputs and Outputs
-Server input is a loopback TLS address, the server certificate and private key, the pinned ALPN list, the pinned minimum and maximum TLS version, the optional client CA pool and the optional client auth mode, the pinned server timeouts, and the context for shutdown. Server output is a bound loopback address, the health response with fixed status, body, and `Content-Type`, and graceful-shutdown completion observed through synchronization events. Client input is the test CA certificate, the `ServerName` that matches a SAN entry, the mTLS client certificate and private key in mTLS mode, and the context with optional deadline. Client output is a typed response for successful handshakes and a typed verification or handshake error for failures.
+
+### Interface Contract
+
+- Server input is a loopback TLS address, the server certificate and private key, the pinned ALPN list, the pinned minimum and maximum TLS version, the optional client CA pool and the optional client auth mode, the pinned server timeouts, and the context for shutdown.
+- Server output is a bound loopback address, the health response with fixed status, body, and `Content-Type`, and graceful-shutdown completion observed through synchronization events.
+- Client input is the test CA certificate, the `ServerName` that matches a SAN entry, the mTLS client certificate and private key in mTLS mode, and the context with optional deadline.
+- Client output is a typed response for successful handshakes and a typed verification or handshake error for failures.
 
 ## 10. Rules and Edge Cases
-The server speaks TLS only. The minimum and maximum required TLS version is TLS 1.3; a TLS 1.2-only client fails. The ALPN list is exactly `http/1.1`. A wrong hostname is a verification failure. An untrusted CA is a verification failure. An expired certificate is a verification failure. A not-yet-valid certificate is a verification failure. None is a recoverable warning. A plaintext HTTP request to the HTTPS endpoint never returns the health response. In the default mode a client certificate is not requested. In mTLS mode a missing client certificate, a foreign-CA client certificate, a wrong-EKU client certificate, and an expired client certificate are each rejected at the TLS layer. The server never logs private keys. Production certificate and key files that cannot be loaded at startup produce a fatal error and the listener never starts. Graceful shutdown waits for in-flight handlers within the 5-second budget and force-closes after, observed through synchronization events. The watchdog `Close` runs only on a failed proof and then fails the test. Private keys are never written outside the test fixture directory.
+
+- The server speaks TLS only.
+- The minimum and maximum required TLS version is TLS 1.3; a TLS 1.2-only client fails.
+- The ALPN list is exactly `http/1.1`.
+- A wrong hostname is a verification failure.
+- An untrusted CA is a verification failure.
+- An expired certificate is a verification failure.
+- A not-yet-valid certificate is a verification failure.
+- None is a recoverable warning.
+- A plaintext HTTP request to the HTTPS endpoint never returns the health response.
+- In the default mode a client certificate is not requested.
+- In mTLS mode a missing client certificate, a foreign-CA client certificate, a wrong-EKU client certificate, and an expired client certificate are each rejected at the TLS layer.
+- The server never logs private keys.
+- Production certificate and key files that cannot be loaded at startup produce a fatal error and the listener never starts.
+- Graceful shutdown waits for in-flight handlers within the 5-second budget and force-closes after, observed through synchronization events.
+- The watchdog `Close` runs only on a failed proof and then fails the test.
+- Private keys are never written outside the test fixture directory.
 
 ## 11. Project Constraints
-Loopback TLS only. Generated test certificates only; no production certificate authority. No external domain. Verification is never disabled as a solution. The minimum and maximum required TLS version is TLS 1.3. The ALPN list is exactly `http/1.1`. The Go-default TLS 1.3 cipher suites are not configured through `CipherSuites`. mTLS is a separately configured mode. The default mode does not require a client certificate. Private keys are never logged or committed. Tests use `httptest` unstarted servers or loopback ephemeral TLS endpoints. Sleep is not used as a synchronization mechanism.
+
+- Loopback TLS only.
+- Generated test certificates only; no production certificate authority.
+- No external domain.
+- Verification is never disabled as a solution.
+- The minimum and maximum required TLS version is TLS 1.3.
+- The ALPN list is exactly `http/1.1`.
+- The Go-default TLS 1.3 cipher suites are not configured through `CipherSuites`. mTLS is a separately configured mode.
+- The default mode does not require a client certificate.
+- Private keys are never logged or committed.
+- Tests use `httptest` unstarted servers or loopback ephemeral TLS endpoints.
+- Sleep is not used as a synchronization mechanism.
 
 ## 12. Design Questions Before Coding
-Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fallback, and why is no `InsecureSkipVerify` permitted? Why are the TLS 1.3 cipher suites left as the Go defaults and not configured through `CipherSuites`, and why is no user-supplied weakening permitted? Why is the ALPN list exactly `http/1.1` and why is the TLS version independent of the HTTP version? Why is the default client auth mode `NoClientCert` and why is `RequireAndVerifyClientCert` restricted to a separately configured mTLS mode? Why is the client certificate EKU restricted to `clientAuth` and why is a `serverAuth`-only or otherwise wrong-EKU certificate rejected at the TLS layer? Why is the `/healthz` endpoint fixed to `GET` only with an exact JSON health object, and why is the body never allowed to contain secrets or certificate data? Why is the graceful-shutdown watchdog `Close` only a failure path and never a success path? Why is the verification failure treated as a typed rejection rather than a recoverable warning? Why does the log invariant enforce generic errors without key or certificate parse internals?
+
+- Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fallback, and why is no `InsecureSkipVerify` permitted?
+- Why are the TLS 1.3 cipher suites left as the Go defaults and not configured through `CipherSuites`, and why is no user-supplied weakening permitted?
+- Why is the ALPN list exactly `http/1.1` and why is the TLS version independent of the HTTP version?
+- Why is the default client auth mode `NoClientCert` and why is `RequireAndVerifyClientCert` restricted to a separately configured mTLS mode?
+- Why is the client certificate EKU restricted to `clientAuth` and why is a `serverAuth`-only or otherwise wrong-EKU certificate rejected at the TLS layer?
+- Why is the `/healthz` endpoint fixed to `GET` only with an exact JSON health object, and why is the body never allowed to contain secrets or certificate data?
+- Why is the graceful-shutdown watchdog `Close` only a failure path and never a success path?
+- Why is the verification failure treated as a typed rejection rather than a recoverable warning?
+- Why does the log invariant enforce generic errors without key or certificate parse internals?
 
 ## 13. Implementation Milestones
+
 1. Define the ECDSA P-256 test certificate helper that generates the CA, the server leaf, and the client leaf with the pinned key usage, extended key usage, SAN list, and `crypto/rand` serial rules, retrying zero or duplicate serial values within one generated fixture set.
 2. Define the injected fixture clock that pins CA validity to `now-1m` through `now+2h` and leaf validity to `now-1m` through `now+1h`; the same clock drives the deterministic verification time boundary for the valid, expired, and not-yet-valid tests.
 3. Define the in-memory key handling; when a test must materialize a temporary key file, the file uses mode `0600` and is cleaned up.
@@ -86,6 +199,9 @@ Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fal
 12. Define the full matrix of trusted success, untrusted CA failure, wrong hostname failure, expired failure, not-yet-valid failure, TLS 1.2-only failure, ALPN mismatch failure, plaintext-to-TLS failure, mTLS success, mTLS missing client certificate failure, mTLS foreign-CA client certificate failure, mTLS wrong-EKU client certificate failure, and mTLS expired client certificate failure.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - The required client trusts the test CA, sets `ServerName` to a SAN entry, negotiates TLS 1.3 and ALPN `http/1.1`, and receives 200 on `GET /healthz` with `Content-Type: application/json` and the exact JSON health object.
 - A client that trusts a different CA pool fails the handshake at the certificate verification step.
 - A client that connects with `ServerName` set to a name that is not in the SAN list fails the handshake at the verification step.
@@ -115,15 +231,46 @@ Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fal
 - Verification is never disabled as a solution.
 
 ## 15. Common Mistakes to Watch For
-Using `InsecureSkipVerify` to bypass verification in tests; allowing the server to start without a valid certificate or key; configuring TLS 1.3 cipher suites through `CipherSuites`; allowing a TLS 1.2 fallback; describing HTTP/2 as the required path while advertising `http/1.1` in ALPN; conflating TLS version with HTTP version; setting the minimum TLS version below TLS 1.3; requiring a client certificate in the default mode; accepting a wrong-EKU client certificate in mTLS mode; logging private keys; committing private keys; sleeping to observe graceful shutdown; contacting an external CA or domain to make tests pass; writing private keys outside the test fixture directory; using a wall-clock wait to observe handshake or shutdown behavior; returning the health response to a plaintext HTTP request; emitting certificate or private-key parse internals in HTTP output or logs; using a configured cipher suite that the Go runtime would reject.
+
+- Using `InsecureSkipVerify` to bypass verification in tests;
+- Allowing the server to start without a valid certificate or key;
+- Configuring TLS 1.3 cipher suites through `CipherSuites`;
+- Allowing a TLS 1.2 fallback;
+- Describing HTTP/2 as the required path while advertising `http/1.1` in ALPN;
+- Conflating TLS version with HTTP version;
+- Setting the minimum TLS version below TLS 1.3;
+- Requiring a client certificate in the default mode;
+- Accepting a wrong-EKU client certificate in mTLS mode;
+- Logging private keys;
+- Committing private keys;
+- Sleeping to observe graceful shutdown;
+- Contacting an external CA or domain to make tests pass;
+- Writing private keys outside the test fixture directory;
+- Using a wall-clock wait to observe handshake or shutdown behavior;
+- Returning the health response to a plaintext HTTP request;
+- Emitting certificate or private-key parse internals in HTTP output or logs;
+- Using a configured cipher suite that the Go runtime would reject.
 
 ## 16. Topics and References for Study
-Study the `crypto/tls` package and `tls.Config`, `tls.Certificate`, certificate generation with `crypto/x509` and `crypto/rand`, the difference between key usage and extended key usage, ECDSA P-256 key generation, ALPN protocols, the minimum and maximum TLS version configuration, the TLS 1.3 cipher suite negotiation, the fact that TLS 1.3 cipher suites are not configured through `CipherSuites`, `tls.ClientAuth` modes including `NoClientCert` and `RequireAndVerifyClientCert`, `RootCAs`, `ServerName` matching, loopback TLS listeners, server timeouts, graceful shutdown, the race detector, and the conceptual separation between TLS protocol version and HTTP protocol version. Review the Go `crypto/tls`, `crypto/x509`, `crypto/ecdsa`, `crypto/rand`, `net/http`, and `httptest` documentation. Read the prior README for Project 083 for the immediate predecessor discipline, Project 071 and Project 060 for the required foundations, Project 046 for `net/http` basics as optional recommended review, and Project 041 for cancellation propagation as optional recommended review.
+
+- Study the `crypto/tls` package and `tls.Config`, `tls.Certificate`, certificate generation with `crypto/x509` and `crypto/rand`, the difference between key usage and extended key usage, ECDSA P-256 key generation, ALPN protocols, the minimum and maximum TLS version configuration, the TLS 1.3 cipher suite negotiation, the fact that TLS 1.3 cipher suites are not configured through `CipherSuites`, `tls.ClientAuth` modes including `NoClientCert` and `RequireAndVerifyClientCert`, `RootCAs`, `ServerName` matching, loopback TLS listeners, server timeouts, graceful shutdown, the race detector, and the conceptual separation between TLS protocol version and HTTP protocol version.
+- Review the Go `crypto/tls`, `crypto/x509`, `crypto/ecdsa`, `crypto/rand`, `net/http`, and `httptest` documentation.
+- Read the prior README for Project 083 for the immediate predecessor discipline, Project 071 and Project 060 for the required foundations, Project 046 for `net/http` basics as optional recommended review, and Project 041 for cancellation propagation as optional recommended review.
 
 ## 17. Self-Assessment Questions
-Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fallback, and why is no `InsecureSkipVerify` permitted? Why are the TLS 1.3 cipher suites left as the Go defaults and not configured through `CipherSuites`, and why is no user-supplied weakening permitted? Why is the ALPN list exactly `http/1.1` and why is the TLS version independent of the HTTP version? Why is the default client auth mode `NoClientCert` and why is `RequireAndVerifyClientCert` restricted to a separately configured mTLS mode? Why is the client certificate EKU restricted to `clientAuth` and why is a `serverAuth`-only or otherwise wrong-EKU certificate rejected at the TLS layer? Why is the `/healthz` endpoint fixed to `GET` only with an exact JSON health object, and why is the body never allowed to contain secrets or certificate data? Why is the graceful-shutdown watchdog `Close` only a failure path and never a success path? Why is the verification failure treated as a typed rejection rather than a recoverable warning? Why does the log invariant enforce generic errors without key or certificate parse internals?
+
+1. Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fallback, and why is no `InsecureSkipVerify` permitted?
+2. Why are the TLS 1.3 cipher suites left as the Go defaults and not configured through `CipherSuites`, and why is no user-supplied weakening permitted?
+3. Why is the ALPN list exactly `http/1.1` and why is the TLS version independent of the HTTP version?
+4. Why is the default client auth mode `NoClientCert` and why is `RequireAndVerifyClientCert` restricted to a separately configured mTLS mode?
+5. Why is the client certificate EKU restricted to `clientAuth` and why is a `serverAuth`-only or otherwise wrong-EKU certificate rejected at the TLS layer?
+6. Why is the `/healthz` endpoint fixed to `GET` only with an exact JSON health object, and why is the body never allowed to contain secrets or certificate data?
+7. Why is the graceful-shutdown watchdog `Close` only a failure path and never a success path?
+8. Why is the verification failure treated as a typed rejection rather than a recoverable warning?
+9. Why does the log invariant enforce generic errors without key or certificate parse internals?
 
 ## 18. Definition of Completion
+
 - [ ] The test certificate helper generates the ECDSA P-256 CA, server leaf, and client leaf with the pinned key usage, extended key usage, SAN list, and `crypto/rand` serial rules; the helper retries zero or duplicate serial values within one generated fixture set.
 - [ ] The injected fixture clock pins CA validity to `now-1m` through `now+2h` and leaf validity to `now-1m` through `now+1h`; the same clock drives the deterministic verification time boundary for the valid, expired, and not-yet-valid tests; the test never sleeps.
 - [ ] Generated keys remain in memory; a test that materializes a temporary key file uses mode `0600` and cleans up.
@@ -142,4 +289,26 @@ Why is the TLS version pinned to TLS 1.3 as both minimum and maximum with no fal
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
-Add a small structured access log that records method, path, status, negotiated TLS version, negotiated ALPN protocol, and client certificate subject in mTLS mode, but never private keys or full certificate bodies. Add a configurable per-server connection-rate cap exposed for capacity planning tests, asserted through synchronization events without sleep.
+
+- Add a small structured access log that records method, path, status, negotiated TLS version, negotiated ALPN protocol, and client certificate subject in mTLS mode, but never private keys or full certificate bodies.
+- Add a configurable per-server connection-rate cap exposed for capacity planning tests, asserted through synchronization events without sleep.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 083 — Custom HTTP Client](../../06-networking/083_custom_http_client/README.md#20-prerequisite-based-documentation-guide), [Project 071 — TCP Echo Server](../../06-networking/071_tcp_echo_server/README.md#20-prerequisite-based-documentation-guide), [Project 060 — Graceful Shutdown Web](../../04-apis-and-services/060_graceful_shutdown_web/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`crypto/ecdsa`](https://pkg.go.dev/crypto/ecdsa).
+- **Standards and concept references:** [RFC 8446: TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446.html).
+
+### Project-specific learning focus
+
+- **Learn now:** certificate generation and trust roots, key usages, protocol-version policy, TLS 1.3 cipher negotiation, hostname verification, mutual TLS, and graceful server lifecycle.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.

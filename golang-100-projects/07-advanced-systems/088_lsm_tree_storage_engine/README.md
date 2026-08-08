@@ -1,63 +1,157 @@
 # Project 088 — LSM Tree Storage Engine
 
 ## 1. Project Name and Number
-Project 088, lsm_tree_storage_engine. Build a small single-process educational string-to-byte LSM storage engine with an append-only write-ahead log, a mutable sequence-numbered memtable, immutable sorted SSTables, tombstones, an atomic manifest, restart recovery, and full compaction. This README is a learning guide only and contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
-> **Scope.** This is not a production database. It intentionally excludes concurrency, multiple processes, memory mapping, Bloom filters, levels, snapshots, transactions, replication, encryption, and online schema evolution.
+- Project 088, lsm_tree_storage_engine.
+- Build a small single-process educational string-to-byte LSM storage engine with an append-only write-ahead log, a mutable sequence-numbered memtable, immutable sorted SSTables, tombstones, an atomic manifest, restart recovery, and full compaction.
+- This README is a learning guide only and contains no implementation code, signatures, snippets, pseudocode, or solution commands.
+
+- > **Scope.** This is not a production database.
+- It intentionally excludes concurrency, multiple processes, memory mapping, Bloom filters, levels, snapshots, transactions, replication, encryption, and online schema evolution.
 
 ## 2. Project Idea
+
 A successful mutation is first recorded in a checksummed WAL and synchronized before it is acknowledged, then reflected in a last-write-wins memtable. A threshold requests a flush that writes a complete SSTable through a temporary file, publishes it through an atomic manifest change, and only then retires the old recovery WAL. Reads resolve the highest sequence by checking the memtable before immutable tables from newest to oldest. Full compaction merges every current table, publishes one replacement atomically, and removes obsolete files only after the new manifest is durable.
 
 ## 3. Why This Project Now?
-This project takes its required foundation from Projects 017 (json_todo_persister), 025 (file_duplicate_finder), and 087 (kv_store_in_memory): Project 017 supplies atomic temp-file persistence and JSON commit discipline, Project 025 supplies streaming filesystem I/O, hashing, bounded file processing, and deterministic error and reporting discipline, and Project 087 supplies byte ownership with atomic state and snapshot replacement. The catalog's immediate predecessor is Project 087 (kv_store_in_memory); Project 087 is therefore both part of the formal prerequisite list and the most directly relevant context for byte ownership, strict bounds, stable snapshots, no I/O under a state lock, atomic in-memory replacement, and narrow rename guarantees. This project moves those ideas onto disk and makes crash ordering central: a file is not live merely because it exists, and an old recovery copy is not obsolete until a durable manifest proves another complete copy is authoritative.
+
+- This project takes its required foundation from Projects 017 (json_todo_persister), 025 (file_duplicate_finder), and 087 (kv_store_in_memory): Project 017 supplies atomic temp-file persistence and JSON commit discipline, Project 025 supplies streaming filesystem I/O, hashing, bounded file processing, and deterministic error and reporting discipline, and Project 087 supplies byte ownership with atomic state and snapshot replacement.
+- The catalog's immediate predecessor is Project 087 (kv_store_in_memory); Project 087 is therefore both part of the formal prerequisite list and the most directly relevant context for byte ownership, strict bounds, stable snapshots, no I/O under a state lock, atomic in-memory replacement, and narrow rename guarantees.
+- This project moves those ideas onto disk and makes crash ordering central: a file is not live merely because it exists, and an old recovery copy is not obsolete until a durable manifest proves another complete copy is authoritative.
 
 ## 4. Prerequisites
-Projects 017 (json_todo_persister), 025 (file_duplicate_finder), and 087 (kv_store_in_memory) are the required prerequisites. Project 087 is also the immediate catalog predecessor, which makes it the most directly relevant context but no stronger than the rest. Be comfortable with byte ownership, binary encoding, network byte order, checksums, exact file offsets, short writes, synchronization and close errors, same-directory temporary files, directory synchronization, immutable sorted data, tombstones, sequence numbers, atomic metadata replacement, failure injection, and temporary-directory tests.
+
+- Projects 017 (json_todo_persister), 025 (file_duplicate_finder), and 087 (kv_store_in_memory) are the required prerequisites.
+- Project 087 is also the immediate catalog predecessor, which makes it the most directly relevant context but no stronger than the rest.
+- Be comfortable with byte ownership, binary encoding, network byte order, checksums, exact file offsets, short writes, synchronization and close errors, same-directory temporary files, directory synchronization, immutable sorted data, tombstones, sequence numbers, atomic metadata replacement, failure injection, and temporary-directory tests.
 
 ## 5. What You Must Know Before Starting
-Know why a WAL is written before a memtable mutation is acknowledged, why a successful file write is weaker than a successful synchronization, and why rename alone does not establish complete crash ordering. Understand length-delimited records, bounded allocation before decode, CRC32C checksums, clean EOF versus a torn final record, immutable-file publication, manifest authority, last-write-wins sequence comparison, binary search over sorted keys, and the difference between logical deletion and physical removal during compaction.
+
+- Know why a WAL is written before a memtable mutation is acknowledged, why a successful file write is weaker than a successful synchronization, and why rename alone does not establish complete crash ordering.
+- Understand length-delimited records, bounded allocation before decode, CRC32C checksums, clean EOF versus a torn final record, immutable-file publication, manifest authority, last-write-wins sequence comparison, binary search over sorted keys, and the difference between logical deletion and physical removal during compaction.
 
 ## 6. Explanation of New Concepts
-Keys are non-empty valid UTF-8 strings of at most 256 bytes. Values are arbitrary bytes of at most 1 MiB, including an empty value. Input and output values are copied. The mutable memtable has a configured encoded-byte threshold between 1 MiB and 64 MiB. The active WAL is capped at 256 MiB, the manifest lists at most 128 SSTables, and every decoded count or length is validated before allocation. Crossing the memtable threshold requests a synchronous flush; there is no background worker.
 
-Every accepted Put or Delete receives the next positive 64-bit sequence number. Sequence zero is reserved. A sequence is consumed only by a complete WAL record that recovery can recognize. Put stores a value record. Delete stores a tombstone even when the key is currently missing. Within the memtable, only the highest-sequence record for each key remains visible; overwrite and delete are therefore last-write wins.
+### Concepts
 
-The storage directory has one authoritative versioned manifest, one active WAL generation named by that manifest, zero or more immutable SSTable generations named by that manifest, and temporary or obsolete files that are not authoritative. The manifest records format version, last assigned sequence, flushed-through sequence, active WAL generation, and the ordered current SSTable generations. Table order is oldest to newest; reads inspect that list in reverse. Unknown manifest versions, malformed generations, duplicates, missing listed files, impossible sequence ranges, or trailing data are hard open errors.
+- Keys are non-empty valid UTF-8 strings of at most 256 bytes.
+- Values are arbitrary bytes of at most 1 MiB, including an empty value.
+- Input and output values are copied.
+- The mutable memtable has a configured encoded-byte threshold between 1 MiB and 64 MiB.
+- The active WAL is capped at 256 MiB, the manifest lists at most 128 SSTables, and every decoded count or length is validated before allocation.
+- Crossing the memtable threshold requests a synchronous flush; there is no background worker.
 
-A WAL starts with a complete magic and version header. An incomplete or corrupt header is always a hard error. Each later record is versioned and length-delimited and contains operation kind, key, optional value, sequence, and a CRC32C checksum covering the complete encoded record except the checksum field itself. The declared record length must be within the documented maximum before allocation. Unknown operations, zero or non-increasing sequences, invalid key or value lengths, a value attached to a tombstone, internal length disagreement, trailing bytes inside a complete record, and checksum mismatch are hard corruption errors.
+- Every accepted Put or Delete receives the next positive 64-bit sequence number.
+- Sequence zero is reserved.
+- A sequence is consumed only by a complete WAL record that recovery can recognize.
+- Put stores a value record.
+- Delete stores a tombstone even when the key is currently missing.
+- Within the memtable, only the highest-sequence record for each key remains visible; overwrite and delete are therefore last-write wins.
 
-Recovery distinguishes only one tolerated tear. If every earlier complete record is valid and physical EOF occurs partway through the final fixed-size length prefix or partway through the final body and checksum whose declared length is itself valid, those trailing bytes may be ignored. Clean EOF immediately after a complete record is normal. A declared oversize or impossible length is a hard format error even at EOF. Any malformed or checksum-invalid complete record is a hard error. There is no rule that ignores corruption merely because the bad record is last.
+- The storage directory has one authoritative versioned manifest, one active WAL generation named by that manifest, zero or more immutable SSTable generations named by that manifest, and temporary or obsolete files that are not authoritative.
+- The manifest records format version, last assigned sequence, flushed-through sequence, active WAL generation, and the ordered current SSTable generations.
+- Table order is oldest to newest; reads inspect that list in reverse.
+- Unknown manifest versions, malformed generations, duplicates, missing listed files, impossible sequence ranges, or trailing data are hard open errors.
 
-Before an engine opened from a tolerated torn tail becomes writable, it truncates the active WAL to the last complete valid offset and synchronizes that repair. Failure to truncate or synchronize makes open fail. Recovery replays valid records whose sequences are greater than the manifest's flushed-through sequence, while still validating every complete record it reads. Replayed records update the memtable by highest sequence and restore the next sequence from the maximum valid manifest or WAL sequence.
+- A WAL starts with a complete magic and version header.
+- An incomplete or corrupt header is always a hard error.
+- Each later record is versioned and length-delimited and contains operation kind, key, optional value, sequence, and a CRC32C checksum covering the complete encoded record except the checksum field itself.
+- The declared record length must be within the documented maximum before allocation.
+- Unknown operations, zero or non-increasing sequences, invalid key or value lengths, a value attached to a tombstone, internal length disagreement, trailing bytes inside a complete record, and checksum mismatch are hard corruption errors.
 
-Mutation durability uses an always-sync policy in the required project. The engine encodes one bounded record, appends all bytes, checks the result, synchronizes the active WAL, and only then publishes the mutation to the memtable and reports success. Append or synchronization failure never reports success and places the engine in a failed state that rejects later mutations until reopen. Because storage errors can have uncertain physical outcomes, restart may replay a complete valid record whose synchronization call reported failure; the API must not claim rollback after an I/O error.
+- Recovery distinguishes only one tolerated tear.
+- If every earlier complete record is valid and physical EOF occurs partway through the final fixed-size length prefix or partway through the final body and checksum whose declared length is itself valid, those trailing bytes may be ignored.
+- Clean EOF immediately after a complete record is normal.
+- A declared oversize or impossible length is a hard format error even at EOF.
+- Any malformed or checksum-invalid complete record is a hard error.
+- There is no rule that ignores corruption merely because the bad record is last.
 
-Threshold crossing and mutation acknowledgement are separate facts. The WAL-synchronized mutation is committed before flush starts. If its publication makes the memtable reach or exceed threshold, a synchronous flush is requested and its maintenance result is reported separately from mutation success. A failed flush leaves the committed mutation in the memtable and WAL and may be retried; it must never be described as an uncommitted Put or Delete.
+- Before an engine opened from a tolerated torn tail becomes writable, it truncates the active WAL to the last complete valid offset and synchronizes that repair.
+- Failure to truncate or synchronize makes open fail.
+- Recovery replays valid records whose sequences are greater than the manifest's flushed-through sequence, while still validating every complete record it reads.
+- Replayed records update the memtable by highest sequence and restore the next sequence from the maximum valid manifest or WAL sequence.
 
-A flush first takes a stable copy of the current memtable and ending sequence. With no concurrent API support, mutations are paused for the operation. It writes one new SSTable temporary file in sorted key order, checks all writes, synchronizes it, checks close, renames it to its final generation, and synchronizes the parent directory. It also creates and synchronizes a new empty versioned WAL generation. Neither file is authoritative yet.
+- Mutation durability uses an always-sync policy in the required project.
+- The engine encodes one bounded record, appends all bytes, checks the result, synchronizes the active WAL, and only then publishes the mutation to the memtable and reports success.
+- Append or synchronization failure never reports success and places the engine in a failed state that rejects later mutations until reopen.
+- Because storage errors can have uncertain physical outcomes, restart may replay a complete valid record whose synchronization call reported failure; the API must not claim rollback after an I/O error.
 
-The flush then writes a complete new manifest temporary file that adds the new SSTable, advances flushed-through and last-sequence metadata, and selects the new WAL generation. It checks write, file synchronization, and close, renames over the manifest in the same directory, and then synchronizes the parent directory. The publication boundary is exact: an observable failure during manifest write, manifest synchronization, manifest close, or manifest rename guarantees that the old manifest, old WAL, SSTables, and memtable remain authoritative. An observable failure of the parent-directory synchronization that happens after a successful manifest rename does not preserve an old manifest with certainty; the on-disk authoritative state is uncertain until reopen.
+- Threshold crossing and mutation acknowledgement are separate facts.
+- The WAL-synchronized mutation is committed before flush starts.
+- If its publication makes the memtable reach or exceed threshold, a synchronous flush is requested and its maintenance result is reported separately from mutation success.
+- A failed flush leaves the committed mutation in the memtable and WAL and may be retried; it must never be described as an uncommitted Put or Delete.
 
-A successful parent-directory synchronization is the only point at which the new SSTable and new WAL are known to be authoritative. Only then may the in-memory memtable be cleared, the new WAL become active, and old WAL and prior SSTables be removed best-effort. Before manifest publication, the old manifest and old WAL remain the recovery path. After confirmed manifest publication, the new SSTable and new WAL are authoritative and failure to remove old files is harmless garbage, not data loss.
+- A flush first takes a stable copy of the current memtable and ending sequence.
+- With no concurrent API support, mutations are paused for the operation.
+- It writes one new SSTable temporary file in sorted key order, checks all writes, synchronizes it, checks close, renames it to its final generation, and synchronizes the parent directory.
+- It also creates and synchronizes a new empty versioned WAL generation.
+- Neither file is authoritative yet.
 
-If the parent-directory synchronization fails after a successful manifest rename, the engine enters a failed non-writable state. It must not delete any old WAL or SSTable and must not claim rollback, durability of the new manifest, or that the old manifest is certainly authoritative. Reopen is required to discover which complete manifest the filesystem exposes. A non-final-name SSTable or new WAL created before publication is an orphan and is ignored on reopen. If reopen selects the new manifest, the old files are obsolete and removable on a later publication-cleanup step; if reopen selects the old manifest, the new files are obsolete. No cleanup step may delete a file still named by the authoritative manifest.
+- The flush then writes a complete new manifest temporary file that adds the new SSTable, advances flushed-through and last-sequence metadata, and selects the new WAL generation.
+- It checks write, file synchronization, and close, renames over the manifest in the same directory, and then synchronizes the parent directory.
+- The publication boundary is exact: an observable failure during manifest write, manifest synchronization, manifest close, or manifest rename guarantees that the old manifest, old WAL, SSTables, and memtable remain authoritative.
+- An observable failure of the parent-directory synchronization that happens after a successful manifest rename does not preserve an old manifest with certainty; the on-disk authoritative state is uncertain until reopen.
 
-An SSTable has a versioned header, generation, entry count, sequence bounds, strictly increasing keys, one highest-sequence entry per key, bounded key and value lengths, per-entry CRC32C checksums, and a final checksum covering the header and encoded entries. Tombstones carry no value. Open validates the whole listed table before serving reads. Duplicate or out-of-order keys, impossible counts, sequence values outside declared bounds, malformed entries, checksum failure, unexpected EOF, or trailing bytes are hard errors.
+- A successful parent-directory synchronization is the only point at which the new SSTable and new WAL are known to be authoritative.
+- Only then may the in-memory memtable be cleared, the new WAL become active, and old WAL and prior SSTables be removed best-effort.
+- Before manifest publication, the old manifest and old WAL remain the recovery path.
+- After confirmed manifest publication, the new SSTable and new WAL are authoritative and failure to remove old files is harmless garbage, not data loss.
 
-Read precedence follows sequence recency. The memtable is checked first because it contains mutations newer than every flushed table. If the key is absent there, current SSTables are searched from newest to oldest using their sorted keys. The first matching record is authoritative. A value returns a copied byte slice. A tombstone reports missing and stops the search so an older value cannot reappear. Missing in every source reports missing.
+- If the parent-directory synchronization fails after a successful manifest rename, the engine enters a failed non-writable state.
+- It must not delete any old WAL or SSTable and must not claim rollback, durability of the new manifest, or that the old manifest is certainly authoritative.
+- Reopen is required to discover which complete manifest the filesystem exposes.
+- A non-final-name SSTable or new WAL created before publication is an orphan and is ignored on reopen.
+- If reopen selects the new manifest, the old files are obsolete and removable on a later publication-cleanup step; if reopen selects the old manifest, the new files are obsolete.
+- No cleanup step may delete a file still named by the authoritative manifest.
 
-Full compaction first flushes a non-empty memtable using the same durable ordering. It then includes every SSTable named by one authoritative manifest snapshot and chooses the highest-sequence record for each key. Because no older current table remains outside that input set, tombstones may be dropped. If any table is excluded, tombstones must not be dropped. The result is sorted by key and may be empty.
+- An SSTable has a versioned header, generation, entry count, sequence bounds, strictly increasing keys, one highest-sequence entry per key, bounded key and value lengths, per-entry CRC32C checksums, and a final checksum covering the header and encoded entries.
+- Tombstones carry no value.
+- Open validates the whole listed table before serving reads.
+- Duplicate or out-of-order keys, impossible counts, sequence values outside declared bounds, malformed entries, checksum failure, unexpected EOF, or trailing bytes are hard errors.
 
-Compaction writes and synchronizes a new table when the result is non-empty, publishes a new manifest temporary file naming only that table or no tables for an empty result, and checks the manifest write, synchronization, and close. It then renames the manifest over the authoritative manifest and synchronizes the parent directory. The publication boundary is the same as for flush: failure during manifest write, sync, close, or rename preserves the old manifest, old SSTables, and memtable as authoritative; failure of the post-rename parent-directory synchronization leaves on-disk authority uncertain. In that uncertain window the engine must enter a failed non-writable state, must not delete any old SSTable, and must require reopen to discover which complete manifest the filesystem exposes. Only after a successful parent-directory synchronization may old tables be removed best-effort. A crash before publication leaves the old table set authoritative. A crash after confirmed publication leaves the new set authoritative and any old files as ignorable garbage. Compaction never changes visible values or the last assigned sequence.
+- Read precedence follows sequence recency.
+- The memtable is checked first because it contains mutations newer than every flushed table.
+- If the key is absent there, current SSTables are searched from newest to oldest using their sorted keys.
+- The first matching record is authoritative.
+- A value returns a copied byte slice.
+- A tombstone reports missing and stops the search so an older value cannot reappear.
+- Missing in every source reports missing.
 
-Close checks and closes the active WAL but does not require a memtable flush because synchronized WAL records are the recovery copy. Close is idempotent after success. Operations after close are rejected. A process crash has no close step; recovery follows only the durable manifest, listed SSTables, and active WAL rules. Successful mutation, flush, and compaction guarantees are limited to local filesystems that honor checked synchronization, atomic same-directory rename, and parent-directory synchronization; faulty hardware and filesystems that violate those contracts are outside scope.
+- Full compaction first flushes a non-empty memtable using the same durable ordering.
+- It then includes every SSTable named by one authoritative manifest snapshot and chooses the highest-sequence record for each key.
+- Because no older current table remains outside that input set, tombstones may be dropped.
+- If any table is excluded, tombstones must not be dropped.
+- The result is sorted by key and may be empty.
 
-Text-only state examples are permitted. A value written at sequence one and overwritten at sequence two resolves to sequence two. A tombstone at sequence three hides values in older tables. A crash before flush manifest publication recovers from the old WAL. A crash after confirmed publication opens the new table and WAL even if obsolete files remain. A torn final WAL body is truncated to the last valid boundary; a complete record with a bad checksum stops recovery. A flush whose post-rename parent-directory synchronization fails leaves the engine in a failed non-writable state, retains every old and new recovery data file, and treats the manifest path outcome as uncertain; reopen uses whichever complete manifest the filesystem exposes and never deletes files until publication is confirmed.
+- Compaction writes and synchronizes a new table when the result is non-empty, publishes a new manifest temporary file naming only that table or no tables for an empty result, and checks the manifest write, synchronization, and close.
+- It then renames the manifest over the authoritative manifest and synchronizes the parent directory.
+- The publication boundary is the same as for flush: failure during manifest write, sync, close, or rename preserves the old manifest, old SSTables, and memtable as authoritative; failure of the post-rename parent-directory synchronization leaves on-disk authority uncertain.
+- In that uncertain window the engine must enter a failed non-writable state, must not delete any old SSTable, and must require reopen to discover which complete manifest the filesystem exposes.
+- Only after a successful parent-directory synchronization may old tables be removed best-effort.
+- A crash before publication leaves the old table set authoritative.
+- A crash after confirmed publication leaves the new set authoritative and any old files as ignorable garbage.
+- Compaction never changes visible values or the last assigned sequence.
+
+- Close checks and closes the active WAL but does not require a memtable flush because synchronized WAL records are the recovery copy.
+- Close is idempotent after success.
+- Operations after close are rejected.
+- A process crash has no close step; recovery follows only the durable manifest, listed SSTables, and active WAL rules.
+- Successful mutation, flush, and compaction guarantees are limited to local filesystems that honor checked synchronization, atomic same-directory rename, and parent-directory synchronization; faulty hardware and filesystems that violate those contracts are outside scope.
+
+- Text-only state examples are permitted.
+- A value written at sequence one and overwritten at sequence two resolves to sequence two.
+- A tombstone at sequence three hides values in older tables.
+- A crash before flush manifest publication recovers from the old WAL.
+- A crash after confirmed publication opens the new table and WAL even if obsolete files remain.
+- A torn final WAL body is truncated to the last valid boundary; a complete record with a bad checksum stops recovery.
+- A flush whose post-rename parent-directory synchronization fails leaves the engine in a failed non-writable state, retains every old and new recovery data file, and treats the manifest path outcome as uncertain; reopen uses whichever complete manifest the filesystem exposes and never deletes files until publication is confirmed.
 
 ## 7. Learning Objective
-Build and verify a bounded educational LSM engine whose acknowledged mutations are WAL-synchronized, whose recovery has one exact torn-tail exception, whose reads honor highest sequence and tombstones, whose flush and compaction publication order never removes the only recovery copy too early, and whose corruption and durability limits are explicit.
+
+- Build and verify a bounded educational LSM engine whose acknowledged mutations are WAL-synchronized, whose recovery has one exact torn-tail exception, whose reads honor highest sequence and tombstones, whose flush and compaction publication order never removes the only recovery copy too early, and whose corruption and durability limits are explicit.
 
 ## 8. Functional Requirements
+
 1. Support bounded Put, Get, Delete, explicit or threshold-requested Flush, full Compaction, Open, and Close behavior in one process with no concurrent API use.
 2. Copy byte values at input, memtable/SSTable boundaries, and output.
 3. Assign positive monotonically increasing sequence numbers and retain only the highest sequence per key in a memtable or compacted table.
@@ -76,18 +170,60 @@ Build and verify a bounded educational LSM engine whose acknowledged mutations a
 16. Keep all deterministic formats independent of map iteration and host byte order.
 
 ## 9. Inputs and Outputs
-Inputs are validated string keys, copied byte values, deletion requests, explicit flush or compaction requests, storage-directory contents, and injected file-operation outcomes. Get outputs a copied value or missing. Mutations output acknowledged success only after WAL synchronization, with a separate maintenance outcome if threshold crossing requested a flush. Open outputs a usable engine or a hard validation, corruption, or I/O error. Flush and compaction output publication success only after the new manifest has been successfully written, synchronized, closed, renamed, and the parent directory synchronized; a flush or compaction whose post-rename directory synchronization fails outputs a failed non-writable state and leaves the on-disk authoritative manifest to be discovered by reopen.
+
+### Interface Contract
+
+- Inputs are validated string keys, copied byte values, deletion requests, explicit flush or compaction requests, storage-directory contents, and injected file-operation outcomes.
+- Get outputs a copied value or missing.
+- Mutations output acknowledged success only after WAL synchronization, with a separate maintenance outcome if threshold crossing requested a flush.
+- Open outputs a usable engine or a hard validation, corruption, or I/O error.
+- Flush and compaction output publication success only after the new manifest has been successfully written, synchronized, closed, renamed, and the parent directory synchronized;
+- A flush or compaction whose post-rename directory synchronization fails outputs a failed non-writable state and leaves the on-disk authoritative manifest to be discovered by reopen.
 
 ## 10. Rules and Edge Cases
-An empty key is invalid; an empty value is valid. Delete of a missing key still writes a tombstone and consumes a sequence. Sequence overflow rejects mutation without append. A short write is an error. A clean WAL EOF is valid; a bounded incomplete final record may be ignored and repaired; a corrupt complete final record is not ignorable. Unknown WAL, SSTable, or manifest versions are hard errors. A memtable tombstone hides all SSTables. A newer-table tombstone hides every older value. A failed flush cannot clear the memtable or rotate authority unless manifest publication has been confirmed by a successful parent-directory synchronization. Orphans not named by the manifest are never read as data. Missing files named by the manifest are corruption. Tombstones may disappear only during a compaction that includes all currently authoritative tables. A post-rename parent-directory-synchronization failure means on-disk authority is uncertain; the engine must enter a failed non-writable state, must not delete any old WAL or SSTable, and must rely on reopen to discover which complete manifest the filesystem exposes. That state must not be described as rollback or as guaranteeing the old manifest is authoritative. Removing obsolete files can fail without invalidating a successfully confirmed publication. Close need not flush because synchronized WAL is durable recovery state.
+
+- An empty key is invalid; an empty value is valid.
+- Delete of a missing key still writes a tombstone and consumes a sequence.
+- Sequence overflow rejects mutation without append.
+- A short write is an error.
+- A clean WAL EOF is valid; a bounded incomplete final record may be ignored and repaired; a corrupt complete final record is not ignorable.
+- Unknown WAL, SSTable, or manifest versions are hard errors.
+- A memtable tombstone hides all SSTables.
+- A newer-table tombstone hides every older value.
+- A failed flush cannot clear the memtable or rotate authority unless manifest publication has been confirmed by a successful parent-directory synchronization.
+- Orphans not named by the manifest are never read as data.
+- Missing files named by the manifest are corruption.
+- Tombstones may disappear only during a compaction that includes all currently authoritative tables.
+- A post-rename parent-directory-synchronization failure means on-disk authority is uncertain; the engine must enter a failed non-writable state, must not delete any old WAL or SSTable, and must rely on reopen to discover which complete manifest the filesystem exposes.
+- That state must not be described as rollback or as guaranteeing the old manifest is authoritative.
+- Removing obsolete files can fail without invalidating a successfully confirmed publication.
+- Close need not flush because synchronized WAL is durable recovery state.
 
 ## 11. Project Constraints
-One process, one caller at a time, one storage directory, bounded keys and values, one mutable memtable, immutable SSTables, one active WAL, and full compaction only. No mutex-based concurrent API, multi-process lock, memory mapping, Bloom filter, leveled or tiered compaction, block cache, compression, transactions, range scans, snapshots, replication, network service, encryption, background compaction, or online backup. Tests use temporary directories only. Production databases need stronger format migration, resource accounting, partial-device-failure handling, observability, repair tools, and broad filesystem validation.
+
+- One process, one caller at a time, one storage directory, bounded keys and values, one mutable memtable, immutable SSTables, one active WAL, and full compaction only.
+- No mutex-based concurrent API, multi-process lock, memory mapping, Bloom filter, leveled or tiered compaction, block cache, compression, transactions, range scans, snapshots, replication, network service, encryption, background compaction, or online backup.
+- Tests use temporary directories only.
+- Production databases need stronger format migration, resource accounting, partial-device-failure handling, observability, repair tools, and broad filesystem validation.
 
 ## 12. Design Questions Before Coding
-What makes a mutation acknowledged? Why can a synchronization failure leave an uncertain restart result? Which exact incomplete WAL bytes may recovery ignore? Why must a tolerated tail be truncated before appending? Why does the memtable precede the newest SSTable? How does a tombstone stop an old value from reappearing? Which files are authoritative before confirmed manifest publication, between manifest rename and parent-directory synchronization, and after confirmed publication? Why must the new table and new WAL exist durably before the manifest names them? Why is the post-rename parent-directory synchronization the only confirmed publication point? Why can a failure of that synchronization not be reported as rollback or as confirming the old manifest? Why must the engine avoid deleting any recovery file while authority is uncertain, and why must reopen resolve which complete manifest is authoritative? Under what exact condition may compaction drop tombstones? Why is obsolete-file deletion best-effort and why is confirmed publication not?
+
+- What makes a mutation acknowledged?
+- Why can a synchronization failure leave an uncertain restart result?
+- Which exact incomplete WAL bytes may recovery ignore?
+- Why must a tolerated tail be truncated before appending?
+- Why does the memtable precede the newest SSTable?
+- How does a tombstone stop an old value from reappearing?
+- Which files are authoritative before confirmed manifest publication, between manifest rename and parent-directory synchronization, and after confirmed publication?
+- Why must the new table and new WAL exist durably before the manifest names them?
+- Why is the post-rename parent-directory synchronization the only confirmed publication point?
+- Why can a failure of that synchronization not be reported as rollback or as confirming the old manifest?
+- Why must the engine avoid deleting any recovery file while authority is uncertain, and why must reopen resolve which complete manifest is authoritative?
+- Under what exact condition may compaction drop tombstones?
+- Why is obsolete-file deletion best-effort and why is confirmed publication not?
 
 ## 13. Implementation Milestones
+
 1. Establish bounded keys, values, record sizes, memtable bytes, WAL bytes, table count, generations, and sequence arithmetic.
 2. Establish versioned manifest, WAL, and SSTable format contracts with deterministic byte order and CRC32C validation.
 3. Establish checked WAL append, always-sync acknowledgement, failed-engine behavior, and memtable last-write wins.
@@ -100,6 +236,9 @@ What makes a mutation acknowledged? Why can a synchronization failure leave an u
 10. Complete restart, corruption, known-format, failure-injection, uncertain-publication reopen, and semantic-equivalence tests in temporary directories.
 
 ## 14. Verification Cases the Learner Must Write
+
+### Required Cases
+
 - Put and Get round-trip exact copied bytes, including an empty value.
 - Overwrite returns the highest-sequence value before and after restart.
 - Delete of present or missing data writes a tombstone and returns missing on later Get.
@@ -124,15 +263,52 @@ What makes a mutation acknowledged? Why can a synchronization failure leave an u
 - All tests use temporary directories and no network, sleeps, concurrency timing, memory mapping, or external process.
 
 ## 15. Common Mistakes to Watch For
-Applying the memtable before WAL synchronization; treating an I/O error as guaranteed rollback; allocating from an untrusted length before bounds checks; ignoring a bad checksum because the record is last; tolerating an oversize declared torn record; appending after a torn tail without truncation; using host byte order; searching SSTables before newer memtable state; searching tables oldest first; continuing past a tombstone; clearing memtable before confirmed manifest publication; rotating or deleting the old WAL before publication is confirmed; treating a post-rename parent-directory synchronization failure as rollback; claiming the old manifest is authoritative while on-disk authority is uncertain; deleting any old WAL or SSTable while authority is uncertain; naming an unsynchronized SSTable in the manifest; deleting old tables before compaction publication is confirmed; dropping tombstones while an older table remains; reading orphan files as authoritative; ignoring close or directory-sync errors; or claiming this layout is a production database.
+
+- Applying the memtable before WAL synchronization;
+- Treating an I/O error as guaranteed rollback;
+- Allocating from an untrusted length before bounds checks;
+- Ignoring a bad checksum because the record is last;
+- Tolerating an oversize declared torn record;
+- Appending after a torn tail without truncation;
+- Using host byte order;
+- Searching SSTables before newer memtable state;
+- Searching tables oldest first;
+- Continuing past a tombstone;
+- Clearing memtable before confirmed manifest publication;
+- Rotating or deleting the old WAL before publication is confirmed;
+- Treating a post-rename parent-directory synchronization failure as rollback;
+- Claiming the old manifest is authoritative while on-disk authority is uncertain;
+- Deleting any old WAL or SSTable while authority is uncertain;
+- Naming an unsynchronized SSTable in the manifest;
+- Deleting old tables before compaction publication is confirmed;
+- Dropping tombstones while an older table remains;
+- Reading orphan files as authoritative;
+- Ignoring close or directory-sync errors;
+- Or claiming this layout is a production database.
 
 ## 16. Topics and References for Study
-Study Go documentation for binary encoding, CRC32C, buffered and direct file I/O, synchronization, close, rename, directory handles, sorting, byte comparison, and temporary directories. Study write-ahead logging, LSM trees, memtables, SSTables, tombstones, manifest-based publication, crash consistency, fsync ordering, write amplification, and full compaction. Read the original LSM-tree paper and public design documentation for established LSM engines as conceptual references, while keeping this project's much smaller guarantees explicit. Review Project 017 (json_todo_persister) for atomic temp-file persistence and JSON commit discipline, Project 025 (file_duplicate_finder) for streaming filesystem I/O, hashing, bounded file processing, and deterministic error and reporting discipline, and Project 087 (kv_store_in_memory) for byte ownership with atomic state and snapshot replacement; Project 087 is the immediate catalog predecessor for atomic candidate replacement.
+
+- Study Go documentation for binary encoding, CRC32C, buffered and direct file I/O, synchronization, close, rename, directory handles, sorting, byte comparison, and temporary directories.
+- Study write-ahead logging, LSM trees, memtables, SSTables, tombstones, manifest-based publication, crash consistency, fsync ordering, write amplification, and full compaction.
+- Read the original LSM-tree paper and public design documentation for established LSM engines as conceptual references, while keeping this project's much smaller guarantees explicit.
+- Review Project 017 (json_todo_persister) for atomic temp-file persistence and JSON commit discipline, Project 025 (file_duplicate_finder) for streaming filesystem I/O, hashing, bounded file processing, and deterministic error and reporting discipline, and Project 087 (kv_store_in_memory) for byte ownership with atomic state and snapshot replacement;
+- Project 087 is the immediate catalog predecessor for atomic candidate replacement.
 
 ## 17. Self-Assessment Questions
-Which bytes make a WAL record complete, and which final tear is the only tolerated exception to that rule? What happens between recovery and the engine becoming writable after a tolerated tail, and why must truncation and synchronization complete before any new append is accepted? When is a mutation acknowledged, and why can a complete valid record whose synchronization call reported failure still reappear after restart through replay? Which source has read precedence, and what stops a tombstoned value from reappearing in an older table? What exactly does the manifest authorize after confirmed publication, why is authority uncertain between manifest rename and parent-directory synchronization, and which files must never be deleted while authority is uncertain? When can the old WAL or old SSTables be removed, and what distinguishes confirmed-publication removal from best-effort cleanup? When may a tombstone be dropped during compaction, and what is the exact condition that makes that drop safe? What does successful compaction change physically, and what visible values and metadata must it preserve? Which manifest, WAL, and SSTable format corruption cases are never ignored even when they appear last, and what does reopen do when it finds two complete manifests after an uncertain publication? Which broad database guarantees are intentionally absent from this educational engine, and which durability claims does the project therefore refuse to make?
+
+1. Which bytes make a WAL record complete, and which final tear is the only tolerated exception to that rule?
+2. What happens between recovery and the engine becoming writable after a tolerated tail, and why must truncation and synchronization complete before any new append is accepted?
+3. When is a mutation acknowledged, and why can a complete valid record whose synchronization call reported failure still reappear after restart through replay?
+4. Which source has read precedence, and what stops a tombstoned value from reappearing in an older table?
+5. What exactly does the manifest authorize after confirmed publication, why is authority uncertain between manifest rename and parent-directory synchronization, and which files must never be deleted while authority is uncertain?
+6. When can the old WAL or old SSTables be removed, and what distinguishes confirmed-publication removal from best-effort cleanup?
+7. When may a tombstone be dropped during compaction, and what is the exact condition that makes that drop safe?
+8. What does successful compaction change physically, and what visible values and metadata must it preserve?
+9. Which manifest, WAL, and SSTable format corruption cases are never ignored even when they appear last, and what does reopen do when it finds two complete manifests after an uncertain publication?
+10. Which broad database guarantees are intentionally absent from this educational engine, and which durability claims does the project therefore refuse to make?
 
 ## 18. Definition of Completion
+
 - [ ] Projects 017 (json_todo_persister), 025 (file_duplicate_finder), and 087 (kv_store_in_memory) are treated as the required prerequisites.
 - [ ] Engine remains single-process, single-caller, bounded, and explicitly educational.
 - [ ] Keys and values are copied and all decoded lengths are checked before allocation.
@@ -151,5 +327,25 @@ Which bytes make a WAL record complete, and which final tear is the only tolerat
 - [ ] Guide contains no implementation code, signatures, snippets, pseudocode, or solution commands.
 
 ## 19. Optional Extensions
+
 - Add sparse per-table key indexes while preserving the same authoritative manifest, checksum, and corruption rules.
-- Add a read-only inspection mode that validates and reports manifest, WAL, and SSTable metadata without modifying or repairing files.
+
+## 20. Prerequisite-Based Documentation Guide
+
+This guide is cumulative: read the formal prerequisite documentation first, then read only the new references listed here. Shared resources are inherited instead of duplicated. Use third-party documentation for the version pinned in Section 4.
+
+### Inherited documentation
+
+- **Formal prerequisites:** [Project 017 — JSON Todo Persister](../../02-data-structures/017_json_todo_persister/README.md#20-prerequisite-based-documentation-guide), [Project 025 — File Duplicate Finder](../../02-data-structures/025_file_duplicate_finder/README.md#20-prerequisite-based-documentation-guide), [Project 087 — KV Store In Memory](../../07-advanced-systems/087_kv_store_in_memory/README.md#20-prerequisite-based-documentation-guide).
+
+Read the linked guides first. Everything introduced there—including documentation inherited from earlier prerequisites—is assumed here and intentionally not repeated.
+
+### New documentation introduced in this project
+
+- **API references:** [`encoding/binary`](https://pkg.go.dev/encoding/binary), [`hash/crc32`](https://pkg.go.dev/hash/crc32).
+- **Standards and concept references:** [Log-Structured Merge-Tree paper](https://www.cs.umb.edu/~poneil/lsmtree.pdf).
+
+### Project-specific learning focus
+
+- **Learn now:** write-ahead logs, memtables, SSTables, tombstones, checksums, manifests, crash-recovery order, fsync boundaries, compaction, and write amplification.
+- **Verification:** Turn every case in Section 14 into a test. Reuse the testing documentation inherited from the prerequisites; if this project introduces a new testing reference, it is listed above.
